@@ -1,0 +1,449 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "a56a6cb9-be24-458b-bbc5-62c4e942613b")
+	(paper "A4")
+	(title_block
+		(title "AuraMon")
+		(rev "v0.1")
+	)
+	(lib_symbols)
+	(bus
+		(pts
+			(xy 106.68 95.25) (xy 123.19 95.25)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "02250b18-e516-44a4-b039-d21a4176e692")
+	)
+	(bus
+		(pts
+			(xy 109.22 76.2) (xy 106.68 76.2)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "076581a6-a976-46c1-bef6-8de3c0171d8c")
+	)
+	(bus
+		(pts
+			(xy 123.19 90.17) (xy 109.22 90.17)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4ccc5d49-0482-4de6-b796-0aaed026f510")
+	)
+	(bus
+		(pts
+			(xy 123.19 106.68) (xy 113.03 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4ce1b2fe-b005-4896-bacf-9d2f90af2371")
+	)
+	(bus
+		(pts
+			(xy 113.03 119.38) (xy 106.68 119.38)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "69ad66bb-c5e2-4251-ba36-225fa9875df0")
+	)
+	(bus
+		(pts
+			(xy 113.03 72.39) (xy 113.03 85.09)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8295a1d7-c5e1-472c-b29b-9e69bd292991")
+	)
+	(bus
+		(pts
+			(xy 113.03 106.68) (xy 113.03 119.38)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bf70ca43-c8a0-4d3c-962a-a0ed4dd74f8e")
+	)
+	(bus
+		(pts
+			(xy 109.22 90.17) (xy 109.22 76.2)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d486abf4-b367-436e-bccf-e9a930f4965c")
+	)
+	(bus
+		(pts
+			(xy 113.03 72.39) (xy 106.68 72.39)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d89d5b42-8442-441a-bfa3-02fb92e842a5")
+	)
+	(bus
+		(pts
+			(xy 113.03 85.09) (xy 123.19 85.09)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ff2fa168-46b7-4fda-a78c-8728d6e8da8f")
+	)
+	(sheet
+		(at 59.69 63.5)
+		(size 46.99 17.78)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "18653b6b-16a9-42a5-aa43-f973c492057f")
+		(property "Sheetname" "SDCard/RTC"
+			(at 59.436 62.992 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "SDCard.kicad_sch"
+			(at 59.69 81.788 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(pin "SD{SD}" bidirectional
+			(at 106.68 72.39 0)
+			(uuid "9e7180ca-d593-46c6-af3c-d91f0a49ca75")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(pin "{I2C}" bidirectional
+			(at 106.68 76.2 0)
+			(uuid "4a62ec4a-5537-4cef-875f-8c6ab074fa62")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(instances
+			(project "AuraMon"
+				(path "/a56a6cb9-be24-458b-bbc5-62c4e942613b"
+					(page "5")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 123.19 77.47)
+		(size 46.99 36.83)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "3107aebe-6cee-4c51-9440-c2a704a4018d")
+		(property "Sheetname" "MCU"
+			(at 123.19 76.7584 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "MCU.kicad_sch"
+			(at 123.19 114.8846 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(pin "LAN{LAN}" input
+			(at 123.19 95.25 180)
+			(uuid "b1a18287-3dbf-4e68-ad10-99ff8df1798b")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "SD{SD}" input
+			(at 123.19 85.09 180)
+			(uuid "f074e48b-6a71-4058-ac93-79aba09bf94d")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "RS485{RS485}" input
+			(at 123.19 106.68 180)
+			(uuid "6f5fc266-7acf-4498-aee0-e49afd3d17e1")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(pin "{I2C}" bidirectional
+			(at 123.19 90.17 180)
+			(uuid "f0cf1106-2320-41bf-8e65-36f9d4f6d724")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(instances
+			(project "AuraMon"
+				(path "/a56a6cb9-be24-458b-bbc5-62c4e942613b"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 59.69 110.49)
+		(size 46.99 17.78)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "519a1f3f-72ea-47ad-81c0-cec023c6f1cc")
+		(property "Sheetname" "Modbus"
+			(at 59.69 109.7784 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "Modbus.kicad_sch"
+			(at 59.69 128.8546 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(pin "RS485{RS485}" bidirectional
+			(at 106.68 119.38 0)
+			(uuid "fde0cbf3-cd38-4312-9e17-7d6d29423fa1")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(instances
+			(project "AuraMon"
+				(path "/a56a6cb9-be24-458b-bbc5-62c4e942613b"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 59.69 135.89)
+		(size 46.99 19.05)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "87593607-4bd9-4adb-9c97-dd17cbeb833a")
+		(property "Sheetname" "Power"
+			(at 59.69 135.1784 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "Power.kicad_sch"
+			(at 59.69 155.5246 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "AuraMon"
+				(path "/a56a6cb9-be24-458b-bbc5-62c4e942613b"
+					(page "6")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 121.92 29.21)
+		(size 46.99 20.32)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "e6ad01c2-9f39-4b62-89a8-1ba1660b23e5")
+		(property "Sheetname" "Control"
+			(at 121.92 28.4984 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "Control.kicad_sch"
+			(at 121.92 50.1146 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "AuraMon"
+				(path "/a56a6cb9-be24-458b-bbc5-62c4e942613b"
+					(page "7")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 59.69 86.36)
+		(size 46.99 17.78)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0.0000)
+		)
+		(uuid "f67d584b-d1e6-46aa-a0d0-a11bceeab50d")
+		(property "Sheetname" "LAN"
+			(at 59.69 85.6484 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "LAN.kicad_sch"
+			(at 59.69 104.7246 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(pin "LAN{LAN}" input
+			(at 106.68 95.25 0)
+			(uuid "0f1226ab-b7fc-4879-aff0-c08241a38e54")
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(instances
+			(project "AuraMon"
+				(path "/a56a6cb9-be24-458b-bbc5-62c4e942613b"
+					(page "4")
+				)
+			)
+		)
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)
