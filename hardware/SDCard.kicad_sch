@@ -3275,7 +3275,7 @@
 				(hide yes)
 			)
 		)
-		(property "Footprint" "AuraMon:MOLEX_104031-0811"
+		(property "Footprint" "AuraMon:AMPHENOL_1140084168"
 			(at 153.67 77.47 0)
 			(effects
 				(font
@@ -3284,7 +3284,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/104/104031/1040310811_sd.pdf?inline"
+		(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8589834893502427136"
 			(at 101.6 92.71 0)
 			(effects
 				(font
@@ -3293,7 +3293,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "-25℃~+85℃ 1.42mm Connector and Ejector MicroSD Card (TF Card) Push-Pull SMD SD Card / Memory Card Connector ROHS"
+		(property "Description" "1.55mm Connector and Ejector MicroSD Card (TF Card) No Push-Pull SMD SD Card / Memory Card Connector ROHS"
 			(at 101.6 95.25 0)
 			(effects
 				(font
@@ -3302,7 +3302,7 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "1040310811"
+		(property "MPN" " 114-00841-68"
 			(at 101.6 95.25 0)
 			(effects
 				(font
@@ -3311,7 +3311,7 @@
 				(hide yes)
 			)
 		)
-		(property "Manufacturer" "MOLEX"
+		(property "Manufacturer" "Amphenol ICC"
 			(at 101.6 95.25 0)
 			(effects
 				(font
@@ -3320,7 +3320,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLCPCB Part #" "C585350"
+		(property "JLCPCB Part #" " C3195424"
 			(at 101.6 95.25 0)
 			(effects
 				(font
