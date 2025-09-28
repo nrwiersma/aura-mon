@@ -438,7 +438,7 @@
 			)
 			(embedded_fonts no)
 		)
-		(symbol "Device:LED_Dual_KAKA"
+		(symbol "Device:LED_Dual_AAKK"
 			(pin_names
 				(offset 0)
 				(hide yes)
@@ -446,23 +446,23 @@
 			(exclude_from_sim no)
 			(in_bom yes)
 			(on_board yes)
-			(property "Reference" "D3"
-				(at 0 5.842 0)
+			(property "Reference" "D"
+				(at 0 5.715 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
 				)
 			)
-			(property "Value" "Red Green"
-				(at -0.508 -5.588 0)
+			(property "Value" "LED_Dual_AAKK"
+				(at 0 -6.35 0)
 				(effects
 					(font
 						(size 1.27 1.27)
 					)
 				)
 			)
-			(property "Footprint" "LED_SMD:LED_LiteOn_LTST-C235KGKRKT"
+			(property "Footprint" ""
 				(at 0.762 0 0)
 				(effects
 					(font
@@ -471,7 +471,7 @@
 					(hide yes)
 				)
 			)
-			(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8588894590669082624"
+			(property "Datasheet" "~"
 				(at 0.762 0 0)
 				(effects
 					(font
@@ -480,34 +480,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "-30℃~+85℃ 130° 2V 571nm 574nm 75mW Red, Yellow Green Reverse Mount Water Clear SMD-4P,3.2x1.6mm LED Indication - Discrete ROHS"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "MPN" "LTST-C235KGKRKT"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Manufacturer" "Lite-On"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "JLCPCB Part #" "C125110"
+			(property "Description" "Dual LED, cathodes on pins 3 and 4"
 				(at 0 0 0)
 				(effects
 					(font
@@ -534,7 +507,7 @@
 					(hide yes)
 				)
 			)
-			(symbol "LED_Dual_KAKA_0_1"
+			(symbol "LED_Dual_AAKK_0_1"
 				(polyline
 					(pts
 						(xy -5.08 2.54) (xy 2.032 2.54)
@@ -561,7 +534,7 @@
 				)
 				(polyline
 					(pts
-						(xy -1.27 3.81) (xy -1.27 1.27)
+						(xy -1.27 3.81) (xy -1.27 1.27) (xy 1.27 2.54) (xy -1.27 3.81)
 					)
 					(stroke
 						(width 0.254)
@@ -573,7 +546,7 @@
 				)
 				(polyline
 					(pts
-						(xy -1.27 -1.27) (xy -1.27 -3.81)
+						(xy -1.27 -1.27) (xy -1.27 -3.81) (xy 1.27 -2.54) (xy -1.27 -1.27)
 					)
 					(stroke
 						(width 0.254)
@@ -596,7 +569,7 @@
 				)
 				(polyline
 					(pts
-						(xy 1.27 3.81) (xy 1.27 1.27) (xy -1.27 2.54) (xy 1.27 3.81)
+						(xy 1.27 3.81) (xy 1.27 1.27)
 					)
 					(stroke
 						(width 0.254)
@@ -608,7 +581,7 @@
 				)
 				(polyline
 					(pts
-						(xy 1.27 -1.27) (xy 1.27 -3.81) (xy -1.27 -2.54) (xy 1.27 -1.27)
+						(xy 1.27 -1.27) (xy 1.27 -3.81)
 					)
 					(stroke
 						(width 0.254)
@@ -667,11 +640,11 @@
 					)
 				)
 			)
-			(symbol "LED_Dual_KAKA_1_1"
+			(symbol "LED_Dual_AAKK_1_1"
 				(pin input line
 					(at -7.62 2.54 0)
 					(length 3.048)
-					(name "K1"
+					(name "A1"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -689,25 +662,7 @@
 				(pin input line
 					(at -7.62 -2.54 0)
 					(length 3.048)
-					(name "K2"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "4"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-				(pin input line
-					(at 7.62 2.54 180)
-					(length 3.81)
-					(name "A1"
+					(name "A2"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -723,9 +678,9 @@
 					)
 				)
 				(pin input line
-					(at 7.62 -2.54 180)
+					(at 7.62 2.54 180)
 					(length 3.81)
-					(name "A2"
+					(name "K1"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -733,6 +688,24 @@
 						)
 					)
 					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 7.62 -2.54 180)
+					(length 3.81)
+					(name "K2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "4"
 						(effects
 							(font
 								(size 1.27 1.27)
@@ -4298,8 +4271,8 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:LED_Dual_KAKA")
-		(at 121.92 45.72 180)
+		(lib_id "Device:LED_Dual_AAKK")
+		(at 121.92 45.72 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4307,7 +4280,7 @@
 		(dnp no)
 		(uuid "c36e8924-45e9-4225-91fc-9d2d6b150339")
 		(property "Reference" "D3"
-			(at 121.92 51.562 0)
+			(at 121.92 39.878 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4315,24 +4288,15 @@
 			)
 		)
 		(property "Value" "Red Green"
-			(at 122.428 40.132 0)
+			(at 121.412 51.308 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "LED_SMD:LED_LiteOn_LTST-C235KGKRKT"
-			(at 121.158 45.72 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8588894590669082624"
-			(at 121.158 45.72 0)
+		(property "Footprint" "LED_SMD:LED_LiteOn_LTST-C295K_1.6x0.8mm"
+			(at 122.682 45.72 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4340,7 +4304,16 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "-30℃~+85℃ 130° 2V 571nm 574nm 75mW Red, Yellow Green Reverse Mount Water Clear SMD-4P,3.2x1.6mm LED Indication - Discrete ROHS"
+		(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8588931534900908032"
+			(at 122.682 45.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "-30℃~+85℃ 130° 20mA 2V 45mcd 571nm 574nm 75mW Red, Yellow Green Water Clear SMD-4P,1.6x0.8mm LED Indication - Discrete ROHS"
 			(at 121.92 45.72 0)
 			(effects
 				(font
@@ -4349,7 +4322,7 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "LTST-C235KGKRKT"
+		(property "MPN" "LTST-C295KGKRKT"
 			(at 121.92 45.72 0)
 			(effects
 				(font
@@ -4367,7 +4340,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLCPCB Part #" "C125110"
+		(property "JLCPCB Part #" "C364568"
 			(at 121.92 45.72 0)
 			(effects
 				(font
