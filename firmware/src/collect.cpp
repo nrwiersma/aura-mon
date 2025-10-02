@@ -35,7 +35,7 @@ void collect() {
     }
 
     const unsigned long tookTotal = millis() - startTotal;
-    Serial.printf("Collecting data took %dms", tookTotal);
+    Serial.printf("Collecting data took %dms\n", tookTotal);
 
     // TODO: collect stats about collection times.
 }
@@ -52,6 +52,10 @@ uint8_t readFrame(inputDevice *device) {
     float hz = float_abcd(data[8], data[9]);
 
     double volts = v * device->calibration;
+    if (device->reversed) {
+        volts = -volts;
+        a = -a;
+    }
     double va = volts * a;
     double watts = va * pf;
 

@@ -13,6 +13,9 @@
 
 #include <ModbusRTUMaster.h>
 
+#include <Wire.h>
+#include <RTClib.h>
+
 #include "log.h"
 #include "modbus.h"
 #include "device.h"
@@ -36,6 +39,8 @@ inline byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
 inline char hostname[] = "aura-mon";
 
 extern Wiznet5500lwIP eth;
+
+extern RTC_PCF8563 rtc;
 
 extern mutex_t sdMu;
 extern SdFs sd;

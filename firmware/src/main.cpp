@@ -2,6 +2,8 @@
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 
+RTC_PCF8563 rtc;
+
 mutex_t sdMu;
 SdFs sd;
 
@@ -37,6 +39,20 @@ void setup() {
     Serial.println("Ethernet Ready!");
     Serial.print("IP address: ");
     Serial.println(eth.localIP());
+
+    if (!rtc.begin(&Wire1)) {
+        Serial.println("No RTC detected");
+        while (1) { delay(1000); }
+    }
+    if (rtc.isrunning()) {
+        Serial.println("Running RTC detected");
+        if(rtc.lostPower()){
+            // TODO: mark RTC as power lost. Resync needed.
+        }
+        // TODO: mark RTC as running.
+    } else {
+        Serial.println("RTC is not running");
+    }
 }
 
 void loop() {
@@ -87,8 +103,10 @@ void setup1() {
     // assignModbusAddress(2);
 
     // TODO: temp until I have config.
-    devices[0] = new inputDevice(0);
-    devices[1] = new inputDevice(1);
+    devices[0] = new inputDevice(1);
+    devices[0]->enabled = true;
+    devices[1] = new inputDevice(2);
+    devices[1]->enabled = true;
 
     Serial.println("Modbus initialised");
 }
