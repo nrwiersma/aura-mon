@@ -31,7 +31,7 @@ public:
     : enabled(false),
     addr(addr),
     name(nullptr),
-    calibration(0.0f),
+    calibration(1.0f),
     reversed(false)
     {}
 
