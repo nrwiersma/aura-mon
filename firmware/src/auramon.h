@@ -17,11 +17,14 @@
 #include <RTClib.h>
 
 #include "log.h"
+#include "logger.h"
 #include "modbus.h"
 #include "device.h"
 #include "collect.h"
 
 #define DEBUG 1
+
+#define MESSAGE_LOG_PATH "/aura-mon/log.txt"
 
 #define ETH_INT  20
 
@@ -49,5 +52,10 @@ extern ModbusRTUMaster modbus;
 
 #define MAX_DEVICES 20
 extern inputDevice* *devices;
+
+extern logger msgLog;
+#define error(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
+#define info(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
+#define debug(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);
 
 #endif //FIRMWARE_AURAMON_H

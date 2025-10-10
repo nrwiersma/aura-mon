@@ -19,23 +19,19 @@ void collect() {
 
         if (const uint8_t err = readFrame(dev); err) {
             // TODO: Report the error.
-            Serial.printf("Could not read data from device %d: %s\n", dev->addr, modbusError(err));
+            error("Could not read data from device %d: %s", dev->addr, modbusError(err));
 
             continue;
         }
 
         const unsigned long took = millis() - start;
 
-        // TODO: Debug log.
         bucket curr = dev->current;
-        Serial.printf(
-            "%d: %.0fV %.3fW %.2fVA %.2fHz in \n",
-            dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took
-        );
+        debug("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms",dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
     }
 
     const unsigned long tookTotal = millis() - startTotal;
-    Serial.printf("Collecting data took %dms\n", tookTotal);
+   debug("Collecting data took %dms", tookTotal);
 
     // TODO: collect stats about collection times.
 }
