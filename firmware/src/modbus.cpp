@@ -51,8 +51,7 @@ void assignModbusAddress(uint16_t id) {
 
     if (const uint8_t err = modbus.writeSingleHoldingRegister(247, 0x1771, 5)) {
         // TODO: Debug log.
-        Serial.print("Could not set baudrate: ");
-        Serial.println(modbusError(err));
+        error("Could not set baudrate: %s", modbusError(err));
     }
 
     Serial1.begin(RS485_BAUDRATE);
@@ -62,7 +61,6 @@ void assignModbusAddress(uint16_t id) {
 
     uint16_t modbusAddress[] = {0x55AA,id};
     if (const uint8_t err = modbus.writeMultipleHoldingRegisters(0, 0x7530, modbusAddress, 2)) {
-        Serial.print("Could not write modbus address: ");
-        Serial.println(modbusError(err));
+        error("Could not write modbus address: %s", modbusError(err));
     }
 }
