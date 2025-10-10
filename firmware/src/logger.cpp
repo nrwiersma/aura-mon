@@ -44,7 +44,7 @@ void logger::writef(const uint8_t lvl, const char *format, va_list args) {
     }
 }
 
-const char lvls[][5] PROGMEM = {"unkn", "dbug", "info", "eror"};
+const char* lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
 
 void logger::write(const uint8_t lvl, const char *buffer, size_t size) {
     char *buf = new char[bufLen];
