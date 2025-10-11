@@ -22,9 +22,12 @@
 #include "device.h"
 #include "collect.h"
 
-#define DEBUG 1
+#define WAIT_FOR_SERIAL 1
 
 #define MESSAGE_LOG_PATH "/aura-mon/log.txt"
+
+#define LED_RED 10
+#define LED_GREEN 11
 
 #define ETH_INT  20
 

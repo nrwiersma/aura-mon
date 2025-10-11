@@ -41,9 +41,6 @@ public:
     void reset();
     void accumulate(uint32_t now);
     void setEnergy(double volts, double watts, double va, double hz);
-
-
-private:
 };
 
 #endif //FIRMWARE_CHANNEL_H
