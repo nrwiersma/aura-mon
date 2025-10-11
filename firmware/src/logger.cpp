@@ -4,6 +4,8 @@
 
 #include "auramon.h"
 
+const char* lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
+
 logger::logger() : restart(true), bufLen(256) {
     Serial.begin(115200);
 }
@@ -11,26 +13,25 @@ logger::logger() : restart(true), bufLen(256) {
 void logger::errorf(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
-    writef(3, format, arg);
+    writef(ERROR, format, arg);
     va_end(arg);
 }
 
 void logger::infof(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
-    writef(2, format, arg);
+    writef(INFO, format, arg);
     va_end(arg);
 }
 
 void logger::debugf(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
-    writef(1, format, arg);
+    writef(DEBUG, format, arg);
     va_end(arg);
 }
 
-
-void logger::writef(const uint8_t lvl, const char *format, va_list args) {
+void logger::writef(const LVL lvl, const char *format, va_list args) {
     char temp[64];
     char *buffer = temp;
     size_t len = vsnprintf(temp, sizeof(temp), format, args);
@@ -44,9 +45,7 @@ void logger::writef(const uint8_t lvl, const char *format, va_list args) {
     }
 }
 
-const char* lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
-
-void logger::write(const uint8_t lvl, const char *buffer, size_t size) {
+void logger::write(const LVL lvl, const char *buffer, size_t size) {
     char *buf = new char[bufLen];
     size_t bufPos = 0;
 
@@ -80,6 +79,7 @@ void logger::write(const uint8_t lvl, const char *buffer, size_t size) {
     }
 
     mutex_enter_blocking(&sdMu);
+    msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
     if (!msgFile) {
         String msgDir = MESSAGE_LOG_PATH;
         msgDir.remove(msgDir.indexOf('/', 1));

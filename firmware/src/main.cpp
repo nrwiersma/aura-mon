@@ -16,12 +16,16 @@ logger msgLog;
 extern void waitForSerial();
 
 void setup() {
+    pinMode(LED_RED, OUTPUT);
+    pinMode(LED_GREEN, OUTPUT);
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_RED, HIGH);
+    digitalWrite(LED_GREEN, HIGH);
 
     waitForSerial();
 
-    info("Booting");
+    info("Booting core 0");
 
     // Start the Ethernet port.
     // eth.setSPISpeed(33);
@@ -81,6 +85,8 @@ void loop() {
 void setup1() {
     waitForSerial();
 
+    info("Booting core 1");
+
     mutex_init(&sdMu);
     if (!sd.begin(SD_CONFIG)) {
         error("Failed to initialize SD Card");
@@ -130,8 +136,7 @@ void loop1() {
 }
 
 void waitForSerial() {
-    delay(1000);
-    if (DEBUG) {
+    if (WAIT_FOR_SERIAL) {
         while (!Serial) { delay(100); }
     }
 }

@@ -19,8 +19,15 @@ protected:
     bool restart;
     FsFile msgFile;
 
-    void writef(uint8_t lvl, const char *format, va_list args);
-    void write(uint8_t lvl, const char *buffer, size_t size);
+    enum LVL {
+        UNKNOWN,
+        DEBUG,
+        INFO,
+        ERROR
+    };
+
+    void writef(LVL lvl, const char *format, va_list args);
+    void write(LVL lvl, const char *buffer, size_t size);
 
 private:
     size_t bufLen;

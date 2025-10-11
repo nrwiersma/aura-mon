@@ -4,7 +4,7 @@
 
 #include "auramon.h"
 
-const inline char* modbusErrStr[] = {
+const inline char* modbusErrStr[] PROGMEM = {
     "success",
     "invalid id",
     "invalid buffer",
@@ -23,7 +23,7 @@ const inline char* modbusErrStr[] = {
     "unexpected quantity"
 };
 
-const inline char* modbusExcpStr[] = {
+const inline char* PROGMEM modbusExcpStr[] = {
     "illegal function",
     "illegal data address",
     "illegal data value",
@@ -50,8 +50,7 @@ void assignModbusAddress(uint16_t id) {
     delay(100);
 
     if (const uint8_t err = modbus.writeSingleHoldingRegister(247, 0x1771, 5)) {
-        // TODO: Debug log.
-        error("Could not set baudrate: %s", modbusError(err));
+        debug("Could not set baudrate: %s", modbusError(err));
     }
 
     Serial1.begin(RS485_BAUDRATE);
