@@ -27,11 +27,11 @@ void collect() {
         const unsigned long took = millis() - start;
 
         bucket curr = dev->current;
-        debug("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms",dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
+        debug("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms", dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
     }
 
     const unsigned long tookTotal = millis() - startTotal;
-   debug("Collecting data took %dms", tookTotal);
+    debug("Collecting data took %dms", tookTotal);
 
     // TODO: collect stats about collection times.
 }

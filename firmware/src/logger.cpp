@@ -72,25 +72,25 @@ void logger::write(const LVL lvl, const char *buffer, size_t size) {
     buf[bufPos++] = '\n';
 
     Serial.write(buf, bufPos);
-    if (lvl < 2) {
+    if (lvl < INFO) {
         // Do not write debug to file.
         delete[] buf;
         return;
     }
 
-    mutex_enter_blocking(&sdMu);
-    msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
-    if (!msgFile) {
-        String msgDir = MESSAGE_LOG_PATH;
-        msgDir.remove(msgDir.indexOf('/', 1));
-        sd.mkdir(msgDir.c_str());
-        msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
-    }
-    if (msgFile) {
-        msgFile.write(buf, bufPos);
-        msgFile.close();
-    }
-    mutex_exit(&sdMu);
+    // mutex_enter_blocking(&sdMu);
+    // msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
+    // if (!msgFile) {
+    //     String msgDir = MESSAGE_LOG_PATH;
+    //     msgDir.remove(msgDir.indexOf('/', 1));
+    //     sd.mkdir(msgDir.c_str());
+    //     msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
+    // }
+    // if (msgFile) {
+    //     msgFile.write(buf, bufPos);
+    //     msgFile.close();
+    // }
+    // mutex_exit(&sdMu);
 
     delete[] buf;
 }
