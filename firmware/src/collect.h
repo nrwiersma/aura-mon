@@ -5,8 +5,6 @@
 #ifndef FIRMWARE_SAMPLE_H
 #define FIRMWARE_SAMPLE_H
 
-void collect();
-uint8_t readFrame(inputDevice* device);
-float float_abcd(uint16_t hi, uint16_t lo);
+void collectTask(void* param);
 
 #endif //FIRMWARE_SAMPLE_H

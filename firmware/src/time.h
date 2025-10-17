@@ -5,6 +5,6 @@
 #ifndef FIRMWARE_TIME_H
 #define FIRMWARE_TIME_H
 
-void syncTime();
+void syncTime(void* param);
 
 #endif //FIRMWARE_TIME_H

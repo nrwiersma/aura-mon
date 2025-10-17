@@ -5,16 +5,12 @@
 #ifndef FIRMWARE_AURAMON_H
 #define FIRMWARE_AURAMON_H
 
-// #define SNTP_DEBUG LWIP_DBG_ON
-
 #include <Arduino.h>
 #include <FreeRTOS.h>
 
-#include <W5500lwIP.h>
-#include <pico/mutex.h>
-
-#include <SdFat.h>
 #include <SyncFS.h>
+
+#include <W5500lwIP.h>
 
 #include <ModbusRTUMaster.h>
 
@@ -29,7 +25,7 @@
 
 #define WAIT_FOR_SERIAL 1
 
-#define MESSAGE_LOG_PATH "/aura-mon/log.txt"
+#define MESSAGE_LOG_PATH "aura-mon/log.txt"
 
 #define LED_RED 10
 #define LED_GREEN 11
@@ -39,7 +35,6 @@
 #define SD_CLK 4
 #define SD_CMD 5
 #define SD_DAT0 6 // DAT[1:3] - 7:9
-#define SD_CONFIG SdioConfig(SD_CLK, SD_CMD, SD_DAT0)
 
 #define RS485_TX 0
 #define RS485_RX 1
@@ -49,12 +44,11 @@
 inline byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
 inline char hostname[] = "aura-mon";
 
+extern SyncFS syncFS;
+
 extern Wiznet5500lwIP eth;
 
 extern RTC_PCF8563 rtc;
-
-extern SdFs sd;
-extern SyncFS sfs;
 
 extern ModbusRTUMaster modbus;
 
@@ -62,8 +56,8 @@ extern ModbusRTUMaster modbus;
 extern inputDevice* devices[MAX_DEVICES];
 
 extern logger msgLog;
-#define error(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
-#define info(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
-#define debug(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);
+#define LOGE(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
+#define LOGI(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
+#define LOGD(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);
 
 #endif //FIRMWARE_AURAMON_H
