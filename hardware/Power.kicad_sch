@@ -2060,7 +2060,7 @@
 		(dnp no)
 		(uuid "5f7bc547-d7b6-4bf8-9eac-d4d0f9b35ef5")
 		(property "Reference" "R30"
-			(at 179.2478 101.6 90)
+			(at 171.958 101.6 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2068,7 +2068,7 @@
 			)
 		)
 		(property "Value" "1k"
-			(at 176.9364 101.6 90)
+			(at 173.99 101.6 90)
 			(effects
 				(font
 					(size 1.27 1.27)
