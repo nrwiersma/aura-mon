@@ -118,7 +118,7 @@ bool SyncFS::mkdir(const char *path) const {
 }
 
 bool SyncFS::exists(const char *path) const {
-    const auto args = fsOpParams{path, nullptr, 0};
+    const auto args = fsOpParams{path};
     auto *msg = new fsTaskMessage{fsTaskMessage::EXISTS, xTaskGetCurrentTaskHandle(), args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
         panic("SyncFS task send failed");
@@ -127,7 +127,7 @@ bool SyncFS::exists(const char *path) const {
 }
 
 bool SyncFS::remove(const char *path) const {
-    const auto args = fsOpParams{path, nullptr, 0};
+    const auto args = fsOpParams{path};
     auto *msg = new fsTaskMessage{fsTaskMessage::REMOVE, xTaskGetCurrentTaskHandle(), args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
         panic("SyncFS task send failed");
@@ -153,11 +153,7 @@ bool SyncFS::stat(const char *path, FileInfo *info) const {
     return ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
-size_t SyncFS::readFile(const char *path, char *out, const size_t size) const {
-    return readFileAt(path, out, size, 0);
-}
-
-size_t SyncFS::readFileAt(const char *path, char *out, size_t size, uint8_t offset) const {
+size_t SyncFS::readFile(const char *path, char *out, const size_t size, uint8_t offset) const {
     const auto args = fsOpParams{path, out, size, offset};
     auto *msg = new fsTaskMessage{fsTaskMessage::READ_FILE, xTaskGetCurrentTaskHandle(), args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
@@ -166,11 +162,7 @@ size_t SyncFS::readFileAt(const char *path, char *out, size_t size, uint8_t offs
     return ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
-size_t SyncFS::writeFile(const char *path, const char *data, size_t size) const {
-    return writeFileAt(path, data, size, 0);
-}
-
-size_t SyncFS::writeFileAt(const char *path, const char *data, size_t size, uint8_t offset) const {
+size_t SyncFS::writeFile(const char *path, const char *data, size_t size, uint8_t offset) const {
     const auto args = fsOpParams{path, (void *) data, size, offset};
     auto *msg = new fsTaskMessage{fsTaskMessage::WRITE_FILE, xTaskGetCurrentTaskHandle(), args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
@@ -188,8 +180,8 @@ size_t SyncFS::appendFile(const char *path, const char *data, size_t size) const
     return ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
-void SyncFS::writeFileAsync(const char *path, const char *data, size_t size) const {
-    const auto args = fsOpParams{path, (void *) data, size};
+void SyncFS::writeFileAsync(const char *path, const char *data, size_t size, uint8_t offset) const {
+    const auto args = fsOpParams{path, (void *) data, size, offset};
     auto *msg = new fsTaskMessage{fsTaskMessage::WRITE_FILE, nullptr, args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
         panic("SyncFS task send failed");
@@ -198,6 +190,14 @@ void SyncFS::writeFileAsync(const char *path, const char *data, size_t size) con
 
 void SyncFS::appendFileAsync(const char *path, const char *data, size_t size) const {
     const auto args = fsOpParams{path, (void *) data, size};
+    auto *msg = new fsTaskMessage{fsTaskMessage::APPEND_FILE, nullptr, args};
+    if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
+        panic("SyncFS task send failed");
+    }
+}
+
+void SyncFS::appendFileAsync(const char *path, const char *str) const {
+    const auto args = fsOpParams{path, (void *) str, strlen(str)};
     auto *msg = new fsTaskMessage{fsTaskMessage::APPEND_FILE, nullptr, args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
         panic("SyncFS task send failed");
