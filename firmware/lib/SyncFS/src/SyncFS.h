@@ -28,11 +28,10 @@ public:
     bool rename(const char* pathFrom, const char* pathTo) const;
     bool stat(const char *path, FileInfo *info) const;
 
-    size_t readFile(const char* path, char* out, size_t size, uint8_t offset = 0) const;
-    size_t writeFile(const char* path, const char* data, size_t size, uint8_t offset = 0) const;
-    size_t appendFile(const char* path, const char* data, size_t size) const;
-    void writeFileAsync(const char* path, const char* data, size_t size, uint8_t offset = 0) const;
-    void appendFileAsync(const char* path, const char* data, size_t size) const;
+    size_t readFile(const char* path, void* out, size_t size, uint8_t offset = 0) const;
+    size_t writeFile(const char* path, void* data, size_t size, uint8_t offset = 0) const;
+    size_t appendFile(const char* path, void* data, size_t size) const;
+    void appendFileAsync(const char* path, char* data, size_t size) const;
     void appendFileAsync(const char* path, const char *str) const;
 
 protected:
@@ -45,9 +44,9 @@ protected:
     bool _remove(const char* path) const;
     bool _stat(const char *path, FileInfo *info) const;
 
-    size_t _readFile(const char* path, char* out, size_t size, uint8_t offset) const;
-    size_t _writeFile(const char* path, const char* data, size_t size, uint8_t offset) const;
-    size_t _appendFile(const char* path,  const char* data, size_t size) const;
+    size_t _readFile(const char* path, void* out, size_t size, uint8_t offset) const;
+    size_t _writeFile(const char* path, const void* data, size_t size, uint8_t offset) const;
+    size_t _appendFile(const char* path,  const void* data, size_t size) const;
 
     friend void fsTask(void* param);
 };

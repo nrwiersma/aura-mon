@@ -71,9 +71,8 @@ void logger::write(const LVL lvl, const char *buffer, size_t size) {
     // Add CRLF.
     buf[bufPos++] = '\r';
     buf[bufPos++] = '\n';
-    buf[bufPos++] = '\0';
 
-    Serial.write(buf);
+    Serial.write(buf, bufPos);
     if (lvl < INFO) {
         // Do not write debug to file.
         delete[] buf;
@@ -90,5 +89,5 @@ void logger::write(const LVL lvl, const char *buffer, size_t size) {
         _restart = false;
     }
 
-    syncFS.appendFileAsync(MESSAGE_LOG_PATH, buf);
+    syncFS.appendFileAsync(MESSAGE_LOG_PATH, buf, bufPos);
 }

@@ -12,11 +12,12 @@ struct fsOpParams {
     void *const data;
     size_t size = 0;
     uint8_t offset = 0;
+    bool cleanup = false;
 };
 
 struct fsTaskMessage {
     enum Op: uint8_t {
-        MKDIR, EXISTS, REMOVE, RENAME, STAT, READ_FILE, WRITE_FILE, APPEND_FILE
+        MKDIR, EXISTS, REMOVE, RENAME, STAT,READ_FILE, WRITE_FILE, APPEND_FILE
     } op;
 
     TaskHandle_t task;
@@ -30,7 +31,8 @@ void fsTask(void *param) {
     fsTaskMessage *msg = nullptr;
     size_t size;
     bool ok;
-    char *buf;
+    char *str;
+    uint8_t *buf;
 
     while (true) {
         if (pdFALSE == xQueueReceive(syncFS->_queue, &msg, portMAX_DELAY)) {
@@ -59,27 +61,23 @@ void fsTask(void *param) {
                 xTaskNotify(msg->task, ok, eSetValueWithOverwrite);
                 break;
             case fsTaskMessage::READ_FILE:
-                size = syncFS->_readFile(msg->params.path, static_cast<char *>(msg->params.data), msg->params.size,
+                size = syncFS->_readFile(msg->params.path, msg->params.data, msg->params.size,
                                          msg->params.offset);
                 xTaskNotify(msg->task, size, eSetValueWithOverwrite);
                 break;
             case fsTaskMessage::WRITE_FILE:
-                buf = static_cast<char *>(msg->params.data);
-                size = syncFS->_writeFile(msg->params.path, buf, msg->params.size,
+                size = syncFS->_writeFile(msg->params.path, msg->params.data, msg->params.size,
                                           msg->params.offset);
-                if (msg->task) {
-                    xTaskNotify(msg->task, size, eSetValueWithOverwrite);
-                } else {
-                    delete[] buf;
-                }
+                xTaskNotify(msg->task, size, eSetValueWithOverwrite);
                 break;
             case fsTaskMessage::APPEND_FILE:
-                buf = static_cast<char *>(msg->params.data);
-                size = syncFS->_appendFile(msg->params.path, buf, msg->params.size);
+                str = static_cast<char *>(msg->params.data);
+                size = syncFS->_appendFile(msg->params.path, str, msg->params.size);
                 if (msg->task) {
                     xTaskNotify(msg->task, size, eSetValueWithOverwrite);
-                } else {
-                    delete[] buf;
+                }
+                if (msg->params.cleanup) {
+                    delete[] str;
                 }
                 break;
         }
@@ -153,7 +151,7 @@ bool SyncFS::stat(const char *path, FileInfo *info) const {
     return ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
-size_t SyncFS::readFile(const char *path, char *out, const size_t size, uint8_t offset) const {
+size_t SyncFS::readFile(const char *path, void *out, const size_t size, uint8_t offset) const {
     const auto args = fsOpParams{path, out, size, offset};
     auto *msg = new fsTaskMessage{fsTaskMessage::READ_FILE, xTaskGetCurrentTaskHandle(), args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
@@ -162,8 +160,8 @@ size_t SyncFS::readFile(const char *path, char *out, const size_t size, uint8_t 
     return ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
-size_t SyncFS::writeFile(const char *path, const char *data, size_t size, uint8_t offset) const {
-    const auto args = fsOpParams{path, (void *) data, size, offset};
+size_t SyncFS::writeFile(const char *path, void *data, size_t size, uint8_t offset) const {
+    const auto args = fsOpParams{path, data, size, offset};
     auto *msg = new fsTaskMessage{fsTaskMessage::WRITE_FILE, xTaskGetCurrentTaskHandle(), args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
         panic("SyncFS task send failed");
@@ -171,8 +169,8 @@ size_t SyncFS::writeFile(const char *path, const char *data, size_t size, uint8_
     return ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
-size_t SyncFS::appendFile(const char *path, const char *data, size_t size) const {
-    const auto args = fsOpParams{path, (void *) data, size};
+size_t SyncFS::appendFile(const char *path, void *data, size_t size) const {
+    const auto args = fsOpParams{path, data, size};
     auto *msg = new fsTaskMessage{fsTaskMessage::APPEND_FILE, xTaskGetCurrentTaskHandle(), args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
         panic("SyncFS task send failed");
@@ -180,16 +178,8 @@ size_t SyncFS::appendFile(const char *path, const char *data, size_t size) const
     return ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 }
 
-void SyncFS::writeFileAsync(const char *path, const char *data, size_t size, uint8_t offset) const {
-    const auto args = fsOpParams{path, (void *) data, size, offset};
-    auto *msg = new fsTaskMessage{fsTaskMessage::WRITE_FILE, nullptr, args};
-    if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
-        panic("SyncFS task send failed");
-    }
-}
-
-void SyncFS::appendFileAsync(const char *path, const char *data, size_t size) const {
-    const auto args = fsOpParams{path, (void *) data, size};
+void SyncFS::appendFileAsync(const char *path, char *data, size_t size) const {
+    const auto args = fsOpParams{path, data, size, 0, true};
     auto *msg = new fsTaskMessage{fsTaskMessage::APPEND_FILE, nullptr, args};
     if (!xQueueSend(_queue, &msg, portMAX_DELAY)) {
         panic("SyncFS task send failed");
@@ -237,19 +227,19 @@ bool SyncFS::_stat(const char *path, FileInfo *info) const {
     return true;
 }
 
-size_t SyncFS::_readFile(const char *path, char *out, size_t size, uint8_t offset) const {
+size_t SyncFS::_readFile(const char *path, void *out, size_t size, uint8_t offset) const {
     if (!_exists(path)) return 0;
 
     FsFile f = _fs->open(path, O_RDONLY);
     if (offset > 0) {
         f.seek(offset);
     }
-    const size_t n = f.readBytes(out, size);
+    const size_t n = f.read(out, size);
     f.close();
     return n;
 }
 
-size_t SyncFS::_writeFile(const char *path, const char *data, size_t size, uint8_t offset) const {
+size_t SyncFS::_writeFile(const char *path, const void *data, size_t size, uint8_t offset) const {
     bool trunc = offset == 0;
 
     oflag_t flags = O_WRITE | O_CREAT | O_TRUNC;
@@ -268,7 +258,7 @@ size_t SyncFS::_writeFile(const char *path, const char *data, size_t size, uint8
     return n;
 }
 
-size_t SyncFS::_appendFile(const char *path, const char *data, size_t size) const {
+size_t SyncFS::_appendFile(const char *path, const void *data, size_t size) const {
     FsFile f = _fs->open(path, O_WRITE | O_CREAT | O_APPEND);
     if (!f) return 0;
     const size_t n = f.write(data, size);
