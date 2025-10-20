@@ -4,6 +4,9 @@
 
 #include "auramon.h"
 
+uint8_t readFrame(inputDevice* device);
+float float_abcd(uint16_t hi, uint16_t lo);
+
 void collect() {
     // TODO: mutex or critical section.
 
@@ -19,7 +22,7 @@ void collect() {
 
         if (const uint8_t err = readFrame(dev); err) {
             // TODO: Report the error.
-            error("Could not read data from device %d: %s", dev->addr, modbusError(err));
+            LOGE("Could not read data from device %d: %s", dev->addr, modbusError(err));
 
             continue;
         }
@@ -27,11 +30,11 @@ void collect() {
         const unsigned long took = millis() - start;
 
         bucket curr = dev->current;
-        debug("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms", dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
+        LOGD("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms", dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
     }
 
     const unsigned long tookTotal = millis() - startTotal;
-    debug("Collecting data took %dms", tookTotal);
+    LOGD("Collecting data took %dms", tookTotal);
 
     // TODO: collect stats about collection times.
 }

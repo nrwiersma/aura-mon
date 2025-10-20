@@ -6,10 +6,11 @@ RTC_PCF8563 rtc;
 
 mutex_t sdMu;
 SdFs sd;
+volatile bool sdRunning = false;
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
-inputDevice * *devices = new inputDevice *[MAX_DEVICES];
+inputDevice *devices[MAX_DEVICES] = {};
 
 logger msgLog;
 
@@ -18,103 +19,77 @@ extern void waitForSerial();
 void setup() {
     pinMode(LED_RED, OUTPUT);
     pinMode(LED_GREEN, OUTPUT);
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HIGH);
     digitalWrite(LED_RED, HIGH);
     digitalWrite(LED_GREEN, HIGH);
 
     waitForSerial();
 
-    info("Booting core 0");
+    LOGD("Booting core 0");
+
+    // Wait for the SD Card to be initialised.
+    while (!sdRunning) {
+        delay(1);
+    }
 
     // Start the Ethernet port.
-    // eth.setSPISpeed(33);
+    eth.setSPISpeed(ETH_FREQ);
     eth.hostname("aura-mon");
     if (!eth.begin(mac)) {
-        error("No wired Ethernet hardware detected. Check pinouts, wiring.");
+        LOGE("No wired Ethernet hardware detected. Check pinouts, wiring.");
 
         while (true) { delay(1000); }
     }
-
-    // Wait until IP was acquired.
-    while (!eth.connected()) {
-        // Serial.println("Waiting for DHCP address..");
-        delay(500);
-    }
-
-    info("Ethernet Ready!");
-    info("IP address: %s", eth.localIP().toString().c_str());
 
     if (!rtc.begin(&Wire1)) {
-        error("No RTC detected");
-        while (true) { delay(1000); }
+        LOGE("No RTC detected");
     }
     if (rtc.isrunning()) {
-        info("Running RTC detected");
-        if (!rtc.lostPower()) {
-            DateTime dt = rtc.now();
-
-            if (time(nullptr) < 10000000) {
-                struct timeval tv;
-                tv.tv_sec = dt.unixtime();
-                tv.tv_usec = 0;
-                settimeofday(&tv, nullptr);
-
-                info("Time set from RTC");
-            } else {
-                info("Time already set from NTP");
-            }
-        } else {
-            info("RTC lost power. Time cannot be used");
+        if (rtc.lostPower()) {
+            LOGI("RTC lost power. Please check your battery");
         }
+        DateTime dt = rtc.now();
+        time_t ts = dt.unixtime();
+        struct timeval tv;
+        tv.tv_sec = ts;
+        tv.tv_usec = 0;
+        settimeofday(&tv, nullptr);
+        LOGI("RTC is running: Unix time %d", ts);
     } else {
-        info("RTC is not running. Waiting for time sync");
+        LOGI("RTC not running");
     }
 }
 
 void loop() {
-    digitalWrite(LED_BUILTIN, HIGH);
-
-    delay(1000);
-
-    digitalWrite(LED_BUILTIN, LOW);
-
-    delay(500);
+    delay(100);
 }
 
 void setup1() {
     waitForSerial();
 
-    info("Booting core 1");
+    LOGD("Booting core 1");
 
     mutex_init(&sdMu);
     if (!sd.begin(SD_CONFIG)) {
-        error("Failed to initialize SD Card");
-        // TODO: figure out how to get an error string.
-        // sd.initErrorPrint(&Serial);
-        // while (1) { delay(1000); }
+        Serial.println("Could not initialize SD Card. Halting");
+        sd.initErrorPrint(&Serial);
+
+        while (1) { delay(1000); }
     }
+    sdRunning = true;
 
-    info("Initialized SD Card!");
+    LOGI("Initialized SD Card!");
 
-    mutex_enter_timeout_ms(&sdMu, 500);
-    FsFile fTest = sd.open("/test.txt");
-    String str = fTest.readString();
-    fTest.close();
-    mutex_exit(&sdMu);
-
-    info("Got data from file: %s", str.c_str());
+    // mutex_enter_timeout_ms(&sdMu, 500);
+    // FsFile fTest = sd.open("/test.txt");
+    // String str = fTest.readString();
+    // fTest.close();
+    // mutex_exit(&sdMu);
+    //
+    // info("Got data from file: %s", str.c_str());
 
     Serial1.begin(RS485_BAUDRATE);
     modbus.begin(RS485_BAUDRATE);
     modbus.setTimeout(1000);
-
-    // if (const uint8_t err = modbus.writeSingleHoldingRegister(2, 0x2710, 0x5055)) {
-    //     Serial.print("Could not set locating: ");
-    //     Serial.println(modbusError(err));
-    // }
-
-    // assignModbusAddress(2);
 
     // TODO: temp until I have config.
     devices[0] = new inputDevice(1);
@@ -122,7 +97,7 @@ void setup1() {
     devices[1] = new inputDevice(2);
     devices[1]->enabled = true;
 
-    info("Modbus initialised");
+    LOGI("Modbus initialised");
 }
 
 void loop1() {

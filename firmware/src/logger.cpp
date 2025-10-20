@@ -6,7 +6,7 @@
 
 const char* lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
 
-logger::logger() : restart(true), bufLen(256) {
+logger::logger() : _restart(true) {
     Serial.begin(115200);
 }
 
@@ -46,14 +46,15 @@ void logger::writef(const LVL lvl, const char *format, va_list args) {
 }
 
 void logger::write(const LVL lvl, const char *buffer, size_t size) {
-    char *buf = new char[bufLen];
+    size_t bufSize = size+48;
+    auto *buf = new char[bufSize];
     size_t bufPos = 0;
 
     time_t now;
     time(&now);
     if (now > 10000000) {
         // We have a system time, use it in the log.
-        size_t len = strftime(buf, bufLen, PSTR("%Y-%m-%dT%H:%M:%SZ"), gmtime(&now));
+        size_t len = strftime(buf, bufSize, PSTR("%Y-%m-%dT%H:%M:%SZ"), gmtime(&now));
         buf[len] = ' ';
         bufPos = len + 1;
     }
@@ -78,19 +79,25 @@ void logger::write(const LVL lvl, const char *buffer, size_t size) {
         return;
     }
 
-    // mutex_enter_blocking(&sdMu);
-    // msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
-    // if (!msgFile) {
-    //     String msgDir = MESSAGE_LOG_PATH;
-    //     msgDir.remove(msgDir.indexOf('/', 1));
-    //     sd.mkdir(msgDir.c_str());
-    //     msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
-    // }
-    // if (msgFile) {
-    //     msgFile.write(buf, bufPos);
-    //     msgFile.close();
-    // }
-    // mutex_exit(&sdMu);
+    mutex_enter_blocking(&sdMu);
+    _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
+    if (!_msgFile) {
+        String msgDir = MESSAGE_LOG_PATH;
+        msgDir.remove(msgDir.indexOf('/', 1));
+        sd.mkdir(msgDir.c_str());
+        _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
+    }
+    if (_msgFile) {
+        if (_restart) {
+            _msgFile.write(PSTR("\r\n**** RESTART ****\r\n"));
+
+            _restart = false;
+        }
+
+        _msgFile.write(buf, bufPos);
+        _msgFile.close();
+    }
+    mutex_exit(&sdMu);
 
     delete[] buf;
 }

@@ -5,19 +5,11 @@
 #ifndef FIRMWARE_AURAMON_H
 #define FIRMWARE_AURAMON_H
 
-// #define SNTP_DEBUG LWIP_DBG_ON
-
 #include <Arduino.h>
-#include <FreeRTOS.h>
-
-#include <W5500lwIP.h>
 #include <pico/mutex.h>
-
 #include <SdFat.h>
-#include <SyncFS.h>
-
+#include <W5500lwIP.h>
 #include <ModbusRTUMaster.h>
-
 #include <Wire.h>
 #include <RTClib.h>
 
@@ -35,6 +27,7 @@
 #define LED_GREEN 11
 
 #define ETH_INT  20
+#define ETH_FREQ 40000000 // 40MHz
 
 #define SD_CLK 4
 #define SD_CMD 5
@@ -53,8 +46,8 @@ extern Wiznet5500lwIP eth;
 
 extern RTC_PCF8563 rtc;
 
+extern mutex_t sdMu;
 extern SdFs sd;
-extern SyncFS sfs;
 
 extern ModbusRTUMaster modbus;
 
@@ -62,8 +55,9 @@ extern ModbusRTUMaster modbus;
 extern inputDevice* devices[MAX_DEVICES];
 
 extern logger msgLog;
-#define error(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
-#define info(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
-#define debug(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);
+#define LOGE(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
+#define LOGI(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
+#define LOGD(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);
+
 
 #endif //FIRMWARE_AURAMON_H
