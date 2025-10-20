@@ -42,7 +42,7 @@ void collectTask(void *param) {
         // TODO: collect stats about collection times.
 
         if (tookTotal < 1000) {
-            vTaskDelay(pdMS_TO_TICKS(1000 - tookTotal));
+            delay(1000 - tookTotal);
         }
     }
 }

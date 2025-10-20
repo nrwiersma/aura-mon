@@ -67,13 +67,13 @@ void setup() {
         LOGI("RTC not running")
     }
 
-    // eth.setSPISpeed(40000000); // 40MHz.
-    // eth.hostname("aura-mon");
-    // if (!eth.begin(mac)) {
-    //     LOGE("No wired Ethernet hardware detected. Halting");
-    //
-    //     while (true) { delay(1000); }
-    // }
+    eth.setSPISpeed(40000000); // 40MHz.
+    eth.hostname("aura-mon");
+    if (!eth.begin(mac)) {
+        LOGE("No wired Ethernet hardware detected. Halting");
+
+        while (true) { delay(1000); }
+    }
 
     LOGI("Ethernet initialised");
 
