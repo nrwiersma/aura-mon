@@ -13,15 +13,16 @@
 #include <Wire.h>
 #include <RTClib.h>
 
-#include "log.h"
 #include "logger.h"
+#include "log.h"
+#include "task.h"
 #include "modbus.h"
 #include "device.h"
 #include "collect.h"
 
 #define WAIT_FOR_SERIAL 1
 
-#define MESSAGE_LOG_PATH "/aura-mon/log.txt"
+#define MESSAGE_LOG_PATH "aura-mon/log.txt"
 
 #define LED_RED 10
 #define LED_GREEN 11
@@ -59,5 +60,7 @@ extern logger msgLog;
 #define LOGI(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
 #define LOGD(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);
 
+uint32_t syncTime(void *param);
+uint32_t checkEthernet(void *param);
 
 #endif //FIRMWARE_AURAMON_H

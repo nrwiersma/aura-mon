@@ -90,7 +90,6 @@ void logger::write(const LVL lvl, const char *buffer, size_t size) {
     if (_msgFile) {
         if (_restart) {
             _msgFile.write(PSTR("\r\n**** RESTART ****\r\n"));
-
             _restart = false;
         }
 

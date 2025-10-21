@@ -1,20 +1,25 @@
 #include "auramon.h"
-
-Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
-
-RTC_PCF8563 rtc;
+#include "pico/multicore.h"
 
 mutex_t sdMu;
 SdFs sd;
-volatile bool sdRunning = false;
-
-ModbusRTUMaster modbus(Serial1, RS485_DE);
-
-inputDevice *devices[MAX_DEVICES] = {};
 
 logger msgLog;
 
-extern void waitForSerial();
+RTC_PCF8563 rtc;
+
+Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
+
+inputDevice *devices[MAX_DEVICES] = {};
+
+ModbusRTUMaster modbus(Serial1, RS485_DE);
+
+taskQueue c0Queue = {};
+taskQueue c1Queue = {};
+
+volatile bool setupComplete = false;
+
+void waitForSerial();
 
 void setup() {
     pinMode(LED_RED, OUTPUT);
@@ -24,24 +29,22 @@ void setup() {
 
     waitForSerial();
 
-    LOGD("Booting core 0");
+    LOGD("Booting");
 
-    // Wait for the SD Card to be initialised.
-    while (!sdRunning) {
-        delay(1);
+    mutex_init(&sdMu);
+    if (!sd.begin(SD_CONFIG)) {
+        Serial.println("Could not initialize SD Card. Halting");
+        sd.initErrorPrint(&Serial);
+
+        while (1) { delay(1000); }
     }
 
-    // Start the Ethernet port.
-    eth.setSPISpeed(ETH_FREQ);
-    eth.hostname("aura-mon");
-    if (!eth.begin(mac)) {
-        LOGE("No wired Ethernet hardware detected. Check pinouts, wiring.");
-
-        while (true) { delay(1000); }
-    }
+    LOGI("SD Card initialised");
 
     if (!rtc.begin(&Wire1)) {
         LOGE("No RTC detected");
+    } else {
+        LOGI("RTC initialised");
     }
     if (rtc.isrunning()) {
         if (rtc.lostPower()) {
@@ -57,39 +60,24 @@ void setup() {
     } else {
         LOGI("RTC not running");
     }
-}
 
-void loop() {
-    delay(100);
-}
+    eth.setSPISpeed(ETH_FREQ);
+    eth.hostname("aura-mon");
+    if (!eth.begin(mac)) {
+        LOGE("No wired Ethernet hardware detected.");
 
-void setup1() {
-    waitForSerial();
-
-    LOGD("Booting core 1");
-
-    mutex_init(&sdMu);
-    if (!sd.begin(SD_CONFIG)) {
-        Serial.println("Could not initialize SD Card. Halting");
-        sd.initErrorPrint(&Serial);
-
-        while (1) { delay(1000); }
+        while (true) { delay(1000); }
     }
-    sdRunning = true;
 
-    LOGI("Initialized SD Card!");
-
-    // mutex_enter_timeout_ms(&sdMu, 500);
-    // FsFile fTest = sd.open("/test.txt");
-    // String str = fTest.readString();
-    // fTest.close();
-    // mutex_exit(&sdMu);
-    //
-    // info("Got data from file: %s", str.c_str());
+    LOGI("Ethernet initialised");
 
     Serial1.begin(RS485_BAUDRATE);
     modbus.begin(RS485_BAUDRATE);
     modbus.setTimeout(1000);
+
+    LOGI("Modbus initialised");
+
+    setupComplete = true;
 
     // TODO: temp until I have config.
     devices[0] = new inputDevice(1);
@@ -97,7 +85,20 @@ void setup1() {
     devices[1] = new inputDevice(2);
     devices[1]->enabled = true;
 
-    LOGI("Modbus initialised");
+    c0Queue.add(syncTime, 5);
+    c0Queue.add(checkEthernet, 5);
+}
+
+void loop() {
+    if (!c0Queue.runNextTask()) {
+        delay(10);
+    }
+}
+
+void setup1() {
+    while (!setupComplete) {
+        delay(10);
+    }
 }
 
 void loop1() {
@@ -105,9 +106,12 @@ void loop1() {
 
     collect();
 
-    // The data only refreshes every second. Wait for the next run.
-    const unsigned long waitTimeMs = 1000 - (millis() - start);
-    delay(waitTimeMs);
+    // Run any available tasks until collection is ready.
+    while (millis() - start < 1000) {
+        if (!c1Queue.runNextTask()) {
+            delay(10);
+        }
+    }
 }
 
 void waitForSerial() {
