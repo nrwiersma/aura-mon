@@ -11,7 +11,7 @@
 #include <W5500lwIP.h>
 #include <ModbusRTUMaster.h>
 #include <Wire.h>
-#include <RTClib.h>
+#include <PCF85063A.h>
 
 #include "logger.h"
 #include "log.h"
@@ -45,7 +45,8 @@ inline char hostname[] = "aura-mon";
 
 extern Wiznet5500lwIP eth;
 
-extern RTC_PCF8563 rtc;
+extern PCF85063A rtc;
+extern bool rtcRunning;
 
 extern mutex_t sdMu;
 extern SdFs sd;
@@ -60,7 +61,7 @@ extern logger msgLog;
 #define LOGI(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
 #define LOGD(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);
 
-uint32_t syncTime(void *param);
+uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
 
 #endif //FIRMWARE_AURAMON_H

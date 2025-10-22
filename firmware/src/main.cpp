@@ -1,12 +1,12 @@
 #include "auramon.h"
-#include "pico/multicore.h"
 
 mutex_t sdMu;
 SdFs sd;
 
 logger msgLog;
 
-RTC_PCF8563 rtc;
+PCF85063A rtc;
+bool rtcRunning = false;
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 
@@ -41,21 +41,20 @@ void setup() {
 
     LOGI("SD Card initialised");
 
-    if (!rtc.begin(&Wire1)) {
-        LOGE("No RTC detected");
-    } else {
-        LOGI("RTC initialised");
-    }
-    if (rtc.isrunning()) {
+    rtc.begin(&Wire1);
+
+    LOGI("RTC initialised");
+
+    if (rtc.isRunning()) {
         if (rtc.lostPower()) {
             LOGI("RTC lost power. Please check your battery");
         }
-        DateTime dt = rtc.now();
-        time_t ts = dt.unixtime();
+        time_t ts = rtc.now();
         struct timeval tv;
         tv.tv_sec = ts;
         tv.tv_usec = 0;
         settimeofday(&tv, nullptr);
+        rtcRunning = true;
         LOGI("RTC is running: Unix time %d", ts);
     } else {
         LOGI("RTC not running");
@@ -73,7 +72,7 @@ void setup() {
 
     Serial1.begin(RS485_BAUDRATE);
     modbus.begin(RS485_BAUDRATE);
-    modbus.setTimeout(1000);
+    modbus.setTimeout(100);
 
     LOGI("Modbus initialised");
 
@@ -85,7 +84,7 @@ void setup() {
     devices[1] = new inputDevice(2);
     devices[1]->enabled = true;
 
-    c0Queue.add(syncTime, 5);
+    c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);
 }
 
