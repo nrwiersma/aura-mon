@@ -23,6 +23,7 @@
 #define WAIT_FOR_SERIAL 1
 
 #define MESSAGE_LOG_PATH "aura-mon/log.txt"
+#define DATA_LOG_PATH "aura-mon/data.log"
 
 #define LED_RED 10
 #define LED_GREEN 11
@@ -46,15 +47,15 @@ inline char hostname[] = "aura-mon";
 extern Wiznet5500lwIP eth;
 
 extern PCF85063A rtc;
-extern bool rtcRunning;
+extern bool      rtcRunning;
 
 extern mutex_t sdMu;
-extern SdFs sd;
+extern SdFs    sd;
 
 extern ModbusRTUMaster modbus;
 
 #define MAX_DEVICES 20
-extern inputDevice* devices[MAX_DEVICES];
+extern inputDevice *devices[MAX_DEVICES];
 
 extern logger msgLog;
 #define LOGE(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
@@ -63,5 +64,7 @@ extern logger msgLog;
 
 uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
+
+void collect();
 
 #endif //FIRMWARE_AURAMON_H

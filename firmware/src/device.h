@@ -4,38 +4,37 @@
 
 #ifndef FIRMWARE_CHANNEL_H
 #define FIRMWARE_CHANNEL_H
-#include <cstdint>
 
 struct bucket {
-    double volts;
-    double watts;
-    double va;
-    double hz;
-    double voltHrs;
-    double wattHrs;
-    double vaHrs;
-    double hzHrs;
+    double   volts;
+    double   watts;
+    double   va;
+    double   hz;
+    double   voltHrs;
+    double   wattHrs;
+    double   vaHrs;
+    double   hzHrs;
     uint32_t ts;
 };
 
 class inputDevice {
 public:
-    bool enabled;
+    bool    enabled;
     uint8_t addr;
-    char *name;
-    float calibration;
-    bool reversed;
-    bucket current;
+    char *  name;
+    float   calibration;
+    bool    reversed;
+    bucket  current;
 
     inputDevice(uint8_t addr)
-    : enabled(false),
-    addr(addr),
-    name(nullptr),
-    calibration(1.0f),
-    reversed(false)
-    {}
+        : enabled(false),
+          addr(addr),
+          name(nullptr),
+          calibration(1.0f),
+          reversed(false) {
+    }
 
-    ~inputDevice() {}
+    ~inputDevice() = default;
 
     bool isEnabled() const { return enabled; }
     void reset();

@@ -4,7 +4,7 @@
 
 #include "auramon.h"
 
-const inline char* modbusErrStr[] PROGMEM = {
+const inline char *modbusErrStr[] PROGMEM = {
     "success",
     "invalid id",
     "invalid buffer",
@@ -23,7 +23,7 @@ const inline char* modbusErrStr[] PROGMEM = {
     "unexpected quantity"
 };
 
-const inline char* PROGMEM modbusExcpStr[] = {
+const inline char * PROGMEM modbusExcpStr[] = {
     "illegal function",
     "illegal data address",
     "illegal data value",
@@ -36,7 +36,7 @@ const inline char* PROGMEM modbusExcpStr[] = {
     "gateway target device failed to respond"
 };
 
-const char* modbusError(uint8_t err) {
+const char *modbusError(uint8_t err) {
     if (err == MODBUS_RTU_MASTER_EXCEPTION_RESPONSE) {
         return modbusExcpStr[modbus.getExceptionResponse()];
     }
@@ -58,7 +58,7 @@ void assignModbusAddress(uint16_t id) {
 
     delay(100);
 
-    uint16_t modbusAddress[] = {0x55AA,id};
+    uint16_t modbusAddress[] = {0x55AA, id};
     if (const uint8_t err = modbus.writeMultipleHoldingRegisters(0, 0x7530, modbusAddress, 2)) {
         LOGE("Could not write modbus address: %s", modbusError(err));
     }

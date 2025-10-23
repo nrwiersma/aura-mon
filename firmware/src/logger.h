@@ -16,7 +16,7 @@ public:
     void debugf(const char *format, ...);
 
 protected:
-    bool _restart;
+    bool   _restart;
     FsFile _msgFile;
 
     enum LVL {

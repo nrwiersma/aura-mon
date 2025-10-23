@@ -15,13 +15,13 @@ struct ntp_timestamp_t {
 
 #pragma pack(push, 1)
 struct ntpPacket {
-    uint8_t flags;
-    uint8_t stratum;
-    int8_t poll;
-    int8_t precision;
-    int32_t rootDelay;
-    uint32_t rootDispersion;
-    uint8_t refClockIdent[4];
+    uint8_t         flags;
+    uint8_t         stratum;
+    int8_t          poll;
+    int8_t          precision;
+    int32_t         rootDelay;
+    uint32_t        rootDispersion;
+    uint8_t         refClockIdent[4];
     ntp_timestamp_t refTS;
     ntp_timestamp_t originateTS;
     ntp_timestamp_t recvTS;
@@ -51,7 +51,7 @@ uint32_t timeSync(void *param) {
     (void) param;
 
     static uint8_t srvIdx = 0;
-    WiFiUDP udp;
+    WiFiUDP        udp;
 
     if (millis() > 3628800000UL) {
         // The millisecond monotonic clock will roll over every 49 days.
@@ -65,15 +65,15 @@ uint32_t timeSync(void *param) {
         return rtcRunning ? 60 : 5;
     }
 
-    String srv = ntpSrvs[srvIdx++ % sizeof(ntpSrvs)];
+    String    srv = ntpSrvs[srvIdx++ % sizeof(ntpSrvs)];
     IPAddress srvIP;
     if (!eth.hostByName(srv.c_str(), srvIP)) {
         return rtcRunning ? 60 : 5;
     }
 
-    uint32_t sentTS = millis();
+    uint32_t        sentTS = millis();
     ntp_timestamp_t origTS = {sentTS / 1000, sentTS % 1000};
-    ntpPacket pkt;
+    ntpPacket       pkt;
     pkt.originateTS = origTS;
 
     udp.begin(ntpPort);
@@ -90,7 +90,7 @@ uint32_t timeSync(void *param) {
     }
 
     uint32_t recvTS = millis();
-    size_t pktSize = udp.read(reinterpret_cast<uint8_t *>(&pkt), sizeof(ntpPacket));
+    size_t   pktSize = udp.read(reinterpret_cast<uint8_t *>(&pkt), sizeof(ntpPacket));
     udp.stop();
 
     if (pktSize < sizeof(ntpPacket)) {
@@ -106,7 +106,7 @@ uint32_t timeSync(void *param) {
 
     timestamp_ntoh(&pkt.transmitTS);
     pkt.transmitTS.fraction /= 4294967UL; // Convert from fraction to ms.
-    uint32_t dur = recvTS - sentTS;
+    uint32_t       dur = recvTS - sentTS;
     struct timeval tv;
     tv.tv_sec = (pkt.transmitTS.seconds + (pkt.transmitTS.fraction + dur / 2) / 1000) - 2208988800UL;
     tv.tv_usec = (pkt.transmitTS.fraction + dur / 2) % 1000;

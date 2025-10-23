@@ -11,7 +11,7 @@ uint32_t checkEthernet(void *param) {
     static time_t lastConnect = 0;
 
     if (eth.isLinked() && eth.connected()) {
-        if(!lastConnect) {
+        if (!lastConnect) {
             lastConnect = time(NULL);
             LOGI("Ethernet connected: IP=%s", eth.localIP().toString().c_str());
         }
@@ -20,7 +20,7 @@ uint32_t checkEthernet(void *param) {
             lastConnect = 0;
             lastDisconnect = time(NULL);
             LOGI("Ethernet disconnected");
-        } else if (time(NULL) - lastDisconnect > 60*60) {
+        } else if (time(NULL) - lastDisconnect > 60 * 60) {
             LOGE("Ethernet disconnected for more than 60 minutes. Restarting");
             delay(500);
             rp2040.reboot();

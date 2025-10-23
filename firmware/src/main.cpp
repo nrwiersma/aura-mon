@@ -1,12 +1,12 @@
 #include "auramon.h"
 
 mutex_t sdMu;
-SdFs sd;
+SdFs    sd;
 
 logger msgLog;
 
 PCF85063A rtc;
-bool rtcRunning = false;
+bool      rtcRunning = false;
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 
@@ -49,7 +49,7 @@ void setup() {
         if (rtc.lostPower()) {
             LOGI("RTC lost power. Please check your battery");
         }
-        time_t ts = rtc.now();
+        time_t         ts = rtc.now();
         struct timeval tv;
         tv.tv_sec = ts;
         tv.tv_usec = 0;

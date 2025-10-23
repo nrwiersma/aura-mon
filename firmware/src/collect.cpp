@@ -4,8 +4,8 @@
 
 #include "auramon.h"
 
-uint8_t readFrame(inputDevice* device);
-float float_abcd(uint16_t hi, uint16_t lo);
+uint8_t readFrame(inputDevice *device);
+float   float_abcd(uint16_t hi, uint16_t lo);
 
 void collect() {
     // TODO: mutex or critical section.
@@ -64,7 +64,7 @@ uint8_t readFrame(inputDevice *device) {
 }
 
 float float_abcd(uint16_t hi, uint16_t lo) {
-    float f;
+    float    f;
     uint32_t i;
 
     i = ((uint32_t) hi << 16) + lo;

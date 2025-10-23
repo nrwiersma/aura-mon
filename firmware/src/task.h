@@ -12,10 +12,10 @@
 typedef std::function<uint32_t(void *param)> taskFunction;
 
 struct task {
-    uint32_t nextRun;
-    uint8_t priority;
+    uint32_t     nextRun;
+    uint8_t      priority;
     taskFunction func;
-    void *param;
+    void *       param;
 
     bool operator<(const task &o) const {
         if (nextRun > o.nextRun) {
@@ -30,7 +30,7 @@ struct task {
 
 class taskQueue {
 public:
-    void add(taskFunction func, uint8_t priority, void * param = nullptr);
+    void add(taskFunction func, uint8_t priority, void *param = nullptr);
     bool runNextTask();
 
 private:

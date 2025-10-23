@@ -25,7 +25,7 @@ bool taskQueue::runNextTask() {
 
     auto nextRun = t.func(t.param);
     if (nextRun > 0) {
-        t.nextRun = nextRun+millis();
+        t.nextRun = nextRun + millis();
         _tasks.push(t);
     }
     return true;

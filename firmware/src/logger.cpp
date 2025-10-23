@@ -4,7 +4,7 @@
 
 #include "auramon.h"
 
-const char* lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
+const char *lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
 
 logger::logger() : _restart(true) {
     Serial.begin(115200);
@@ -32,8 +32,8 @@ void logger::debugf(const char *format, ...) {
 }
 
 void logger::writef(const LVL lvl, const char *format, va_list args) {
-    char temp[64];
-    char *buffer = temp;
+    char   temp[64];
+    char * buffer = temp;
     size_t len = vsnprintf(temp, sizeof(temp), format, args);
     if (len > sizeof(temp) - 1) {
         buffer = new char[len + 1];
@@ -46,8 +46,8 @@ void logger::writef(const LVL lvl, const char *format, va_list args) {
 }
 
 void logger::write(const LVL lvl, const char *buffer, size_t size) {
-    size_t bufSize = size+48;
-    auto *buf = new char[bufSize];
+    size_t bufSize = size + 48;
+    auto * buf = new char[bufSize];
     size_t bufPos = 0;
 
     time_t now;
