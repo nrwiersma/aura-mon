@@ -4,22 +4,110 @@
 
 #include "auramon.h"
 
-int8_t log::begin() {
-    if (_file) return 0;
+static uint32_t lastMS;
+
+void initLogData() {
+    lastMS = millis();
+}
+
+uint32_t logData(void *param) {
+    (void) param;
+
+    static bool   running;
+    static auto * rec = new logRecord;
+    static double hzHrs = 0;
+    static double voltHrs[15] = {};
+    static double wattHrs[15] = {};
+    static double vaHrs[15] = {};
+    const auto    start = millis();
+
+    if (!running) {
+        if (datalog.entries()) {
+            datalog.read(datalog.lastTS(), rec);
+        } else {
+            rec->ts = time(nullptr);
+            rec->ts -= rec->ts % datalog.interval();
+        }
+
+        // If the clock is not running, or we are early, come back.
+        auto t = time(nullptr) % datalog.interval();
+        if (!rtcRunning || t > 0) {
+            rec->ts += datalog.interval();
+            return (datalog.interval() - t) * 1000;
+        }
+        running = true;
+    }
+
+    // If we are a little early, reschedule.
+    if (time(nullptr) < rec->ts) return 2;
+
+    // Grab a copy of the current record to queue integrations.
+    auto *oldRec = new logRecord;
+    memcpy(oldRec, rec, sizeof(logRecord));
+    oldRec->ts -= datalog.interval();
+
+    // Update the current record.
+    const uint32_t nowMS = millis();
+    const double   elapsedHrs = static_cast<double>(nowMS - lastMS) / MS_PER_HOUR;
+    double         currHZHrs = 0;
+    uint8_t        count = 0;
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        const auto dev = devices[i];
+        if (!dev || !dev->isEnabled()) {
+            voltHrs[i] = 0;
+            wattHrs[i] = 0;
+            vaHrs[i] = 0;
+            continue;
+        }
+
+        dev->accumulate(nowMS);
+        rec->voltHrs[i] += dev->current.voltHrs - voltHrs[i];
+        voltHrs[i] = dev->current.voltHrs;
+        rec->wattHrs[i] += dev->current.wattHrs - wattHrs[i];
+        wattHrs[i] = dev->current.wattHrs;
+        rec->vaHrs[i] += dev->current.vaHrs - vaHrs[i];
+        vaHrs[i] = dev->current.vaHrs;
+        currHZHrs += dev->current.hzHrs - hzHrs;
+        count++;
+    }
+    currHZHrs = currHZHrs / count;
+    rec->hzHrs = currHZHrs - hzHrs;
+    hzHrs = currHZHrs;
+
+    lastMS = nowMS;
+    rec->logHours += elapsedHrs;
+
+    // Write the record.
+    datalog.write(rec);
+
+    // Grab a copy of the new record and queue the integrations.
+    auto *newRec = new logRecord;
+    memcpy(newRec, rec, sizeof(logRecord));
+    // TODO: add to integration queue, for now just delete the records.
+    delete oldRec;
+    delete newRec;
+
+    const auto took = millis() - start;
+    // TODO: log the stats.
+    LOGD("Writing log took %dms", took);
+
+    rec->ts += datalog.interval();
+    return datalog.interval() * 1000 - took;
+}
+
+bool dataLog::begin() {
+    if (_file) return true;
 
     mutex_enter_blocking(&sdMu);
     if (!sd.exists(DATA_LOG_PATH)) {
         String msgDir = DATA_LOG_PATH;
         msgDir.remove(msgDir.indexOf('/', 1));
-        if (!sd.exists(msgDir.c_str())) {
-            if (!sd.mkdir(msgDir.c_str())) {
-                return 1;
-            }
-        }
+        sd.mkdir(msgDir.c_str());
     }
-    _file = sd.open(DATA_LOG_PATH);
+    _file = sd.open(DATA_LOG_PATH, O_RDWR | O_CREAT);
     if (!_file) {
-        return 1;
+        mutex_exit(&sdMu);
+        return false;
     }
 
     _fileSize = _file.size();
@@ -28,6 +116,8 @@ int8_t log::begin() {
         _first = readKey(0);
         _last = readKey(_fileSize - _recordSize);
         _entries = _fileSize / _recordSize;
+
+        LOGD("Found %d entries in log file", _entries);
     }
 
     if (_first.ts > _last.ts) {
@@ -38,23 +128,30 @@ int8_t log::begin() {
         _last = readKey(_wrapPos - _recordSize);
     }
 
-    if (_last.rev - _first.rev + 1 != _entries) {
+    if (_fileSize && _last.rev - _first.rev + 1 != _entries) {
         LOGE("log: File %s damaged.\r\n", DATA_LOG_PATH);
         LOGE("log: Deleting %s and restarting.\r\n", DATA_LOG_PATH);
         _file.close();
         sd.remove(DATA_LOG_PATH);
         rp2040.reboot();
     }
-    mutex_exit(&sdMu);
 
-    return 0;
+    mutex_exit(&sdMu);
+    return true;
 }
 
-int8_t log::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
+uint32_t dataLog::entries() {
+    mutex_enter_blocking(&_mu);
+    auto e = _entries;
+    mutex_exit(&_mu);
+    return e;
+}
+
+int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     ts -= ts % _interval;
 
     if (timeoutMS > 0) {
-        if (!mutex_enter_timeout_ms(&sdMu, timeoutMS)) {
+        if (!mutex_enter_timeout_ms(&_mu, timeoutMS)) {
             return -1;
         }
     } else {
@@ -71,6 +168,7 @@ int8_t log::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     }
     if (ts < _first.ts) {
         // Before the beginning of the file.
+
         readRev(_first.rev, rec);
         rec->ts = ts;
 
@@ -85,16 +183,19 @@ int8_t log::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
             mutex_exit(&_mu);
             return 0;
         }
+
         mutex_exit(&_mu);
         return 1;
     }
 
     // Check the last records cache if we are in the time range.
-    if (ts >= _last.ts-_lastCacheSize*_interval) {
+    if (ts >= _last.ts - _lastCacheSize * _interval) {
         for (int i = 0; i < _lastCacheSize; i++) {
             uint32_t cacheTS = _lastCache[i].ts;
             if (cacheTS == ts) {
                 memcpy(rec, &_lastCache[i], sizeof(logRecord));
+
+                mutex_exit(&_mu);
                 return 0;
             }
         }
@@ -108,7 +209,7 @@ int8_t log::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     // Limit the search space by checking the read cache,
     // it will give hits in the correct direction to search.
     for (int i = 0; i < _readCacheSize; i++) {
-        uint32_t cacheTS = _readCache[i].ts;
+        const uint32_t cacheTS = _readCache[i].ts;
         if (cacheTS == ts) {
             // If the cache position is not changed to the current
             // item, you could potentially fill the read cache with
@@ -134,7 +235,7 @@ int8_t log::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     return 0;
 }
 
-int8_t log::write(logRecord *rec) {
+int8_t dataLog::write(logRecord *rec) {
     mutex_enter_blocking(&_mu);
 
     if (!_file) {
@@ -185,22 +286,21 @@ int8_t log::write(logRecord *rec) {
     if (_first.ts == 0) {
         _first.ts = rec->ts;
     }
+    _entries++;
     _fileIO++;
 
     mutex_exit(&_mu);
     return 0;
 }
 
-log::logRecordKey log::readKey(uint32_t pos) {
-    mutex_enter_blocking(&sdMu);
+dataLog::logRecordKey dataLog::readKey(uint32_t pos) {
     auto key = logRecordKey{};
     _file.seek(pos);
     _file.read(&key, sizeof(logRecordKey));
-    mutex_exit(&sdMu);
     return key;
 }
 
-uint8_t log::readRev(uint32_t rev, logRecord *rec) {
+uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
     if (rev < _first.rev || rev > _last.rev) {
         return 1;
     }
@@ -217,9 +317,9 @@ uint8_t log::readRev(uint32_t rev, logRecord *rec) {
     return 0;
 }
 
-void log::search(const uint32_t ts, logRecord *        rec,
-                 const uint32_t lowTS, const uint32_t  lowRev,
-                 const uint32_t highTS, const uint32_t highRev) {
+void dataLog::search(const uint32_t ts, logRecord *        rec,
+                     const uint32_t lowTS, const uint32_t  lowRev,
+                     const uint32_t highTS, const uint32_t highRev) {
     // This is straight out of IoTaWatt and very smart. Check if this section of the
     // file is gapless, and if not, potentially drastically limit the search space by
     // getting the limit from the other limits' perspective.
@@ -258,7 +358,8 @@ void log::search(const uint32_t ts, logRecord *        rec,
     search(ts, rec, lowTS, lowRev, rec->ts, rec->rev);
 }
 
-uint32_t log::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const uint32_t highPos, const uint32_t highTS) {
+uint32_t dataLog::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const uint32_t highPos,
+                              const uint32_t highTS) {
     if (highPos - lowPos == _recordSize) {
         return highPos;
     }

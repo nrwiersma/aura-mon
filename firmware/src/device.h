@@ -15,6 +15,11 @@ struct bucket {
     double   vaHrs;
     double   hzHrs;
     uint32_t ts;
+
+    bucket() : volts(0), watts(0), va(0), hz(0),
+               voltHrs(0), wattHrs(0), vaHrs(0), hzHrs(0),
+               ts(millis()) {
+    }
 };
 
 class inputDevice {

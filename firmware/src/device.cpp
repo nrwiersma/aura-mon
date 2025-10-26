@@ -16,7 +16,7 @@ void inputDevice::accumulate(uint32_t now) {
     if (now <= current.ts) {
         return;
     }
-    double hrs = double((uint32_t) (now - current.ts)) / 3600000E0;
+    const double hrs = static_cast<double>(now - current.ts) / MS_PER_HOUR;
     current.voltHrs += current.volts * hrs;
     current.wattHrs += current.watts * hrs;
     current.vaHrs += current.va * hrs;

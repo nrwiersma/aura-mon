@@ -14,16 +14,16 @@
 #include <PCF85063A.h>
 
 #include "logger.h"
-#include "log.h"
+#include "datalog.h"
 #include "task.h"
 #include "modbus.h"
 #include "device.h"
-#include "collect.h"
 
 #define WAIT_FOR_SERIAL 1
+#define MS_PER_HOUR 3600000UL
 
 #define MESSAGE_LOG_PATH "aura-mon/log.txt"
-#define DATA_LOG_PATH "aura-mon/data.log"
+#define DATA_LOG_PATH    "aura-mon/data.log"
 
 #define LED_RED 10
 #define LED_GREEN 11
@@ -54,8 +54,10 @@ extern SdFs    sd;
 
 extern ModbusRTUMaster modbus;
 
-#define MAX_DEVICES 20
+#define MAX_DEVICES 15
 extern inputDevice *devices[MAX_DEVICES];
+
+extern dataLog datalog;
 
 extern logger msgLog;
 #define LOGE(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
@@ -64,6 +66,7 @@ extern logger msgLog;
 
 uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
+uint32_t logData(void *param);
 
 void collect();
 

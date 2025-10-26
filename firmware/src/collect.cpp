@@ -12,8 +12,7 @@ void collect() {
 
     const unsigned long startTotal = millis();
 
-    for (int i = 0; i < MAX_DEVICES; i++) {
-        inputDevice *dev = devices[i];
+    for (const auto dev : devices) {
         if (!dev || !dev->isEnabled()) {
             continue;
         }

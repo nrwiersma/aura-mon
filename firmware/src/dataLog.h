@@ -24,26 +24,29 @@ struct logRecord {
     };
 };
 
-class log {
+class dataLog {
 public:
-    explicit log(int interval = 5, int days = 180) : _interval(interval),
-                                                     _recordSize(sizeof(logRecord)),
-                                                     _fileSize(0),
-                                                     _maxFileSize(days * _recordSize * (86400UL / interval)),
-                                                     _entries(0),
-                                                     _first{},
-                                                     _last{},
-                                                     _wrapPos(0),
-                                                     _lastCacheSize(60 / interval),
-                                                     _fileIO(0) {
+    explicit dataLog(int interval = 5, int days = 180) : _interval(interval),
+                                                         _recordSize(sizeof(logRecord)),
+                                                         _fileSize(0),
+                                                         _maxFileSize(days * _recordSize * (86400UL / interval)),
+                                                         _entries(0),
+                                                         _first{},
+                                                         _last{},
+                                                         _wrapPos(0),
+                                                         _lastCacheSize(60 / interval),
+                                                         _fileIO(0) {
         mutex_init(&_mu);
         _readCache = new logRecordKey[_readCacheSize];
         _lastCache = new logRecord[_lastCacheSize];
     };
 
-    int8_t begin();
-    int8_t read(uint32_t ts, logRecord *rec, uint32_t timeoutMS = 100);
-    int8_t write(logRecord *rec);
+    bool     begin();
+    uint32_t entries();
+    int      interval() const { return _interval; }
+    uint32_t lastTS() const { return _last.ts; }
+    int8_t   read(uint32_t ts, logRecord *rec, uint32_t timeoutMS = 100);
+    int8_t   write(logRecord *rec);
 
 private:
     struct logRecordKey {
@@ -77,10 +80,12 @@ private:
 
     logRecordKey readKey(uint32_t pos);
     uint8_t      readRev(uint32_t rev, logRecord *rec);
-    void         search(uint32_t   ts,logRecord *rec,
-                uint32_t           lowTS, uint32_t  lowRev,
-                uint32_t           highTS, uint32_t highRev);
+    void         search(uint32_t ts, logRecord *  rec,
+                uint32_t         lowTS, uint32_t  lowRev,
+                uint32_t         highTS, uint32_t highRev);
     uint32_t findWrapPos(uint32_t highPos, uint32_t highTS, uint32_t lowPos, uint32_t lowTS);
 };
+
+void initLogData();
 
 #endif //FIRMWARE_LOG_H

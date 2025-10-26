@@ -11,6 +11,7 @@ bool      rtcRunning = false;
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 
 inputDevice *devices[MAX_DEVICES] = {};
+dataLog      datalog;
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
@@ -70,6 +71,14 @@ void setup() {
 
     LOGI("Ethernet initialised");
 
+    if (!datalog.begin()) {
+        LOGE("Datalog could not be opened.");
+
+        while (true) { delay(1000); }
+    }
+
+    LOGI("Datalog initialised");
+
     Serial1.begin(RS485_BAUDRATE);
     modbus.begin(RS485_BAUDRATE);
     modbus.setTimeout(100);
@@ -86,6 +95,8 @@ void setup() {
 
     c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);
+
+    c1Queue.add(logData, 7);
 }
 
 void loop() {
@@ -98,6 +109,10 @@ void setup1() {
     while (!setupComplete) {
         delay(10);
     }
+
+    // Set the initial monotonic ts so we know
+    // how long it took before the first log write.
+    initLogData();
 }
 
 void loop1() {
@@ -114,7 +129,7 @@ void loop1() {
 }
 
 void waitForSerial() {
-    if (WAIT_FOR_SERIAL) {
+    if constexpr (WAIT_FOR_SERIAL) {
         while (!Serial) { delay(100); }
     }
 }
