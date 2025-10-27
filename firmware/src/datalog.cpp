@@ -21,21 +21,28 @@ uint32_t logData(void *param) {
     static double vaHrs[15] = {};
     const auto    start = millis();
 
+    // If the clock is not running, try again later.
+    if (!rtcRunning) {
+        return 10;
+    }
+
     if (!running) {
         if (datalog.entries()) {
             datalog.read(datalog.lastTS(), rec);
-        } else {
-            rec->ts = time(nullptr);
-            rec->ts -= rec->ts % datalog.interval();
         }
 
-        // If the clock is not running, or we are early, come back.
-        auto t = time(nullptr) % datalog.interval();
-        if (!rtcRunning || t > 0) {
+        // Do not try and fill the gaps, just skip ahead.
+        const auto now = time(nullptr);
+        rec->ts = now;
+        rec->ts -= rec->ts % datalog.interval();
+
+        running = true;
+
+        // We are early, come back.
+        if (auto t = now % datalog.interval(); t > 0) {
             rec->ts += datalog.interval();
             return (datalog.interval() - t) * 1000;
         }
-        running = true;
     }
 
     // If we are a little early, reschedule.
@@ -43,10 +50,9 @@ uint32_t logData(void *param) {
 
     // Grab a copy of the current record to queue integrations.
     auto *oldRec = new logRecord;
-    memcpy(oldRec, rec, sizeof(logRecord));
+    rp2040.memcpyDMA(oldRec, rec, sizeof(logRecord));
     oldRec->ts -= datalog.interval();
 
-    // Update the current record.
     const uint32_t nowMS = millis();
     const double   elapsedHrs = static_cast<double>(nowMS - lastMS) / MS_PER_HOUR;
     double         currHZHrs = 0;
@@ -82,16 +88,20 @@ uint32_t logData(void *param) {
 
     // Grab a copy of the new record and queue the integrations.
     auto *newRec = new logRecord;
-    memcpy(newRec, rec, sizeof(logRecord));
+    rp2040.memcpyDMA(newRec, rec, sizeof(logRecord));
     // TODO: add to integration queue, for now just delete the records.
     delete oldRec;
     delete newRec;
 
     const auto took = millis() - start;
     // TODO: log the stats.
-    LOGD("Writing log took %dms", took);
+    LOGD("Wrote record %d to log took %dms", rec->ts, took);
 
     rec->ts += datalog.interval();
+    if (rec->ts < time(nullptr)) {
+        // We are playing catchup, write at the next possible moment.
+        return 1;
+    }
     return datalog.interval() * 1000 - took;
 }
 
@@ -193,7 +203,7 @@ int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
         for (int i = 0; i < _lastCacheSize; i++) {
             uint32_t cacheTS = _lastCache[i].ts;
             if (cacheTS == ts) {
-                memcpy(rec, &_lastCache[i], sizeof(logRecord));
+                rp2040.memcpyDMA(rec, &_lastCache[i], sizeof(logRecord));
 
                 mutex_exit(&_mu);
                 return 0;
@@ -323,8 +333,8 @@ void dataLog::search(const uint32_t ts, logRecord *        rec,
     // This is straight out of IoTaWatt and very smart. Check if this section of the
     // file is gapless, and if not, potentially drastically limit the search space by
     // getting the limit from the other limits' perspective.
-    uint32_t floorRev = max(lowRev, highRev - (uint32_t) ((highTS - ts) / _interval));
-    uint32_t ceilRev = min(highRev, lowRev + (uint32_t) ((ts - lowTS) / _interval));
+    uint32_t floorRev = max(lowRev, highRev - (highTS - ts) / _interval);
+    uint32_t ceilRev = min(highRev, lowRev + (ts - lowTS) / _interval);
     if (ceilRev < highRev || floorRev == ceilRev) {
         readRev(ceilRev, rec);
         if (rec->ts == ts) {
@@ -343,7 +353,7 @@ void dataLog::search(const uint32_t ts, logRecord *        rec,
     }
 
     // That did not narrow things, follow a normal binary search.
-    if ((highRev - lowRev) <= 1) {
+    if (highRev - lowRev <= 1) {
         readRev(lowRev, rec);
         return;
     }

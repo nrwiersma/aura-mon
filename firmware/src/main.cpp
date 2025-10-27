@@ -85,8 +85,6 @@ void setup() {
 
     LOGI("Modbus initialised");
 
-    setupComplete = true;
-
     // TODO: temp until I have config.
     devices[0] = new inputDevice(1);
     devices[0]->enabled = true;
@@ -97,6 +95,8 @@ void setup() {
     c0Queue.add(checkEthernet, 5);
 
     c1Queue.add(logData, 7);
+
+    setupComplete = true;
 }
 
 void loop() {

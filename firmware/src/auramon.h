@@ -20,6 +20,7 @@
 #include "device.h"
 
 #define WAIT_FOR_SERIAL 1
+
 #define MS_PER_HOUR 3600000UL
 
 #define MESSAGE_LOG_PATH "aura-mon/log.txt"
