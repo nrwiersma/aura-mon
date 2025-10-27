@@ -73,11 +73,11 @@ uint32_t logData(void *param) {
         wattHrs[i] = dev->current.wattHrs;
         rec->vaHrs[i] += dev->current.vaHrs - vaHrs[i];
         vaHrs[i] = dev->current.vaHrs;
-        currHZHrs += dev->current.hzHrs - hzHrs;
+        currHZHrs += dev->current.hzHrs;
         count++;
     }
     currHZHrs = currHZHrs / count;
-    rec->hzHrs = currHZHrs - hzHrs;
+    rec->hzHrs += currHZHrs - hzHrs;
     hzHrs = currHZHrs;
 
     lastMS = nowMS;
