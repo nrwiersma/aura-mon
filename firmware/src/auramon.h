@@ -12,11 +12,14 @@
 #include <ModbusRTUMaster.h>
 #include <Wire.h>
 #include <PCF85063A.h>
+#include <ESPAsyncWebServer.h>
+#include <ArduinoJSON.h>
 
 #include "logger.h"
 #include "datalog.h"
 #include "task.h"
 #include "modbus.h"
+#include "api.h"
 #include "device.h"
 
 #define WAIT_FOR_SERIAL 1

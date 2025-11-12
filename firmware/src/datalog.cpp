@@ -48,11 +48,6 @@ uint32_t logData(void *param) {
     // If we are a little early, reschedule.
     if (time(nullptr) < rec->ts) return 2;
 
-    // Grab a copy of the current record to queue integrations.
-    auto *oldRec = new logRecord;
-    rp2040.memcpyDMA(oldRec, rec, sizeof(logRecord));
-    oldRec->ts -= datalog.interval();
-
     const uint32_t nowMS = millis();
     const double   elapsedHrs = static_cast<double>(nowMS - lastMS) / MS_PER_HOUR;
     double         currHZHrs = 0;
@@ -85,13 +80,6 @@ uint32_t logData(void *param) {
 
     // Write the record.
     datalog.write(rec);
-
-    // Grab a copy of the new record and queue the integrations.
-    auto *newRec = new logRecord;
-    rp2040.memcpyDMA(newRec, rec, sizeof(logRecord));
-    // TODO: add to integration queue, for now just delete the records.
-    delete oldRec;
-    delete newRec;
 
     const auto took = millis() - start;
     // TODO: log the stats.
@@ -170,11 +158,11 @@ int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
 
     if (!_file) {
         mutex_exit(&_mu);
-        return 1;
+        return 2;
     }
     if (_entries == 0) {
         mutex_exit(&_mu);
-        return 2;
+        return 3;
     }
     if (ts < _first.ts) {
         // Before the beginning of the file.
@@ -381,4 +369,19 @@ uint32_t dataLog::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const
         return findWrapPos(midPos, midTS, highPos, highTS);
     }
     return findWrapPos(lowPos, lowTS, midPos, midTS);
+}
+
+const char* readError(uint32_t err) {
+    switch (err) {
+        case 0:
+            return "No error";
+        case 1:
+            return "Mutex timeout";
+        case 2:
+            return "Log file not open";
+        case 3:
+            return "No entries in log file";
+        default:
+            return "Unknown error";
+    }
 }

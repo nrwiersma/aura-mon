@@ -15,6 +15,8 @@ dataLog      datalog;
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
+static AsyncWebServer server(80);
+
 taskQueue c0Queue = {};
 taskQueue c1Queue = {};
 
@@ -87,9 +89,14 @@ void setup() {
 
     // TODO: temp until I have config.
     devices[0] = new inputDevice(1);
+    devices[0]->name = const_cast<char *>("test1");
     devices[0]->enabled = true;
     devices[1] = new inputDevice(2);
+    devices[1]->name = const_cast<char *>("test2");
     devices[1]->enabled = true;
+
+    setupAPI(&server);
+    server.begin();
 
     c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);

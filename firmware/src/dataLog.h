@@ -87,5 +87,6 @@ private:
 };
 
 void initLogData();
+const char* readError(uint32_t err);
 
 #endif //FIRMWARE_LOG_H
