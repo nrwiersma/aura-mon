@@ -2077,6 +2077,170 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Hardware Components:C_2u2_0402_25V"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0.254)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at -3.556 0 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "2u2"
+				(at 3.556 0 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" "Hardware Components:C_0402_1005Metric"
+				(at 0.9652 -3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8588894249148014592"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "2.2uF 25V X5R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Manufacturer" "Samsung Electro-Mechanics"
+				(at 0 0 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "MPN" "CL05A225KA5NUNC"
+				(at 0 0 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "JLCPCB Part #" "C307418"
+				(at 0 0 90)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "cap capacitor"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_fp_filters" "C_*"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "C_2u2_0402_25V_0_1"
+				(polyline
+					(pts
+						(xy -2.032 0.762) (xy 2.032 0.762)
+					)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -2.032 -0.762) (xy 2.032 -0.762)
+					)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "C_2u2_0402_25V_1_1"
+				(pin passive line
+					(at 0 3.81 270)
+					(length 2.794)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 0 -3.81 90)
+					(length 2.794)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "Interface_Ethernet:W5500"
 			(exclude_from_sim no)
 			(in_bom yes)
@@ -5351,7 +5515,7 @@
 		)
 	)
 	(symbol
-		(lib_id "Device:C")
+		(lib_id "Hardware Components:C_2u2_0402_25V")
 		(at 170.18 97.79 0)
 		(unit 1)
 		(exclude_from_sim no)
@@ -5360,32 +5524,23 @@
 		(dnp no)
 		(uuid "1174bbed-c8dc-4456-9272-1e75ed3f9380")
 		(property "Reference" "C31"
-			(at 173.482 95.758 90)
+			(at 166.624 97.79 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Value" "22n"
-			(at 173.482 100.584 90)
+		(property "Value" "2u2"
+			(at 173.736 97.79 90)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 170.18 97.79 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8586178788720332800"
-			(at 170.18 97.79 90)
+		(property "Footprint" "Hardware Components:C_0402_1005Metric"
+			(at 171.1452 101.6 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5393,7 +5548,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "25V 2.2uF X5R ±10% 0603 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"
+		(property "Datasheet" "https://jlcpcb.com/api/file/downloadByFileSystemAccessId/8588894249148014592"
 			(at 170.18 97.79 0)
 			(effects
 				(font
@@ -5402,7 +5557,16 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "CL10A225KA8NNNC"
+		(property "Description" "2.2uF 25V X5R ±10% 0402 Multilayer Ceramic Capacitors MLCC - SMD/SMT ROHS"
+			(at 170.18 97.79 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MPN" "CL05A225KA5NUNC"
 			(at 170.18 97.79 90)
 			(effects
 				(font
@@ -5411,7 +5575,7 @@
 				(hide yes)
 			)
 		)
-		(property "JLCPCB Part #" "C57895"
+		(property "JLCPCB Part #" "C307418"
 			(at 170.18 97.79 90)
 			(effects
 				(font
