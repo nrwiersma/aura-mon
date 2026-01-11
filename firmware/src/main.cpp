@@ -10,6 +10,7 @@ bool      rtcRunning = false;
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 
+mutex_t devicesMu;
 inputDevice *devices[MAX_DEVICES] = {};
 dataLog      datalog;
 
@@ -87,6 +88,7 @@ void setup() {
 
     LOGI("Modbus initialised");
 
+    mutex_init(&devicesMu);
     // TODO: temp until I have config.
     devices[0] = new inputDevice(1);
     devices[0]->name = const_cast<char *>("test1");

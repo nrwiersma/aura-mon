@@ -6,6 +6,7 @@
 
 const char *contentTypeJSON PROGMEM = "application/json";
 const char *contentTypePlain PROGMEM = "text/plain";
+const char *contentTypeCSV PROGMEM = "text/csv";
 
 
 void returnOK(AsyncWebServerRequest * req);
@@ -37,17 +38,21 @@ void returnInternalError(AsyncWebServerRequest *req, const char* reason) {
 void handleEnergy(AsyncWebServerRequest *req) {
     uint32_t baseInterval = datalog.interval();
     uint32_t start = req->getParam("start")->value().toInt();
-    uint32_t end = req->getParam("end")->value().toInt();
+    uint32_t end = req->hasParam("end") ? req->getParam("end")->value().toInt(): time(nullptr);
     uint32_t interval = req->hasParam("interval") ? req->getParam("interval")->value().toInt() : 5;
+
 
     start -= start % baseInterval;
     end -= end % baseInterval;
     interval -= interval % baseInterval;
 
     if (start >= end || interval == 0) {
-        req->send(400, contentTypeJSON, "{\"error\":\"Invalid parameters\"}");
+        req->send_P(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
         return;
     }
+
+    auto resp = req->beginResponseStream(contentTypeCSV);
+    resp->setCode(200);
 
     logRecord rec;
     if (auto ret = datalog.read(start - interval, &rec); ret != 0) {
@@ -80,9 +85,8 @@ void handleEnergy(AsyncWebServerRequest *req) {
         prevRec = rec;
     }
 
-    String json;
-    serializeJson(arr, json);
-    req->send(200, contentTypeJSON, json);
+
+    req->send(resp);
 }
 
 void handleNotFound(AsyncWebServerRequest *req) {

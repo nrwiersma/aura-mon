@@ -8,8 +8,6 @@ uint8_t readFrame(inputDevice *device);
 float   float_abcd(uint16_t hi, uint16_t lo);
 
 void collect() {
-    // TODO: mutex or critical section.
-
     const unsigned long startTotal = millis();
 
     for (const auto dev : devices) {
@@ -57,7 +55,9 @@ uint8_t readFrame(inputDevice *device) {
     double va = volts * a;
     double watts = va * pf;
 
+    mutex_enter_blocking(&devicesMu);
     device->setEnergy(volts, watts, va, hz);
+    mutex_exit(&devicesMu);
 
     return 0;
 }

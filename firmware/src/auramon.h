@@ -59,6 +59,7 @@ extern SdFs    sd;
 extern ModbusRTUMaster modbus;
 
 #define MAX_DEVICES 15
+extern mutex_t devicesMu;
 extern inputDevice *devices[MAX_DEVICES];
 
 extern dataLog datalog;
