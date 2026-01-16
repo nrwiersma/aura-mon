@@ -14,7 +14,7 @@
 Features:
 
 * RP2350 microcontroller
-* Ethernet
+* Ethernet for reliable network connectivity
 * SDCard for storage
 * RTC
 * Modbus RTU over RS485
@@ -32,3 +32,9 @@ The board can be powered using an external 5V power supply connected to the scre
 ## Firmware
 
 The firmware is currently in development and will be made available on GitHub once it is stable enough for public use.
+
+## Changelog
+
+#### v0.1.0
+
+* Initial schematic and board
