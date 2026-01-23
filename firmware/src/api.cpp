@@ -6,6 +6,7 @@
 
 const char *contentTypeJSON PROGMEM = "application/json";
 const char *contentTypePlain PROGMEM = "text/plain";
+const char *contentTypeHTML PROGMEM = "text/html";
 const char *contentTypeCSV PROGMEM = "text/csv";
 
 
@@ -51,42 +52,15 @@ void handleEnergy() {
         return;
     }
 
-    // auto resp = req->beginResponseStream(contentTypeCSV);
-    // resp->setCode(200);
-    //
-    // logRecord rec;
-    // if (auto ret = datalog.read(start - interval, &rec); ret != 0) {
-    //     returnInternalError(readError(ret));
-    //     return;
-    // }
-    // auto prevRec = rec;
-    //
-    // // TODO: check we got the timestamp we want.
-    //
-    // JsonDocument doc;
-    // JsonArray arr = doc.to<JsonArray>();
-    // for (uint32_t ts = start; ts <= end; ts += interval) {
-    //     if (auto ret = datalog.read(ts, &rec); ret != 0) {
-    //         returnInternalError(readError(ret));
-    //         return;
-    //     }
-    //
-    //     double elapsedHours = rec.logHours - prevRec.logHours;
-    //
-    //     JsonObject obj = arr.add<JsonObject>();
-    //     obj["timestamp"] = ts;
-    //     for (int i = 0; i < MAX_DEVICES; i++) {
-    //
-    //         obj["timestamp"] = ts;
-    //         obj["VAh"] = rec.vaHrs[i] - prevRec.vaHrs[i];
-    //         obj["Wh"] = rec.wattHrs [i]- prevRec.wattHrs[i];
-    //     }
-    //
-    //     prevRec = rec;
-    // }
-    //
-    //
-    // server.send(resp);
+    // use HTTP/1.1 Chunked response to avoid building a huge temporary string
+    if (!server.chunkedResponseModeStart(200, "text/json")) {
+        server.send(505, contentTypeHTML, F("HTTP1.1 required"));
+        return;
+    }
+
+    // TODO: Stream data from datalog.
+
+    server.chunkedResponseFinalize();
 }
 
 void handleNotFound() {
