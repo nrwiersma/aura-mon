@@ -9,37 +9,37 @@ const char *contentTypePlain PROGMEM = "text/plain";
 const char *contentTypeCSV PROGMEM = "text/csv";
 
 
-void returnOK(AsyncWebServerRequest * req);
-void handleEnergy(AsyncWebServerRequest *req);
-void handleNotFound(AsyncWebServerRequest * req);
+void returnOK();
+void handleEnergy();
+void handleNotFound();
 
-void setupAPI(AsyncWebServer *server) {
-    server->on("/energy", HTTP_GET, handleEnergy);
+void setupAPI() {
+    server.on("/energy", HTTP_GET, handleEnergy);
     // Config
     // Log
     // Metrics
     // Stats (momentary)
-    server->on("/readyz", HTTP_GET, returnOK);
-    server->on("/livez", HTTP_GET, returnOK);
-    server->onNotFound(handleNotFound); // Serve "public" from SD Card.
+    server.on("/readyz", HTTP_GET, returnOK);
+    server.on("/livez", HTTP_GET, returnOK);
+    server.onNotFound(handleNotFound); // Serve "public" from SD Card.
 }
 
-void returnOK(AsyncWebServerRequest *req) {
-    req->send(200, contentTypePlain, "");
+void returnOK() {
+    server.send(200, contentTypePlain, "");
 }
 
-void returnInternalError(AsyncWebServerRequest *req, const char* reason) {
+void returnInternalError(const char* reason) {
     String msg = "{\"error\":\"Internal Error\",\"reason\":\"";
     msg.concat(reason);
     msg.concat("\"}");
-    req->send(500, contentTypeJSON, msg);
+    server.send(500, contentTypeJSON, msg);
 }
 
-void handleEnergy(AsyncWebServerRequest *req) {
+void handleEnergy() {
     uint32_t baseInterval = datalog.interval();
-    uint32_t start = req->getParam("start")->value().toInt();
-    uint32_t end = req->hasParam("end") ? req->getParam("end")->value().toInt(): time(nullptr);
-    uint32_t interval = req->hasParam("interval") ? req->getParam("interval")->value().toInt() : 5;
+    uint32_t start = server.arg("start").toInt();
+    uint32_t end = server.hasArg("end") ? server.arg("end").toInt(): time(nullptr);
+    uint32_t interval = server.hasArg("interval") ? server.arg("interval").toInt() : 5;
 
 
     start -= start % baseInterval;
@@ -47,74 +47,74 @@ void handleEnergy(AsyncWebServerRequest *req) {
     interval -= interval % baseInterval;
 
     if (start >= end || interval == 0) {
-        req->send_P(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
+        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
         return;
     }
 
-    auto resp = req->beginResponseStream(contentTypeCSV);
-    resp->setCode(200);
-
-    logRecord rec;
-    if (auto ret = datalog.read(start - interval, &rec); ret != 0) {
-        returnInternalError(req, readError(ret));
-        return;
-    }
-    auto prevRec = rec;
-
-    // TODO: check we got the timestamp we want.
-
-    JsonDocument doc;
-    JsonArray arr = doc.to<JsonArray>();
-    for (uint32_t ts = start; ts <= end; ts += interval) {
-        if (auto ret = datalog.read(ts, &rec); ret != 0) {
-            returnInternalError(req, readError(ret));
-            return;
-        }
-
-        double elapsedHours = rec.logHours - prevRec.logHours;
-
-        JsonObject obj = arr.add<JsonObject>();
-        obj["timestamp"] = ts;
-        for (int i = 0; i < MAX_DEVICES; i++) {
-
-            obj["timestamp"] = ts;
-            obj["VAh"] = rec.vaHrs[i] - prevRec.vaHrs[i];
-            obj["Wh"] = rec.wattHrs [i]- prevRec.wattHrs[i];
-        }
-
-        prevRec = rec;
-    }
-
-
-    req->send(resp);
+    // auto resp = req->beginResponseStream(contentTypeCSV);
+    // resp->setCode(200);
+    //
+    // logRecord rec;
+    // if (auto ret = datalog.read(start - interval, &rec); ret != 0) {
+    //     returnInternalError(readError(ret));
+    //     return;
+    // }
+    // auto prevRec = rec;
+    //
+    // // TODO: check we got the timestamp we want.
+    //
+    // JsonDocument doc;
+    // JsonArray arr = doc.to<JsonArray>();
+    // for (uint32_t ts = start; ts <= end; ts += interval) {
+    //     if (auto ret = datalog.read(ts, &rec); ret != 0) {
+    //         returnInternalError(readError(ret));
+    //         return;
+    //     }
+    //
+    //     double elapsedHours = rec.logHours - prevRec.logHours;
+    //
+    //     JsonObject obj = arr.add<JsonObject>();
+    //     obj["timestamp"] = ts;
+    //     for (int i = 0; i < MAX_DEVICES; i++) {
+    //
+    //         obj["timestamp"] = ts;
+    //         obj["VAh"] = rec.vaHrs[i] - prevRec.vaHrs[i];
+    //         obj["Wh"] = rec.wattHrs [i]- prevRec.wattHrs[i];
+    //     }
+    //
+    //     prevRec = rec;
+    // }
+    //
+    //
+    // server.send(resp);
 }
 
-void handleNotFound(AsyncWebServerRequest *req) {
-    if (req->method() != HTTP_GET) {
-        req->send(405, contentTypePlain, "Method Not Allowed");
+void handleNotFound() {
+    if (server.method() != HTTP_GET) {
+        server.send(405, contentTypePlain, "Method Not Allowed");
         return;
     }
 
     if (!mutex_enter_block_until(&sdMu, 100)) {
-        req->send(408, contentTypePlain, "Request Timeout");
+        server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
 
-    String path = req->url();
+    String path = server.uri();
     if (!path.startsWith("/")) path = '/' + path;
     if (path == "/") path = "/index.html";
     path = "public" + path;
 
     if (!sd.exists(path.c_str())) {
         mutex_exit(&sdMu);
-        req->send(404, contentTypeJSON, "{\"error\":\"Not Found\"}");
+        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
     }
 
     if (auto f = sd.open(path.c_str(), O_READ); f) {
         if (f.isDirectory()) {
             f.close();
             mutex_exit(&sdMu);
-            req->send(403, contentTypePlain, "Forbidden");
+            server.send(403, contentTypePlain, "Forbidden");
             return;
         }
 
@@ -133,7 +133,7 @@ void handleNotFound(AsyncWebServerRequest *req) {
             contentType = F("image/jpeg");
         }
 
-        req->send(f, path, contentType);
+        server.send(f, path, contentType);
         f.close();
 
         mutex_exit(&sdMu);
@@ -141,5 +141,5 @@ void handleNotFound(AsyncWebServerRequest *req) {
     }
     mutex_exit(&sdMu);
 
-    req->send(404, contentTypeJSON, "Not Found");
+    server.send(404, contentTypeJSON, "Not Found");
 }

@@ -10,13 +10,14 @@ bool      rtcRunning = false;
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 
-mutex_t devicesMu;
+mutex_t deviceInfoMu;
+inputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
 inputDevice *devices[MAX_DEVICES] = {};
 dataLog      datalog;
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
-static AsyncWebServer server(80);
+WebServer server(80);
 
 taskQueue c0Queue = {};
 taskQueue c1Queue = {};
@@ -88,8 +89,9 @@ void setup() {
 
     LOGI("Modbus initialised");
 
-    mutex_init(&devicesMu);
     // TODO: temp until I have config.
+    mutex_init(&deviceInfoMu);
+    // TODO: sync into deviceInfos from config.
     devices[0] = new inputDevice(1);
     devices[0]->name = const_cast<char *>("test1");
     devices[0]->enabled = true;
@@ -97,7 +99,7 @@ void setup() {
     devices[1]->name = const_cast<char *>("test2");
     devices[1]->enabled = true;
 
-    setupAPI(&server);
+    setupAPI();
     server.begin();
 
     c0Queue.add(timeSync, 5);
@@ -109,6 +111,8 @@ void setup() {
 }
 
 void loop() {
+    server.handleClient();
+
     if (!c0Queue.runNextTask()) {
         delay(10);
     }

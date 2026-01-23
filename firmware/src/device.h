@@ -22,16 +22,15 @@ struct bucket {
     }
 };
 
-class inputDevice {
+class inputDeviceInfo {
 public:
     bool    enabled;
     uint8_t addr;
     char *  name;
     float   calibration;
     bool    reversed;
-    bucket  current;
 
-    inputDevice(uint8_t addr)
+    inputDeviceInfo(uint8_t addr)
         : enabled(false),
           addr(addr),
           name(nullptr),
@@ -39,9 +38,17 @@ public:
           reversed(false) {
     }
 
-    ~inputDevice() = default;
-
     bool isEnabled() const { return enabled; }
+};
+
+class inputDevice : public inputDeviceInfo {
+public:
+    bucket current;
+
+    inputDevice(uint8_t addr) : inputDeviceInfo(addr) {
+    }
+
+    ~inputDevice() = default;
     void reset();
     void accumulate(uint32_t now);
     void setEnergy(double volts, double watts, double va, double hz);

@@ -12,7 +12,7 @@
 #include <ModbusRTUMaster.h>
 #include <Wire.h>
 #include <PCF85063A.h>
-#include <ESPAsyncWebServer.h>
+#include <WebServer.h>
 #include <ArduinoJSON.h>
 
 #include "logger.h"
@@ -58,8 +58,11 @@ extern SdFs    sd;
 
 extern ModbusRTUMaster modbus;
 
+extern WebServer server;
+
 #define MAX_DEVICES 15
-extern mutex_t devicesMu;
+extern mutex_t deviceInfoMu;
+extern inputDeviceInfo *deviceInfos[MAX_DEVICES];
 extern inputDevice *devices[MAX_DEVICES];
 
 extern dataLog datalog;

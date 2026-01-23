@@ -5,9 +5,7 @@
 #ifndef FIRMWARE_API_H
 #define FIRMWARE_API_H
 
-#include <ESPAsyncWebServer.h>
-
-void setupAPI(AsyncWebServer *server);
+void setupAPI();
 
 
 #endif //FIRMWARE_API_H
