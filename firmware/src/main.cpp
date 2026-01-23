@@ -9,6 +9,7 @@ PCF85063A rtc;
 bool      rtcRunning = false;
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
+NetworkConfig netCfg;
 
 mutex_t deviceInfoMu;
 inputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
@@ -65,8 +66,16 @@ void setup() {
         LOGI("RTC not running");
     }
 
+    mutex_init(&deviceInfoMu);
+    if (!loadConfig()) {
+        LOGI("Could not load config from SD Card. Using defaults.");
+    } else {
+        LOGI("Config loaded from SD Card");
+    }
+    // TODO: Sync devices from deviceInfos.
+
     eth.setSPISpeed(ETH_FREQ);
-    eth.hostname("aura-mon");
+    eth.hostname(netCfg.hostname);
     if (!eth.begin(mac)) {
         LOGE("No wired Ethernet hardware detected.");
 
@@ -88,16 +97,6 @@ void setup() {
     modbus.setTimeout(100);
 
     LOGI("Modbus initialised");
-
-    // TODO: temp until I have config.
-    mutex_init(&deviceInfoMu);
-    // TODO: sync into deviceInfos from config.
-    devices[0] = new inputDevice(1);
-    devices[0]->name = const_cast<char *>("test1");
-    devices[0]->enabled = true;
-    devices[1] = new inputDevice(2);
-    devices[1]->name = const_cast<char *>("test2");
-    devices[1]->enabled = true;
 
     setupAPI();
     server.begin();

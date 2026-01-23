@@ -16,6 +16,8 @@
 #include <ArduinoJSON.h>
 
 #include "logger.h"
+#include "config.h"
+#include "ethernet.h"
 #include "datalog.h"
 #include "task.h"
 #include "modbus.h"
@@ -27,6 +29,7 @@
 #define MS_PER_HOUR 3600000UL
 
 #define MESSAGE_LOG_PATH "aura-mon/log.txt"
+#define CONFIG_LOG_PATH "aura-mon/config.json"
 #define DATA_LOG_PATH    "aura-mon/data.log"
 
 #define LED_RED 10
@@ -46,9 +49,9 @@
 #define RS485_BAUDRATE 38400
 
 inline byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
-inline char hostname[] = "aura-mon";
 
 extern Wiznet5500lwIP eth;
+extern NetworkConfig netCfg;
 
 extern PCF85063A rtc;
 extern bool      rtcRunning;
@@ -61,9 +64,9 @@ extern ModbusRTUMaster modbus;
 extern WebServer server;
 
 #define MAX_DEVICES 15
-extern mutex_t deviceInfoMu;
+extern mutex_t          deviceInfoMu;
 extern inputDeviceInfo *deviceInfos[MAX_DEVICES];
-extern inputDevice *devices[MAX_DEVICES];
+extern inputDevice *    devices[MAX_DEVICES];
 
 extern dataLog datalog;
 

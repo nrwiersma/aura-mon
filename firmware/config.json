@@ -1,0 +1,24 @@
+{
+  "format": 2,
+  "network": {
+    "hostname": "aura-mon",
+    "ip": "192.168.0.0",
+    "gateway": "192.168.0.1",
+    "mask": "255.255.255.0",
+    "dns": "8.8.8.8"
+  },
+  "devices": [
+    {
+      "enabled": true,
+      "address": 1,
+      "name": "test1",
+      "calibration": 1.0,
+      "reversed": false
+    },
+    {
+      "enabled": true,
+      "address": 2,
+      "name": "test2"
+    }
+  ]
+}
