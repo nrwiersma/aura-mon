@@ -4,6 +4,10 @@
 #ifndef FIRMWARE_LOG_H
 #define FIRMWARE_LOG_H
 
+#ifdef UNIT_TEST
+#include "../test/stubs/TestAuraMon.h"
+#endif
+
 // Total of 384 bytes.
 struct logRecord {
     uint32_t rev;
@@ -80,13 +84,13 @@ private:
 
     logRecordKey readKey(uint32_t pos);
     uint8_t      readRev(uint32_t rev, logRecord *rec);
-    void         search(uint32_t ts, logRecord *  rec,
-                uint32_t         lowTS, uint32_t  lowRev,
-                uint32_t         highTS, uint32_t highRev);
+    void         search(uint32_t ts, logRecord * rec,
+                uint32_t         lowTS, int32_t  lowRev,
+                uint32_t         highTS, int32_t highRev);
     uint32_t findWrapPos(uint32_t highPos, uint32_t highTS, uint32_t lowPos, uint32_t lowTS);
 };
 
-void initLogData();
-const char* readError(uint32_t err);
+void        initLogData();
+const char *readError(uint32_t err);
 
 #endif //FIRMWARE_LOG_H
