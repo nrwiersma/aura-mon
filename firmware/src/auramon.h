@@ -15,6 +15,7 @@
 #include <WebServer.h>
 #include <ArduinoJSON.h>
 
+#include "errors.h"
 #include "logger.h"
 #include "config.h"
 #include "ethernet.h"

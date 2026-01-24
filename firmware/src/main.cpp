@@ -56,7 +56,7 @@ void setup() {
             LOGI("RTC lost power. Please check your battery");
         }
         time_t         ts = rtc.now();
-        struct timeval tv;
+        timeval tv;
         tv.tv_sec = ts;
         tv.tv_usec = 0;
         settimeofday(&tv, nullptr);
@@ -67,8 +67,9 @@ void setup() {
     }
 
     mutex_init(&deviceInfoMu);
-    if (!loadConfig()) {
-        LOGI("Could not load config from SD Card. Using defaults.");
+
+    if (auto err = loadConfig(); err) {
+        LOGI("Could not load config from SD Card: %s", err->Error());
     } else {
         LOGI("Config loaded from SD Card");
     }

@@ -4,8 +4,9 @@
 #include "../stubs/TestAuraMon.h"
 #endif
 #include <ArduinoJson.h>
+#include <errors.h>
 
-bool loadConfig();
-bool saveConfig();
-bool loadConfigJSON(const JsonDocument &doc);
+error* loadConfig();
+error* saveConfig();
+error* loadConfigJSON(const JsonDocument &doc);
 void saveConfigJSON(JsonDocument &doc);

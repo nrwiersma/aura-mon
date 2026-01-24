@@ -1,3 +1,4 @@
+#include "../lib/Error/src/errors.h"
 #ifndef UNIT_TEST
 #include "auramon.h"
 #include <lwip/inet.h>
@@ -7,9 +8,9 @@
 
 constexpr uint32_t configFormat = 1;
 
-bool loadNetworkConfigFromJson(JsonVariantConst netObj) {
+error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
     if (netObj.isNull()) {
-        return true;
+        return nullptr;
     }
 
     if (netObj["hostname"].is<const char *>()) {
@@ -18,32 +19,32 @@ bool loadNetworkConfigFromJson(JsonVariantConst netObj) {
     if (netObj["ip"].is<const char *>()) {
         auto ip = netObj["ip"].as<const char *>();
         if (ipaddr_addr(ip) == IPADDR_NONE) {
-            return false;
+            return newError("invalid ip address");
         }
         netCfg.ip = ip;
     }
     if (netObj["gateway"].is<const char *>()) {
         auto ip = netObj["gateway"].as<const char *>();
         if (ipaddr_addr(ip) == IPADDR_NONE) {
-            return false;
+            return newError("invalid gateway address");
         }
         netCfg.gateway = ip;
     }
     if (netObj["mask"].is<const char *>()) {
         auto ip = netObj["mask"].as<const char *>();
         if (ipaddr_addr(ip) == IPADDR_NONE) {
-            return false;
+            return newError("invalid ip mask");
         }
         netCfg.mask = ip;
     }
     if (netObj["dns"].is<const char *>()) {
         auto ip = netObj["dns"].as<const char *>();
         if (ipaddr_addr(ip) == IPADDR_NONE) {
-            return false;
+            return newError("invalid dns address");
         }
         netCfg.dns = ip;
     }
-    return true;
+    return nullptr;
 }
 
 void writeNetworkConfigToJson(JsonObject obj) {
@@ -93,7 +94,7 @@ void applyDevicesFromJson(JsonArrayConst devicesArr) {
         info->addr = addr;
         info->calibration = entry["calibration"].is<float>() ? entry["calibration"].as<float>() : 1.0f;
         info->reversed = entry["reversed"].is<bool>() ? entry["reversed"].as<bool>() : false;
-        info->name = entry["name"].is<const char*>() ? entry["name"].as<const char*>() : nullptr;
+        info->name = entry["name"].is<const char *>() ? entry["name"].as<const char *>() : nullptr;
     }
 
     mutex_exit(&deviceInfoMu);
@@ -118,12 +119,12 @@ void populateDevicesJson(JsonArray devicesArray) {
     mutex_exit(&deviceInfoMu);
 }
 
-bool loadConfig() {
+error *loadConfig() {
     mutex_enter_blocking(&sdMu);
     FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
     if (!file) {
         mutex_exit(&sdMu);
-        return false;
+        return newError("could not open config file");
     }
 
     JsonDocument doc;
@@ -134,7 +135,7 @@ bool loadConfig() {
     mutex_exit(&sdMu);
 
     if (err) {
-        return false;
+        return newError("could not decode config file");
     }
 
     return loadConfigJSON(doc);
@@ -156,7 +157,7 @@ void ensureConfigDirectoryLocked() {
     sd.mkdir(dir);
 }
 
-bool saveConfig() {
+error *saveConfig() {
     JsonDocument doc;
     saveConfigJSON(doc);
 
@@ -165,40 +166,38 @@ bool saveConfig() {
     FsFile file = sd.open(CONFIG_LOG_PATH, O_RDWR | O_CREAT | O_TRUNC);
     if (!file) {
         mutex_exit(&sdMu);
-        return false;
+        return newError("could not create config file");
     }
     file.truncate();
     if (serializeJson(doc, file) == 0) {
         mutex_exit(&sdMu);
-        return false;
+        return newError("could not write config file");
     }
     file.flush();
     file.close();
     mutex_exit(&sdMu);
-    return true;
+    return nullptr;
 }
 
-bool loadConfigJSON(const JsonDocument &doc) {
+error *loadConfigJSON(const JsonDocument &doc) {
     JsonVariantConst root = doc.as<JsonVariantConst>();
     if (root.isNull()) {
-        return false;
+        return newError("config object is empty");
     }
 
     if (root["format"].is<uint32_t>() && root["format"].as<uint32_t>() != configFormat) {
-        return false;
+        return newError("config format mismatch");
     }
 
-    if (!loadNetworkConfigFromJson(root["network"])) {
-        return false;
+    if (auto err = loadNetworkConfigFromJson(root["network"]); err) {
+        return err;
     }
 
     if (root["devices"].is<JsonArrayConst>()) {
         applyDevicesFromJson(root["devices"].as<JsonArrayConst>());
-    } else {
-        return false;
     }
 
-    return true;
+    return nullptr;
 }
 
 void saveConfigJSON(JsonDocument &doc) {

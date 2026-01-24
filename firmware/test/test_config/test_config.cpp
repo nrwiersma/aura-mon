@@ -1,6 +1,7 @@
 #include <unity.h>
 #include <ArduinoJson.h>
 
+#include "../../.pio/libdeps/native/Unity/src/unity.h"
 #include "../../src/config.h"
 
 // Helper to clean up device infos between tests
@@ -38,9 +39,9 @@ void test_config_valid() {
     dev1["address"] = 1;
     dev1["name"] = "Device1";
 
-    bool result = loadConfigJSON(doc);
+    auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_TRUE(result);
+    TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL_STRING("test", netCfg.hostname.c_str());
     TEST_ASSERT_NOT_NULL(deviceInfos[0]);
     TEST_ASSERT_EQUAL(true, deviceInfos[0]->enabled);
@@ -51,9 +52,10 @@ void test_config_valid() {
 void test_load_not_found() {
     sd.fileExists = false;
 
-    bool result = loadConfig();
+    auto err = loadConfig();
 
-    TEST_ASSERT_FALSE(result);
+    TEST_ASSERT_NOT_NULL(err);
+    TEST_ASSERT_EQUAL_STRING("could not decode config file", err->Error());
 }
 
 void setup() {
