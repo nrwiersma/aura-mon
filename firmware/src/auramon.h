@@ -66,7 +66,7 @@ extern WebServer server;
 #define MAX_DEVICES 15
 extern mutex_t          deviceInfoMu;
 extern inputDeviceInfo *deviceInfos[MAX_DEVICES];
-extern inputDevice *    devices[MAX_DEVICES];
+extern inputDevice     *devices[MAX_DEVICES];
 
 extern dataLog datalog;
 

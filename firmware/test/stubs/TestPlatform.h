@@ -10,6 +10,12 @@
 #include <cstring>
 
 // Mock Arduino types and functions
+inline unsigned long millis() {
+    static unsigned long time = 0;
+    time += 10; // Increment by 10ms each call
+    return time;
+}
+
 class String {
 public:
     char * buffer;
@@ -78,8 +84,10 @@ inline bool mutex_enter_timeout_ms(mutex_t *mtx, uint32_t timeout) {
 }
 
 // Mock file operations flags
+#define O_RDONLY 0x01
 #define O_RDWR 0x02
 #define O_CREAT 0x0100
+#define O_TRUNC 0x0200
 
 // Utility functions
 template<typename T>

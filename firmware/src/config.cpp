@@ -1,7 +1,11 @@
+#ifndef UNIT_TEST
 #include "auramon.h"
 #include <lwip/inet.h>
+#else
+#include "config.h"
+#endif
 
-constexpr uint32_t kConfigFormat = 2;
+constexpr uint32_t configFormat = 1;
 
 bool loadNetworkConfigFromJson(JsonVariantConst netObj) {
     if (netObj.isNull()) {
@@ -180,7 +184,7 @@ bool loadConfigJSON(const JsonDocument &doc) {
         return false;
     }
 
-    if (root["format"].is<uint32_t>() && root["format"].as<uint32_t>() != kConfigFormat) {
+    if (root["format"].is<uint32_t>() && root["format"].as<uint32_t>() != configFormat) {
         return false;
     }
 
@@ -199,7 +203,7 @@ bool loadConfigJSON(const JsonDocument &doc) {
 
 void saveConfigJSON(JsonDocument &doc) {
     doc.clear();
-    doc["format"] = kConfigFormat;
+    doc["format"] = configFormat;
 
     auto network = doc["network"].to<JsonObject>();
     writeNetworkConfigToJson(network);

@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 #include "TestPlatform.h"
 #include <vector>
 
@@ -30,6 +32,15 @@ public:
         return true;
     }
 
+    int read() {
+        if (!open || position + 1 > data.size()) {
+            return -1;
+        }
+        uint8_t b = data[position];
+        position += 1;
+        return 1;
+    }
+
     size_t read(void* buf, size_t size) {
         if (!open || position + size > data.size()) {
             return 0;
@@ -37,6 +48,12 @@ public:
         std::memcpy(buf, &data[position], size);
         position += size;
         return size;
+    }
+
+    void truncate() {
+        if (data.size() > 0) {
+            data.resize(0);
+        }
     }
 
     size_t write(const void* buf, size_t size) {
@@ -50,6 +67,19 @@ public:
         std::memcpy(&data[position], buf, size);
         position += size;
         return size;
+    }
+
+    size_t write(uint8_t c) {
+        if (!open) return 0;
+
+        // Resize if needed
+        if (position + 1 > data.size()) {
+            data.resize(position + 1);
+        }
+
+        data[position] = c;
+        position += 1;
+        return 1;
     }
 
     bool flush() { return true; }
