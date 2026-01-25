@@ -1,12 +1,7 @@
 //
 // Created by Nicholas Wiersma on 2025/09/05.
 
-#ifndef FIRMWARE_LOG_H
-#define FIRMWARE_LOG_H
-
-#ifdef UNIT_TEST
-#include "../test/stubs/TestAuraMon.h"
-#endif
+#pragma once
 
 // Total of 384 bytes.
 struct logRecord {
@@ -89,8 +84,3 @@ private:
                 uint32_t         highTS, int32_t highRev);
     uint32_t findWrapPos(uint32_t highPos, uint32_t highTS, uint32_t lowPos, uint32_t lowTS);
 };
-
-void        initLogData();
-const char *readError(uint32_t err);
-
-#endif //FIRMWARE_LOG_H

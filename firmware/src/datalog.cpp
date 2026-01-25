@@ -5,6 +5,7 @@
 #ifndef UNIT_TEST
 #include "auramon.h"
 #else
+#include "../test/stubs/TestAuraMon.h"
 #include "dataLog.h"
 #endif
 
@@ -294,19 +295,4 @@ uint32_t dataLog::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const
         return findWrapPos(midPos, midTS, highPos, highTS);
     }
     return findWrapPos(lowPos, lowTS, midPos, midTS);
-}
-
-const char* readError(uint32_t err) {
-    switch (err) {
-        case 0:
-            return "No error";
-        case 1:
-            return "Mutex timeout";
-        case 2:
-            return "Log file not open";
-        case 3:
-            return "No entries in log file";
-        default:
-            return "Unknown error";
-    }
 }

@@ -52,7 +52,7 @@
 inline byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
 
 extern Wiznet5500lwIP eth;
-extern NetworkConfig netCfg;
+extern NetworkConfig  netCfg;
 
 extern PCF85063A rtc;
 extern bool      rtcRunning;
@@ -66,8 +66,9 @@ extern WebServer server;
 
 #define MAX_DEVICES 15
 extern mutex_t          deviceInfoMu;
+extern volatile bool    devicesChanged;
 extern inputDeviceInfo *deviceInfos[MAX_DEVICES];
-extern inputDevice     *devices[MAX_DEVICES];
+extern inputDevice *    devices[MAX_DEVICES];
 
 extern dataLog datalog;
 
@@ -78,7 +79,10 @@ extern logger msgLog;
 
 uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
+void     initLogData();
 uint32_t logData(void *param);
+void syncDeviceData();
+uint32_t syncDevices(void *param);
 
 void collect();
 

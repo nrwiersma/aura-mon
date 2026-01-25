@@ -9,12 +9,13 @@ PCF85063A rtc;
 bool      rtcRunning = false;
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
-NetworkConfig netCfg;
+NetworkConfig  netCfg;
 
-mutex_t deviceInfoMu;
+mutex_t          deviceInfoMu;
+volatile bool    devicesChanged;
 inputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
-inputDevice *devices[MAX_DEVICES] = {};
-dataLog      datalog;
+inputDevice *    devices[MAX_DEVICES] = {};
+dataLog          datalog;
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
@@ -55,7 +56,7 @@ void setup() {
         if (rtc.lostPower()) {
             LOGI("RTC lost power. Please check your battery");
         }
-        time_t         ts = rtc.now();
+        time_t  ts = rtc.now();
         timeval tv;
         tv.tv_sec = ts;
         tv.tv_usec = 0;
@@ -73,7 +74,7 @@ void setup() {
     } else {
         LOGI("Config loaded from SD Card");
     }
-    // TODO: Sync devices from deviceInfos.
+    syncDeviceData();
 
     eth.setSPISpeed(ETH_FREQ);
     eth.hostname(netCfg.hostname);
@@ -106,6 +107,7 @@ void setup() {
     c0Queue.add(checkEthernet, 5);
 
     c1Queue.add(logData, 7);
+    c1Queue.add(syncDevices, 6);
 
     setupComplete = true;
 }

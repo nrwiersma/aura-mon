@@ -69,17 +69,22 @@ inputDeviceInfo *ensureDeviceInfo(uint8_t address) {
     return deviceInfos[idx];
 }
 
-void disableAllDevicesLocked() {
-    for (int i = 0; i < MAX_DEVICES; i++) {
+void removeDevicesFromLocked(size_t startIdx) {
+    if (startIdx >= MAX_DEVICES) {
+        return;
+    }
+
+    for (size_t i = startIdx; i < MAX_DEVICES; i++) {
         if (deviceInfos[i]) {
-            deviceInfos[i]->enabled = false;
+            delete deviceInfos[i];
+            deviceInfos[i] = nullptr;
         }
     }
 }
 
 void applyDevicesFromJson(JsonArrayConst devicesArr) {
     mutex_enter_blocking(&deviceInfoMu);
-    disableAllDevicesLocked();
+    removeDevicesFromLocked(devicesArr.size());
 
     for (JsonVariantConst entry: devicesArr) {
         if (!entry.is<JsonObjectConst>()) {
