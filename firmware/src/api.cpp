@@ -58,6 +58,13 @@ void handleEnergy() {
         return;
     }
 
+    logRecord rec;
+    if (auto err = datalog.read(start - interval, &rec); err) {
+        returnInternalError(err->Error());
+        return;
+    }
+    auto prevRec = rec;
+
     // TODO: Stream data from datalog.
 
     server.chunkedResponseFinalize();

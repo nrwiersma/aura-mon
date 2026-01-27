@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <errors.h>
+
 // Total of 384 bytes.
 struct logRecord {
     uint32_t rev;
@@ -44,8 +46,8 @@ public:
     uint32_t entries();
     int      interval() const { return _interval; }
     uint32_t lastTS() const { return _last.ts; }
-    int8_t   read(uint32_t ts, logRecord *rec, uint32_t timeoutMS = 100);
-    int8_t   write(logRecord *rec);
+    error *  read(uint32_t ts, logRecord *rec, uint32_t timeoutMS = 100);
+    error *  write(logRecord *rec);
 
 private:
     struct logRecordKey {

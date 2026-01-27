@@ -61,12 +61,12 @@ uint32_t dataLog::entries() {
     return e;
 }
 
-int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
+error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     ts -= ts % _interval;
 
     if (timeoutMS > 0) {
         if (!mutex_enter_timeout_ms(&_mu, timeoutMS)) {
-            return -1;
+            return newError("mutex timeout");
         }
     } else {
         mutex_enter_blocking(&_mu);
@@ -74,12 +74,12 @@ int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
 
     if (!_file) {
         mutex_exit(&_mu);
-        return 2;
+        return newError("file not open");
     }
 
     if (_entries == 0) {
         mutex_exit(&_mu);
-        return 3;
+        return newError("no entries");
     }
     if (ts < _first.ts) {
         // Before the beginning of the file.
@@ -88,7 +88,7 @@ int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
         rec->ts = ts;
 
         mutex_exit(&_mu);
-        return 1;
+        return nullptr;
     }
     if (ts >= _last.ts) {
         // Past the end of the file.
@@ -96,11 +96,11 @@ int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
         rec->ts = ts;
         if (ts == _last.ts) {
             mutex_exit(&_mu);
-            return 0;
+            return nullptr;
         }
 
         mutex_exit(&_mu);
-        return 1;
+        return nullptr;
     }
 
     // Check the last records cache if we are in the time range.
@@ -111,7 +111,7 @@ int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
                 rp2040.memcpyDMA(rec, &_lastCache[i], sizeof(logRecord));
 
                 mutex_exit(&_mu);
-                return 0;
+                return nullptr;
             }
         }
     }
@@ -147,19 +147,19 @@ int8_t dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     rec->ts = ts;
 
     mutex_exit(&_mu);
-    return 0;
+    return nullptr;
 }
 
-int8_t dataLog::write(logRecord *rec) {
+error *dataLog::write(logRecord *rec) {
     mutex_enter_blocking(&_mu);
 
     if (!_file) {
         mutex_exit(&_mu);
-        return 1;
+        return newError("file not open");
     }
     if (rec->ts <= _last.ts) {
         mutex_exit(&_mu);
-        return 2;
+        return newError("timestamp not increasing");
     }
     rec->rev = ++_last.rev;
     _last.ts = rec->ts;
@@ -185,7 +185,7 @@ int8_t dataLog::write(logRecord *rec) {
         _fileIO++;
 
         mutex_exit(&_mu);
-        return 0;
+        return nullptr;
     }
 
     // No wrap, just write at the end of the file.
@@ -206,7 +206,7 @@ int8_t dataLog::write(logRecord *rec) {
     _fileIO++;
 
     mutex_exit(&_mu);
-    return 0;
+    return nullptr;
 }
 
 dataLog::logRecordKey dataLog::readKey(uint32_t pos) {
