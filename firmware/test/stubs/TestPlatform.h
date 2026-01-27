@@ -32,6 +32,8 @@ public:
 
     ~String() { if (buffer) delete[] buffer; }
 
+    bool isEmpty() { return len == 0; }
+
     void remove(size_t index) {
         if (index < len) {
             buffer[index] = '\0';

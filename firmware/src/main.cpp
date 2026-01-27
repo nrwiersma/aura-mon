@@ -78,6 +78,14 @@ void setup() {
 
     eth.setSPISpeed(ETH_FREQ);
     eth.hostname(netCfg.hostname);
+    if (netCfg.hasIP()) {
+        eth.config(
+            ipaddr_addr(netCfg.ip.c_str()),
+            ipaddr_addr(netCfg.gateway.c_str()),
+            ipaddr_addr(netCfg.mask.c_str()),
+            ipaddr_addr(netCfg.dns.c_str()),
+            0);
+    }
     if (!eth.begin(mac)) {
         LOGE("No wired Ethernet hardware detected.");
 
