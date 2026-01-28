@@ -9,7 +9,6 @@ const char *contentTypePlain PROGMEM = "text/plain";
 const char *contentTypeHTML PROGMEM = "text/html";
 const char *contentTypeCSV PROGMEM = "text/csv";
 
-
 void returnOK();
 void handleEnergy();
 void handleNotFound();
@@ -29,19 +28,30 @@ void returnOK() {
     server.send(200, contentTypePlain, "");
 }
 
-void returnInternalError(const char* reason) {
+void returnInternalError(const char *reason) {
     String msg = "{\"error\":\"Internal Error\",\"reason\":\"";
     msg.concat(reason);
     msg.concat("\"}");
     server.send(500, contentTypeJSON, msg);
 }
 
+struct deviceColumn {
+    uint8_t index;
+    String  name;
+};
+
+void appendCSVValue(String &row, double value, uint8_t precision = 3) {
+    row += ",";
+    if (std::isfinite(value)) {
+        row += String(value, precision);
+    }
+}
+
 void handleEnergy() {
     uint32_t baseInterval = datalog.interval();
     uint32_t start = server.arg("start").toInt();
-    uint32_t end = server.hasArg("end") ? server.arg("end").toInt(): time(nullptr);
+    uint32_t end = server.hasArg("end") ? server.arg("end").toInt() : time(nullptr);
     uint32_t interval = server.hasArg("interval") ? server.arg("interval").toInt() : 5;
-
 
     start -= start % baseInterval;
     end -= end % baseInterval;
@@ -52,20 +62,104 @@ void handleEnergy() {
         return;
     }
 
-    // use HTTP/1.1 Chunked response to avoid building a huge temporary string
-    if (!server.chunkedResponseModeStart(200, "text/json")) {
+    if (!datalog.entries()) {
+        server.send(204, contentTypePlain, "");
+        return;
+    }
+
+    deviceColumn deviceColumns[MAX_DEVICES];
+    size_t       deviceCount = 0;
+    mutex_enter_blocking(&deviceInfoMu);
+    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
+        auto info = deviceInfos[i];
+        if (!info || !info->isEnabled() || !info->name || !info->name[0]) {
+            continue;
+        }
+        deviceColumns[deviceCount++] = deviceColumn{i, String(info->name)};
+    }
+    mutex_exit(&deviceInfoMu);
+
+    if (deviceCount == 0) {
+        server.send(204, contentTypePlain, "");
+        return;
+    }
+
+    uint32_t lastTs = datalog.lastTS();
+    if (start > lastTs) {
+        server.send(204, contentTypePlain, "");
+        return;
+    }
+    if (end > lastTs) {
+        end = lastTs;
+    }
+
+    logRecord prevRec;
+    if (auto err = datalog.read(start - interval, &prevRec); err) {
+        returnInternalError(err->Error());
+        return;
+    }
+
+    if (!server.chunkedResponseModeStart(200, contentTypeCSV)) {
         server.send(505, contentTypeHTML, F("HTTP1.1 required"));
         return;
     }
 
-    logRecord rec;
-    if (auto err = datalog.read(start - interval, &rec); err) {
-        returnInternalError(err->Error());
-        return;
+    String header = F("timestamp");
+    for (size_t i = 0; i < deviceCount; i++) {
+        const String &name = deviceColumns[i].name;
+        header += "," + name + ".V";
+        header += "," + name + ".A";
+        header += "," + name + ".W";
+        header += "," + name + ".Wh";
+        header += "," + name + ".PF";
     }
-    auto prevRec = rec;
+    header += "\n";
+    server.sendContent(header);
 
-    // TODO: Stream data from datalog.
+    for (uint32_t ts = start; ts <= end; ts += interval) {
+        logRecord rec;
+        if (auto err = datalog.read(ts, &rec); err) {
+            server.sendContent(F("#error reading datalog\n"));
+            server.chunkedResponseFinalize();
+            return;
+        }
+
+        if (rec.rev == prevRec.rev) {
+            continue;
+        }
+
+        const double elapsedHours = rec.logHours - prevRec.logHours;
+        if (elapsedHours <= 0) {
+            prevRec = rec;
+            continue;
+        }
+
+        auto row = String(ts);
+        row.reserve(row.length() + deviceCount * 48);
+
+        for (size_t i = 0; i < deviceCount; i++) {
+            const uint8_t idx = deviceColumns[i].index;
+            const double  voltage = (rec.voltHrs[idx] - prevRec.voltHrs[idx]) / elapsedHours;
+            double        energyWh = rec.wattHrs[idx] - prevRec.wattHrs[idx];
+            const double  power = energyWh / elapsedHours;
+            const double  apparentPower = (rec.vaHrs[idx] - prevRec.vaHrs[idx]) / elapsedHours;
+            if (energyWh < 0) {
+                energyWh = 0;
+            }
+            const double current = (voltage != 0.0) ? (apparentPower / voltage) : 0.0;
+            const double powerFactor = (apparentPower > 0.0) ? (power / apparentPower) : 0.0;
+
+            appendCSVValue(row, voltage);
+            appendCSVValue(row, current);
+            appendCSVValue(row, power);
+            appendCSVValue(row, energyWh);
+            appendCSVValue(row, powerFactor, 4);
+        }
+
+        row += "\n";
+        server.sendContent(row);
+        prevRec = rec;
+    }
 
     server.chunkedResponseFinalize();
 }
