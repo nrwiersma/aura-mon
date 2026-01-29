@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <pico/mutex.h>
+#include <errors.h>
 #include <SdFat.h>
 #include <W5500lwIP.h>
 #include <ModbusRTUMaster.h>
@@ -15,7 +16,6 @@
 #include <WebServer.h>
 #include <ArduinoJSON.h>
 
-#include "errors.h"
 #include "logger.h"
 #include "config.h"
 #include "ethernet.h"

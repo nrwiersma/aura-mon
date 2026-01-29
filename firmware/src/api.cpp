@@ -53,6 +53,8 @@ void handleEnergy() {
     uint32_t end = server.hasArg("end") ? server.arg("end").toInt() : time(nullptr);
     uint32_t interval = server.hasArg("interval") ? server.arg("interval").toInt() : 5;
 
+    LOGD("Energy request start=%u end=%u interval=%u", start, end, interval);
+
     start -= start % baseInterval;
     end -= end % baseInterval;
     interval -= interval % baseInterval;
@@ -67,6 +69,8 @@ void handleEnergy() {
         return;
     }
 
+    LOGD("energy: adjusted parameters start=%u end=%u interval=%u", start, end, interval);
+
     deviceColumn deviceColumns[MAX_DEVICES];
     size_t       deviceCount = 0;
     mutex_enter_blocking(&deviceInfoMu);
@@ -78,6 +82,8 @@ void handleEnergy() {
         deviceColumns[deviceCount++] = deviceColumn{i, String(info->name)};
     }
     mutex_exit(&deviceInfoMu);
+
+    LOGD("energy: collected devices: %u", deviceCount);
 
     if (deviceCount == 0) {
         server.send(204, contentTypePlain, "");
@@ -99,7 +105,9 @@ void handleEnergy() {
         return;
     }
 
-    if (!server.chunkedResponseModeStart(200, contentTypeCSV)) {
+    LOGD("energy: read previous record: %u", prevRec.rev);
+
+    if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
         server.send(505, contentTypeHTML, F("HTTP1.1 required"));
         return;
     }
@@ -161,10 +169,14 @@ void handleEnergy() {
         prevRec = rec;
     }
 
+    LOGD("energy: completed response");
+
     server.chunkedResponseFinalize();
 }
 
 void handleNotFound() {
+    LOGD("NotFound requested URL: %s", server.uri().c_str());
+
     if (server.method() != HTTP_GET) {
         server.send(405, contentTypePlain, "Method Not Allowed");
         return;

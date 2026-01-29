@@ -104,7 +104,7 @@ void setup() {
 
     Serial1.begin(RS485_BAUDRATE);
     modbus.begin(RS485_BAUDRATE);
-    modbus.setTimeout(100);
+    modbus.setTimeout(60);
 
     LOGI("Modbus initialised");
 

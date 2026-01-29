@@ -32,8 +32,12 @@ void syncDeviceData() {
 uint32_t syncDevices(void *param) {
     (void) param;
 
-    mutex_enter_timeout_ms(&deviceInfoMu, 100);
+    if (!mutex_enter_block_until(&deviceInfoMu, 100)) {
+        LOGE("syncDevices: could not acquire deviceInfoMu");
+        return 50;
+    }
     if (!devicesChanged) {
+        mutex_exit(&deviceInfoMu);
         return 900;
     }
 
@@ -42,7 +46,7 @@ uint32_t syncDevices(void *param) {
     // Reset the changed flag.
     devicesChanged = false;
 
-    mutex_enter_blocking(&deviceInfoMu);
+    mutex_exit(&deviceInfoMu);
 
     LOGD("Devices synchronized");
 

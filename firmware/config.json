@@ -1,5 +1,5 @@
 {
-  "format": 2,
+  "format": 1,
   "network": {
     "hostname": "aura-mon",
     "ip": "192.168.0.0",

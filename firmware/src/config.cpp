@@ -1,4 +1,7 @@
-#include "../lib/Error/src/errors.h"
+//
+// Created by Nicholas Wiersma on 2025/11/04.
+//
+
 #ifndef UNIT_TEST
 #include "auramon.h"
 #include <lwip/inet.h>
@@ -14,7 +17,7 @@ error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
     }
 
     if (netObj["hostname"].is<const char *>()) {
-        netCfg.hostname = netObj["hostname"].as<const char *>();
+        netCfg.hostname = strdup(netObj["hostname"].as<const char *>());
     }
     if (netObj["ip"].is<const char *>()) {
         auto ip = netObj["ip"].as<const char *>();
@@ -99,7 +102,7 @@ void applyDevicesFromJson(JsonArrayConst devicesArr) {
         info->addr = addr;
         info->calibration = entry["calibration"].is<float>() ? entry["calibration"].as<float>() : 1.0f;
         info->reversed = entry["reversed"].is<bool>() ? entry["reversed"].as<bool>() : false;
-        info->name = entry["name"].is<const char *>() ? entry["name"].as<const char *>() : nullptr;
+        info->name = entry["name"].is<const char *>() ? strdup(entry["name"].as<const char *>()) : nullptr;
     }
 
     mutex_exit(&deviceInfoMu);
@@ -124,6 +127,7 @@ void populateDevicesJson(JsonArray devicesArray) {
     mutex_exit(&deviceInfoMu);
 }
 
+// TODO: make loading and saving config more robust by using temporary files and atomic renames.
 error *loadConfig() {
     mutex_enter_blocking(&sdMu);
     FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
