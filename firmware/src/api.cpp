@@ -13,13 +13,14 @@ void returnOK();
 void handleGetConfig();
 void handlePostConfig();
 void handleEnergy();
+void handleLogs();
 void handleNotFound();
 
 void setupAPI() {
     server.on("/config", HTTP_GET, handleGetConfig);
     server.on("/config", HTTP_POST, handlePostConfig);
     server.on("/energy", HTTP_GET, handleEnergy);
-    // Log
+    server.on("/logs", HTTP_GET, handleLogs);
     // Metrics
     // Stats (momentary)
     server.on("/readyz", HTTP_GET, returnOK);
@@ -58,6 +59,40 @@ void handleGetConfig() {
     serializeJson(doc, response);
 
     server.send(200, contentTypeJSON, response);
+}
+
+void handleLogs() {
+    if (!mutex_enter_block_until(&sdMu, 100)) {
+        server.send(408, contentTypePlain, "Request Timeout");
+        return;
+    }
+
+    if (!sd.exists(MESSAGE_LOG_PATH)) {
+        mutex_exit(&sdMu);
+        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
+    }
+
+    if (auto f = sd.open(MESSAGE_LOG_PATH, O_READ); f) {
+        if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
+            server.send(505, contentTypePlain, F("HTTP1.1 required"));
+            f.close();
+            mutex_exit(&sdMu);
+            return;
+        }
+
+        uint8_t buffer[1024];
+        while (size_t readLen = f.read(buffer, sizeof(buffer))) {
+            server.sendContent(reinterpret_cast<char *>(buffer), readLen);
+        }
+        server.chunkedResponseFinalize();
+        f.close();
+
+        mutex_exit(&sdMu);
+        return;
+    }
+    mutex_exit(&sdMu);
+
+    server.send(404, contentTypeJSON, "Not Found");
 }
 
 void handlePostConfig() {
@@ -265,7 +300,18 @@ void handleNotFound() {
             contentType = F("image/jpeg");
         }
 
-        server.send(f, path, contentType);
+        if (!server.chunkedResponseModeStart(200, contentType.c_str())) {
+            server.send(505, contentTypePlain, F("HTTP1.1 required"));
+            f.close();
+            mutex_exit(&sdMu);
+            return;
+        }
+
+        uint8_t buffer[1024];
+        while (size_t readLen = f.read(buffer, sizeof(buffer))) {
+            server.sendContent(reinterpret_cast<char *>(buffer), readLen);
+        }
+        server.chunkedResponseFinalize();
         f.close();
 
         mutex_exit(&sdMu);

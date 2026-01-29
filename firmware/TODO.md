@@ -1,6 +1,6 @@
 # TODO List
 - [x] Config Endpoints
-- [ ] Log Endpoint
+- [x] Log Endpoint
 - [ ] Status LED
 - [ ] Status Endpoint
 - [ ] Metrics Endpoint
