@@ -10,12 +10,15 @@ const char *contentTypeHTML PROGMEM = "text/html";
 const char *contentTypeCSV PROGMEM = "text/csv";
 
 void returnOK();
+void handleGetConfig();
+void handlePostConfig();
 void handleEnergy();
 void handleNotFound();
 
 void setupAPI() {
+    server.on("/config", HTTP_GET, handleGetConfig);
+    server.on("/config", HTTP_POST, handlePostConfig);
     server.on("/energy", HTTP_GET, handleEnergy);
-    // Config
     // Log
     // Metrics
     // Stats (momentary)
@@ -45,6 +48,48 @@ void appendCSVValue(String &row, double value, uint8_t precision = 3) {
     if (std::isfinite(value)) {
         row += String(value, precision);
     }
+}
+
+void handleGetConfig() {
+    JsonDocument doc;
+    saveConfigJSON(doc);
+
+    String response;
+    serializeJson(doc, response);
+
+    server.send(200, contentTypeJSON, response);
+}
+
+void handlePostConfig() {
+    if (server.hasArg("plain") == false) {
+        server.send(400, contentTypeJSON, F("{\"error\":\"No data provided\"}"));
+        return;
+    }
+
+    String body = server.arg("plain");
+
+    JsonDocument doc;
+    if (auto err = deserializeJson(doc, body); err) {
+        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid JSON\"}"));
+        return;
+    }
+
+    auto err = loadConfigJSON(doc);
+    if (err) {
+        String msg = "{\"error\":\"Invalid configuration\",\"reason\":\"";
+        msg.concat(err->Error());
+        msg.concat("\"}");
+        server.send(400, contentTypeJSON, msg);
+        return;
+    }
+
+    err = saveConfig();
+    if (err) {
+        returnInternalError(err->Error());
+        return;
+    }
+
+    server.send(200, contentTypePlain, "");
 }
 
 void handleEnergy() {
