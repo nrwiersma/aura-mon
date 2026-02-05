@@ -45,7 +45,10 @@ public:
     bool     begin();
     uint32_t entries();
     int      interval() const { return _interval; }
-    uint32_t lastTS() const { return _last.ts; }
+    uint32_t firstRev();
+    uint32_t firstTS();
+    uint32_t lastRev();
+    uint32_t lastTS();
     error *  read(uint32_t ts, logRecord *rec, uint32_t timeoutMS = 100);
     error *  write(logRecord *rec);
 

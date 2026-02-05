@@ -9,8 +9,8 @@ struct NetworkConfig {
 
     NetworkConfig()
         : hostname("aura-mon"),
-          ip("0.0.0.0"),
-          gateway("0.0.0.0"),
+          ip(""),
+          gateway(""),
           mask("255.255.255.0"),
           dns("8.8.8.8") {
     }

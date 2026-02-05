@@ -12,6 +12,7 @@ const char *contentTypeCSV PROGMEM = "text/csv";
 void returnOK();
 void handleGetConfig();
 void handlePostConfig();
+void handleStatus();
 void handleEnergy();
 void handleLogs();
 void handleNotFound();
@@ -19,10 +20,10 @@ void handleNotFound();
 void setupAPI() {
     server.on("/config", HTTP_GET, handleGetConfig);
     server.on("/config", HTTP_POST, handlePostConfig);
+    server.on("/status", HTTP_GET, handleStatus);
     server.on("/energy", HTTP_GET, handleEnergy);
     server.on("/logs", HTTP_GET, handleLogs);
     // Metrics
-    // Stats (momentary)
     server.on("/readyz", HTTP_GET, returnOK);
     server.on("/livez", HTTP_GET, returnOK);
     server.onNotFound(handleNotFound); // Serve "public" from SD Card.
@@ -61,40 +62,6 @@ void handleGetConfig() {
     server.send(200, contentTypeJSON, response);
 }
 
-void handleLogs() {
-    if (!mutex_enter_block_until(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
-    if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
-        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
-    }
-
-    if (auto f = sd.open(MESSAGE_LOG_PATH, O_READ); f) {
-        if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
-            server.send(505, contentTypePlain, F("HTTP1.1 required"));
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-
-        uint8_t buffer[1024];
-        while (size_t readLen = f.read(buffer, sizeof(buffer))) {
-            server.sendContent(reinterpret_cast<char *>(buffer), readLen);
-        }
-        server.chunkedResponseFinalize();
-        f.close();
-
-        mutex_exit(&sdMu);
-        return;
-    }
-    mutex_exit(&sdMu);
-
-    server.send(404, contentTypeJSON, "Not Found");
-}
-
 void handlePostConfig() {
     if (server.hasArg("plain") == false) {
         server.send(400, contentTypeJSON, F("{\"error\":\"No data provided\"}"));
@@ -125,6 +92,56 @@ void handlePostConfig() {
     }
 
     server.send(200, contentTypePlain, "");
+}
+
+void handleStatus() {
+    JsonDocument doc;
+
+    JsonObject statsObj = doc["stats"].to<JsonObject>();
+    statsObj["startTime"] = startTime;
+    statsObj["currentTime"] = time(nullptr);
+    statsObj["runSeconds"] = time(nullptr) - startTime;
+    statsObj["heapFree"] = rp2040.getFreeHeap();
+
+
+    JsonArray devicesArr = doc["devices"].to<JsonArray>();
+
+    mutex_enter_blocking(&deviceDataMu);
+
+    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
+        auto data = deviceData[i];
+        if (!data || !data->name || !data->name[0]) {
+            continue;
+        }
+
+        auto deviceObj = devicesArr.add<JsonObject>();
+        deviceObj["name"] = String(data->name);
+        deviceObj["volts"] = data->volts;
+        deviceObj["amps"] = data->amps;
+        deviceObj["pf"] = data->pf;
+        deviceObj["hz"] = data->hz;
+    }
+    mutex_exit(&deviceDataMu);
+
+    JsonObject datalogObj = doc["datalog"].to<JsonObject>();
+    datalogObj["firstRev"] = datalog.firstRev();
+    datalogObj["lastRev"] = datalog.lastRev();
+    datalogObj["interval"] = datalog.interval();
+
+    JsonObject networkObj = doc["network"].to<JsonObject>();
+    networkObj["hostname"] = netCfg.hostname;
+    networkObj["ip"] = eth.localIP().toString();
+    networkObj["gateway"] = eth.gatewayIP().toString();
+    networkObj["subnet"] = eth.subnetMask().toString();
+    networkObj["dns"] = eth.dnsIP().toString();
+    char mac_str[18];
+    sprintf_P(mac_str, PSTR("%02X:%02X:%02X:%02X:%02X:%02X"), mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    networkObj["mac"] = mac_str;
+
+    String response;
+    serializeJson(doc, response);
+
+    server.send(200, contentTypeJSON, response);
 }
 
 void handleEnergy() {
@@ -252,6 +269,40 @@ void handleEnergy() {
     LOGD("energy: completed response");
 
     server.chunkedResponseFinalize();
+}
+
+void handleLogs() {
+    if (!mutex_enter_block_until(&sdMu, 100)) {
+        server.send(408, contentTypePlain, "Request Timeout");
+        return;
+    }
+
+    if (!sd.exists(MESSAGE_LOG_PATH)) {
+        mutex_exit(&sdMu);
+        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
+    }
+
+    if (auto f = sd.open(MESSAGE_LOG_PATH, O_READ); f) {
+        if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
+            server.send(505, contentTypePlain, F("HTTP1.1 required"));
+            f.close();
+            mutex_exit(&sdMu);
+            return;
+        }
+
+        uint8_t buffer[1024];
+        while (size_t readLen = f.read(buffer, sizeof(buffer))) {
+            server.sendContent(reinterpret_cast<char *>(buffer), readLen);
+        }
+        server.chunkedResponseFinalize();
+        f.close();
+
+        mutex_exit(&sdMu);
+        return;
+    }
+    mutex_exit(&sdMu);
+
+    server.send(404, contentTypeJSON, "Not Found");
 }
 
 void handleNotFound() {

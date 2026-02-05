@@ -1,5 +1,9 @@
 #include "auramon.h"
 
+time_t            startTime;
+Ticker            ledTimer;
+volatile LEDColor ledState;
+
 mutex_t sdMu;
 SdFs    sd;
 
@@ -11,6 +15,8 @@ bool      rtcRunning = false;
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 NetworkConfig  netCfg;
 
+mutex_t          deviceDataMu;
+inputDeviceData *deviceData[MAX_DEVICES] = {};
 mutex_t          deviceInfoMu;
 volatile bool    devicesChanged;
 inputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
@@ -26,6 +32,7 @@ taskQueue c1Queue = {};
 
 volatile bool setupComplete = false;
 
+void blinkLED();
 void waitForSerial();
 
 void setup() {
@@ -43,6 +50,7 @@ void setup() {
         Serial.println("Could not initialize SD Card. Halting");
         sd.initErrorPrint(&Serial);
 
+        digitalWrite(LED_GREEN, LOW);
         while (1) { delay(1000); }
     }
 
@@ -66,7 +74,9 @@ void setup() {
     } else {
         LOGI("RTC not running");
     }
+    startTime = time(nullptr);
 
+    mutex_init(&deviceDataMu);
     mutex_init(&deviceInfoMu);
 
     if (auto err = loadConfig(); err) {
@@ -74,7 +84,7 @@ void setup() {
     } else {
         LOGI("Config loaded from SD Card");
     }
-    syncDeviceData();
+    syncDeviceInfo();
 
     eth.setSPISpeed(ETH_FREQ);
     eth.hostname(netCfg.hostname);
@@ -89,6 +99,7 @@ void setup() {
     if (!eth.begin(mac)) {
         LOGE("No wired Ethernet hardware detected.");
 
+        digitalWrite(LED_GREEN, LOW);
         while (true) { delay(1000); }
     }
 
@@ -97,6 +108,7 @@ void setup() {
     if (!datalog.begin()) {
         LOGE("Datalog could not be opened.");
 
+        digitalWrite(LED_GREEN, LOW);
         while (true) { delay(1000); }
     }
 
@@ -113,9 +125,13 @@ void setup() {
 
     c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);
+    c0Queue.add(syncState, 4);
 
     c1Queue.add(logData, 7);
     c1Queue.add(syncDevices, 6);
+
+    syncState(nullptr);
+    ledTimer.attach(1, blinkLED);
 
     setupComplete = true;
 }
@@ -149,6 +165,25 @@ void loop1() {
             delay(10);
         }
     }
+}
+
+void blinkLED() {
+    static bool on = false;
+    switch (ledState) {
+        case LEDColor::Red:
+            digitalWrite(LED_RED, on ? HIGH : LOW);
+            digitalWrite(LED_GREEN, LOW);
+            break;
+        case LEDColor::Green:
+            digitalWrite(LED_RED, LOW);
+            digitalWrite(LED_GREEN, on ? HIGH : LOW);
+            break;
+        case LEDColor::Orange:
+            digitalWrite(LED_RED, on ? HIGH : LOW);
+            digitalWrite(LED_GREEN, on ? HIGH : LOW);
+            break;
+    }
+    on = !on;
 }
 
 void waitForSerial() {

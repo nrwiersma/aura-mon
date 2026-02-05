@@ -15,6 +15,7 @@
 #include <PCF85063A.h>
 #include <WebServer.h>
 #include <ArduinoJSON.h>
+#include <Ticker.h>
 
 #include "logger.h"
 #include "config.h"
@@ -49,7 +50,13 @@
 #define RS485_DE 2
 #define RS485_BAUDRATE 38400
 
+enum LEDColor { Red, Orange, Green };
+
 inline byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
+
+extern time_t startTime;
+extern Ticker ledTimer;
+extern volatile LEDColor ledState;
 
 extern Wiznet5500lwIP eth;
 extern NetworkConfig  netCfg;
@@ -65,6 +72,8 @@ extern ModbusRTUMaster modbus;
 extern WebServer server;
 
 #define MAX_DEVICES 15
+extern mutex_t          deviceDataMu;
+extern inputDeviceData *deviceData[MAX_DEVICES];
 extern mutex_t          deviceInfoMu;
 extern volatile bool    devicesChanged;
 extern inputDeviceInfo *deviceInfos[MAX_DEVICES];
@@ -81,8 +90,9 @@ uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
 void     initLogData();
 uint32_t logData(void *param);
-void syncDeviceData();
+void syncDeviceInfo();
 uint32_t syncDevices(void *param);
+uint32_t syncState(void *param);
 
 void collect();
 

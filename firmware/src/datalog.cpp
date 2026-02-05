@@ -61,6 +61,34 @@ uint32_t dataLog::entries() {
     return e;
 }
 
+uint32_t dataLog::firstRev() {
+    mutex_enter_blocking(&_mu);
+    auto r = _first.rev;
+    mutex_exit(&_mu);
+    return r;
+}
+
+uint32_t dataLog::firstTS() {
+    mutex_enter_blocking(&_mu);
+    auto t = _first.ts;
+    mutex_exit(&_mu);
+    return t;
+}
+
+uint32_t dataLog::lastRev() {
+    mutex_enter_blocking(&_mu);
+    auto r = _last.rev;
+    mutex_exit(&_mu);
+    return r;
+}
+
+uint32_t dataLog::lastTS() {
+    mutex_enter_blocking(&_mu);
+    auto t = _last.ts;
+    mutex_exit(&_mu);
+    return t;
+}
+
 error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     ts -= ts % _interval;
 

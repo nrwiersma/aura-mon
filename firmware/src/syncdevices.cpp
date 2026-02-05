@@ -4,7 +4,7 @@
 
 #include "auramon.h"
 
-void syncDeviceData() {
+void syncDeviceInfo() {
     for (uint32_t i = 0; i < MAX_DEVICES; i++) {
         if (deviceInfos[i] == nullptr) {
             if (devices[i] == nullptr) {
@@ -29,6 +29,30 @@ void syncDeviceData() {
     }
 }
 
+void syncDeviceData() {
+    for (uint32_t i = 0; i < MAX_DEVICES; i++) {
+        if (devices[i] == nullptr) {
+            if (deviceData[i] != nullptr) {
+                delete deviceData[i];
+                deviceData[i] = nullptr;
+            }
+            continue;
+        }
+
+        if (deviceData[i] == nullptr) {
+            deviceData[i] = new inputDeviceData{};
+        }
+
+        deviceData[i]->name = devices[i]->name;
+        deviceData[i]->volts = devices[i]->current.volts;
+        deviceData[i]->amps = devices[i]->current.volts != 0.0
+                                  ? (devices[i]->current.va / devices[i]->current.volts)
+                                  : 0.0;
+        deviceData[i]->pf = devices[i]->current.va != 0.0 ? devices[i]->current.watts / devices[i]->current.va : 0.0;
+        deviceData[i]->hz = devices[i]->current.hz;
+    }
+}
+
 uint32_t syncDevices(void *param) {
     (void) param;
 
@@ -36,19 +60,23 @@ uint32_t syncDevices(void *param) {
         LOGE("syncDevices: could not acquire deviceInfoMu");
         return 50;
     }
-    if (!devicesChanged) {
-        mutex_exit(&deviceInfoMu);
-        return 900;
+    if (devicesChanged) {
+        syncDeviceInfo();
+
+        // Reset the changed flag.
+        devicesChanged = false;
+    }
+
+    mutex_exit(&deviceInfoMu);
+
+    if (!mutex_enter_block_until(&deviceDataMu, 100)) {
+        LOGE("syncDevices: could not acquire deviceDataMu");
+        return 50;
     }
 
     syncDeviceData();
 
-    // Reset the changed flag.
-    devicesChanged = false;
+    mutex_exit(&deviceDataMu);
 
-    mutex_exit(&deviceInfoMu);
-
-    LOGD("Devices synchronized");
-
-    return 900;
+    return 1000;
 }

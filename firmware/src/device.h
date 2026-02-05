@@ -54,4 +54,12 @@ public:
     void setEnergy(double volts, double watts, double va, double hz);
 };
 
+struct inputDeviceData {
+    const char *name;
+    double volts;
+    double amps;
+    double pf;
+    double hz;
+};
+
 #endif //FIRMWARE_CHANNEL_H

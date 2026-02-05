@@ -1,9 +1,11 @@
 # TODO List
 - [x] Config Endpoints
 - [x] Log Endpoint
-- [ ] Status LED
-- [ ] Status Endpoint
+- [x] Status LED
+- [x] Status Endpoint
+- [ ] Assignment and locating Endpoints
 - [ ] Metrics Endpoint
 - [ ] OTA + Endpoint
 - [ ] Web frontend
 - [ ] Front Button to add device
+- [ ] Watchdog
