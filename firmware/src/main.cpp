@@ -1,5 +1,10 @@
 #include "auramon.h"
 
+// Disable SysTick on core 1 to free up the timer for Ticker.
+bool core1_disable_systick = true;
+// Use a separate stack for core 1 to avoid clashes with core 0.
+bool core1_separate_stack = true;
+
 time_t            startTime;
 Ticker            ledTimer;
 volatile LEDColor ledState;
