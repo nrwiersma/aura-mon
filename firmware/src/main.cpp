@@ -48,6 +48,7 @@ void setup() {
 
     waitForSerial();
 
+    LOGI("Firmware version: %s", AURAMON_VERSION);
     LOGD("Booting");
 
     mutex_init(&sdMu);

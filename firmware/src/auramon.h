@@ -25,6 +25,7 @@
 #include "modbus.h"
 #include "api.h"
 #include "device.h"
+#include "version.h"
 
 #define WAIT_FOR_SERIAL 1
 

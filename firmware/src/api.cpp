@@ -97,6 +97,8 @@ void handlePostConfig() {
 void handleStatus() {
     JsonDocument doc;
 
+    doc["version"]= AURAMON_VERSION;
+
     JsonObject statsObj = doc["stats"].to<JsonObject>();
     statsObj["startTime"] = startTime;
     statsObj["currentTime"] = time(nullptr);
