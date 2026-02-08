@@ -1,5 +1,6 @@
 const MAX_DEVICES = 15;
 const SAVE_DEBOUNCE_MS = 600;
+const THEME_STORAGE_KEY = "theme";
 
 const elements = {
   version: document.getElementById("version"),
@@ -21,6 +22,7 @@ const elements = {
   formReversed: document.getElementById("form-reversed"),
   formDelete: document.getElementById("form-delete"),
   formCancel: document.getElementById("form-cancel"),
+  themeToggle: document.getElementById("theme-toggle"),
   otaOpen: document.getElementById("ota-open"),
   otaDrawer: document.getElementById("ota-drawer"),
   otaBackdrop: document.getElementById("ota-backdrop"),
@@ -492,9 +494,71 @@ async function loadStatus() {
   }
 }
 
+function getStoredTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "dark" || stored === "light" ? stored : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getPreferredTheme() {
+  const stored = getStoredTheme();
+  if (stored) {
+    return stored;
+  }
+  if (window.matchMedia) {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return "light";
+}
+
+function applyTheme(theme) {
+  const isDark = theme === "dark";
+  document.documentElement.classList.toggle("theme-dark", isDark);
+  if (elements.themeToggle) {
+    elements.themeToggle.setAttribute("aria-pressed", isDark ? "true" : "false");
+    elements.themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+  }
+}
+
+function setTheme(theme) {
+  applyTheme(theme);
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (error) {
+    // Ignore storage errors and still apply the theme.
+  }
+}
+
+function toggleTheme() {
+  const nextTheme = document.documentElement.classList.contains("theme-dark") ? "light" : "dark";
+  setTheme(nextTheme);
+}
+
+function watchSystemTheme() {
+  if (!window.matchMedia) {
+    return;
+  }
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  if (typeof media.addEventListener !== "function") {
+    return;
+  }
+  media.addEventListener("change", (event) => {
+    if (getStoredTheme()) {
+      return;
+    }
+    applyTheme(event.matches ? "dark" : "light");
+  });
+}
+
 async function init() {
   setSaveStatus("Loading...", "saving");
   setStatusPill(false);
+
+  applyTheme(getPreferredTheme());
+  watchSystemTheme();
 
   await loadConfig();
   renderTable();
@@ -509,6 +573,10 @@ async function init() {
     event.preventDefault();
     commitDrawerDevice();
   });
+
+  if (elements.themeToggle) {
+    elements.themeToggle.addEventListener("click", toggleTheme);
+  }
 
   if (elements.otaOpen) {
     elements.otaOpen.addEventListener("click", openOtaDrawer);
