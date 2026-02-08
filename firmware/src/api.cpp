@@ -452,6 +452,11 @@ void handlePublicUpload() {
             return;
         }
 
+        String path = "public/";
+        path.concat(upload.filename);
+
+        LOGI("Public upload: start %s", path.c_str());
+
         if (!mutex_enter_block_until(&sdMu, 100)) {
             publicUploadFailed = true;
             publicUploadStatus = 408;
@@ -461,33 +466,26 @@ void handlePublicUpload() {
         }
         publicUploadMutexHeld = true;
 
-        String path = "public/";
-        path.concat(upload.filename);
-
         publicUploadFile = sd.open(path.c_str(), O_WRITE | O_CREAT | O_TRUNC);
         if (!publicUploadFile) {
             publicUploadFailed = true;
             publicUploadStatus = 500;
             publicUploadError = F("Failed to open file");
-            LOGE("Public upload: failed to open %s", path.c_str());
             mutex_exit(&sdMu);
+            LOGE("Public upload: failed to open %s", path.c_str());
             publicUploadMutexHeld = false;
-            return;
         }
-
-        LOGI("Public upload: start %s", path.c_str());
     } else if (upload.status == UPLOAD_FILE_WRITE && !publicUploadFailed) {
         if (publicUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
             publicUploadFailed = true;
             publicUploadStatus = 500;
             publicUploadError = F("Write failed");
-            LOGE("Public upload: write failed at %u bytes", upload.totalSize);
+            Serial.printf("Public upload: write failed at %u bytes", upload.totalSize);
             publicUploadFile.close();
             if (publicUploadMutexHeld) {
                 mutex_exit(&sdMu);
                 publicUploadMutexHeld = false;
             }
-            return;
         }
     } else if (upload.status == UPLOAD_FILE_END && !publicUploadFailed) {
         publicUploadFile.flush();
@@ -553,7 +551,7 @@ void handleNotFound() {
         }
 
         String contentType = contentTypePlain;
-        if (path.endsWith(".html")) {
+        if (path.endsWith(".html") || path.endsWith(".html.gz")) {
             contentType = F("text/html");
         } else if (path.endsWith(".css") || path.endsWith(".css.gz")) {
             contentType = F("text/css");

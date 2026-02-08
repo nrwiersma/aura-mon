@@ -27,7 +27,7 @@
 #include "device.h"
 #include "version.h"
 
-#define WAIT_FOR_SERIAL 1
+#define WAIT_FOR_SERIAL 0
 
 #define MS_PER_HOUR 3600000UL
 
