@@ -21,31 +21,39 @@ error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
     }
     if (netObj["ip"].is<const char *>()) {
         auto ip = netObj["ip"].as<const char *>();
-        if (ipaddr_addr(ip) == IPADDR_NONE) {
-            return newError("invalid ip address");
+        if (strlen(ip) > 0) {
+            if (ipaddr_addr(ip) == IPADDR_NONE) {
+                return newError("invalid ip address");
+            }
+            netCfg.ip = ip;
         }
-        netCfg.ip = ip;
     }
     if (netObj["gateway"].is<const char *>()) {
         auto ip = netObj["gateway"].as<const char *>();
-        if (ipaddr_addr(ip) == IPADDR_NONE) {
-            return newError("invalid gateway address");
+        if (strlen(ip) > 0) {
+            if (ipaddr_addr(ip) == IPADDR_NONE) {
+                return newError("invalid gateway address");
+            }
+            netCfg.gateway = ip;
         }
-        netCfg.gateway = ip;
     }
     if (netObj["mask"].is<const char *>()) {
         auto ip = netObj["mask"].as<const char *>();
-        if (ipaddr_addr(ip) == IPADDR_NONE) {
-            return newError("invalid ip mask");
+        if (strlen(ip) > 0) {
+            if (ipaddr_addr(ip) == IPADDR_NONE) {
+                return newError("invalid ip mask");
+            }
+            netCfg.mask = ip;
         }
-        netCfg.mask = ip;
     }
     if (netObj["dns"].is<const char *>()) {
         auto ip = netObj["dns"].as<const char *>();
-        if (ipaddr_addr(ip) == IPADDR_NONE) {
-            return newError("invalid dns address");
+        if (strlen(ip) > 0) {
+            if (ipaddr_addr(ip) == IPADDR_NONE) {
+                return newError("invalid dns address");
+            }
+            netCfg.dns = ip;
         }
-        netCfg.dns = ip;
     }
     return nullptr;
 }

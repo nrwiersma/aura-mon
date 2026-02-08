@@ -6,6 +6,6 @@
 - [ ] Assignment and locating Endpoints
 - [ ] Metrics Endpoint
 - [x] OTA + Endpoint
-- [ ] Web frontend
+- [x] Web frontend
 - [ ] Front Button to add device
 - [ ] Watchdog

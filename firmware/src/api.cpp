@@ -97,6 +97,10 @@ void handlePostConfig() {
         return;
     }
 
+    mutex_enter_blocking(&deviceInfoMu);
+    devicesChanged = true;
+    mutex_exit(&deviceInfoMu);
+
     server.send(200, contentTypePlain, "");
 }
 
