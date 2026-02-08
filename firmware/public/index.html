@@ -11,7 +11,16 @@
     <header class="topbar">
       <img class="logo" src="/logo.svg" alt="Aura Mon" />
       <div class="topbar-meta">
-        <div class="version">Version <span id="version">--</span></div>
+        <div class="version-wrap">
+          <div class="version">Version <span id="version">--</span></div>
+          <button id="ota-open" class="btn btn-ghost btn-ota" type="button" aria-haspopup="dialog" aria-controls="ota-drawer" aria-label="Open OTA upload">
+            <svg class="ota-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M12 16V4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              <path d="M8 8l4-4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M4 20h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
         <div class="status-pill" id="status-pill">Live</div>
       </div>
     </header>
@@ -106,6 +115,33 @@
     </form>
   </aside>
 
-  <script src=" /app.js"></script>
+  <div id="ota-backdrop" class="drawer-backdrop hidden"></div>
+  <aside id="ota-drawer" class="drawer" aria-hidden="true">
+    <div class="drawer-header">
+      <div>
+        <div class="drawer-title">Firmware update</div>
+        <div class="drawer-subtitle">Upload a new firmware file to update the device.</div>
+      </div>
+      <button id="ota-close" class="btn btn-ghost" type="button" aria-label="Close">
+        <span class="btn-icon">×</span>
+      </button>
+    </div>
+
+    <form id="ota-form" class="drawer-body" action="/ota" method="POST" enctype="multipart/form-data">
+      <label class="field" for="firmware">
+        <span class="field-label">Firmware file</span>
+        <input id="firmware" name="firmware" type="file" class="file-input" />
+      </label>
+
+      <p class="helper-text">Select a firmware file and submit to start the OTA update.</p>
+
+      <div class="drawer-actions">
+        <button class="btn" type="button" id="ota-cancel">Cancel</button>
+        <button class="btn btn-primary" type="submit">Upload</button>
+      </div>
+    </form>
+  </aside>
+
+  <script src="/app.js"></script>
 </body>
 </html>

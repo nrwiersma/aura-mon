@@ -20,7 +20,14 @@ const elements = {
   formCalibration: document.getElementById("form-calibration"),
   formReversed: document.getElementById("form-reversed"),
   formDelete: document.getElementById("form-delete"),
-  formCancel: document.getElementById("form-cancel")
+  formCancel: document.getElementById("form-cancel"),
+  otaOpen: document.getElementById("ota-open"),
+  otaDrawer: document.getElementById("ota-drawer"),
+  otaBackdrop: document.getElementById("ota-backdrop"),
+  otaClose: document.getElementById("ota-close"),
+  otaCancel: document.getElementById("ota-cancel"),
+  otaForm: document.getElementById("ota-form"),
+  otaFile: document.getElementById("firmware")
 };
 
 const state = {
@@ -380,6 +387,25 @@ function closeDrawer() {
   state.isAdding = false;
 }
 
+function openOtaDrawer() {
+  elements.otaDrawer.classList.add("open");
+  elements.otaDrawer.setAttribute("aria-hidden", "false");
+  elements.otaBackdrop.classList.add("open");
+  elements.otaBackdrop.classList.remove("hidden");
+  setInputError(elements.otaFile, false);
+}
+
+function closeOtaDrawer() {
+  elements.otaDrawer.classList.remove("open");
+  elements.otaDrawer.setAttribute("aria-hidden", "true");
+  elements.otaBackdrop.classList.remove("open");
+  elements.otaBackdrop.classList.add("hidden");
+  if (elements.otaForm) {
+    elements.otaForm.reset();
+  }
+  setInputError(elements.otaFile, false);
+}
+
 function commitDrawerDevice() {
   if (!state.activeDevice) {
     return false;
@@ -476,6 +502,32 @@ async function init() {
     event.preventDefault();
     commitDrawerDevice();
   });
+
+  if (elements.otaOpen) {
+    elements.otaOpen.addEventListener("click", openOtaDrawer);
+  }
+  if (elements.otaClose) {
+    elements.otaClose.addEventListener("click", closeOtaDrawer);
+  }
+  if (elements.otaCancel) {
+    elements.otaCancel.addEventListener("click", closeOtaDrawer);
+  }
+  if (elements.otaBackdrop) {
+    elements.otaBackdrop.addEventListener("click", closeOtaDrawer);
+  }
+  if (elements.otaFile) {
+    elements.otaFile.addEventListener("change", () => {
+      setInputError(elements.otaFile, false);
+    });
+  }
+  if (elements.otaForm) {
+    elements.otaForm.addEventListener("submit", (event) => {
+      if (!elements.otaFile || !elements.otaFile.files || elements.otaFile.files.length === 0) {
+        event.preventDefault();
+        setInputError(elements.otaFile, true);
+      }
+    });
+  }
 
   setInterval(loadStatus, 1000);
 }

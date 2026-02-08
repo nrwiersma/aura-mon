@@ -76,6 +76,18 @@ p {
   color: #b42318;
 }
 
+.version-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-ota {
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
 .content {
   padding: 24px 32px 40px;
   flex: 1;
@@ -256,6 +268,14 @@ input[type="number"] {
   background: #ffffff;
 }
 
+.file-input {
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 13px;
+}
+
 input[type="checkbox"] {
   width: 18px;
   height: 18px;
@@ -411,6 +431,12 @@ input[type="checkbox"] {
   font-weight: 600;
   color: var(--text);
   font-size: 13px;
+}
+
+.helper-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .drawer-actions {
