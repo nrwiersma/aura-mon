@@ -85,6 +85,20 @@ function formatMetric(value, decimals = 3) {
   return fixed.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
 }
 
+function formatVoltage(metrics) {
+  if (!metrics) {
+    return "--";
+  }
+
+  const volts = Number(metrics.volts);
+  if (!Number.isFinite(volts)) {
+    return "--";
+  }
+
+  const voltsLabel = formatMetric(volts, 0);
+  return `${voltsLabel} V`;
+}
+
 function formatPower(metrics) {
   if (!metrics) {
     return "--";
@@ -97,7 +111,7 @@ function formatPower(metrics) {
   }
 
   const watts = volts * amps * pf;
-  const wattsLabel = formatMetric(watts, 2);
+  const wattsLabel = formatMetric(watts, 0);
   if (!Number.isFinite(watts)) {
     return "--";
   }
@@ -106,7 +120,7 @@ function formatPower(metrics) {
     return `${wattsLabel} W`;
   }
 
-  return `${wattsLabel} W (PF ${formatMetric(pf, 2)})`;
+  return `${wattsLabel} W, pf ${formatMetric(pf, 2)}`;
 }
 
 function updateVersion() {
@@ -127,6 +141,10 @@ function updateMetrics() {
   state.rowNodes.forEach(({ row, device }) => {
     const name = device?.name ? device.name.trim() : "";
     const metrics = name ? state.statusMap.get(name) : null;
+    const voltsText = row.querySelector("[data-volts-text]");
+    if (voltsText) {
+      voltsText.textContent = formatVoltage(metrics);
+    }
     const powerText = row.querySelector("[data-power-text]");
     if (powerText) {
       powerText.textContent = formatPower(metrics);
@@ -249,6 +267,11 @@ function createRow(device) {
   nameCell.textContent = device.name || "--";
   row.appendChild(nameCell);
 
+  const voltsCell = document.createElement("td");
+  voltsCell.setAttribute("data-volts-text", "true");
+  voltsCell.textContent = "--";
+  row.appendChild(voltsCell);
+
   const powerCell = document.createElement("td");
   powerCell.className = "metric";
   powerCell.setAttribute("data-power", "true");
@@ -267,10 +290,6 @@ function createRow(device) {
   }
   powerCell.appendChild(powerWrap);
   row.appendChild(powerCell);
-
-  const calibrationCell = document.createElement("td");
-  calibrationCell.textContent = Number.isFinite(device.calibration) ? formatMetric(device.calibration, 2) : "--";
-  row.appendChild(calibrationCell);
 
   const actionCell = document.createElement("td");
   const editButton = document.createElement("button");

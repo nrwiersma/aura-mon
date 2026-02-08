@@ -450,6 +450,8 @@ void handleNotFound() {
             contentType = F("image/png");
         } else if (path.endsWith(".jpg") || path.endsWith(".jpeg")) {
             contentType = F("image/jpeg");
+        } else if (path.endsWith(".svg")) {
+            contentType = F("image/svg+xml");
         }
 
         if (!server.chunkedResponseModeStart(200, contentType.c_str())) {

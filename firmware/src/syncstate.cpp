@@ -9,15 +9,16 @@ uint32_t syncState(void *param) {
 
     mutex_enter_blocking(&sdMu);
     auto sdPresent = sd.card()->status() != 0 && sd.card()->errorCode() == 0;
+    auto sdError = sd.card()->errorCode();
+    mutex_exit(&sdMu);
+
     if (!sdPresent) {
         ledState = LEDColor::Red;
 
-        LOGD("SD Card not present or error: %d", sd.card()->errorCode());
+        LOGD("SD Card not present or error: %d", sdError);
 
-        mutex_exit(&sdMu);
         return 1000;
     }
-    mutex_exit(&sdMu);
 
     if (eth.linkStatus() != LinkON) {
         ledState = LEDColor::Orange;
