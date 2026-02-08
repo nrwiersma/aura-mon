@@ -423,8 +423,12 @@ void handleNotFound() {
     if (!path.startsWith("/")) path = '/' + path;
     if (path == "/") path = "/index.html";
     path = "public" + path;
+    auto gzPath = path + ".gz";
 
-    if (!sd.exists(path.c_str())) {
+    if (sd.exists(gzPath.c_str())) {
+        server.sendHeader("Content-Encoding", "gzip");
+        path = gzPath;
+    } else if (!sd.exists(path.c_str())) {
         mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
     }
@@ -440,17 +444,18 @@ void handleNotFound() {
         String contentType = contentTypePlain;
         if (path.endsWith(".html")) {
             contentType = F("text/html");
-        } else if (path.endsWith(".css")) {
+        } else if (path.endsWith(".css") || path.endsWith(".css.gz")) {
             contentType = F("text/css");
         } else if (path.endsWith(".js")) {
             contentType = F("application/javascript");
-        } else if (path.endsWith(".json")) {
+        } else if (path.endsWith(".json") || path.endsWith(".json.gz")) {
             contentType = contentTypeJSON;
-        } else if (path.endsWith(".png")) {
+        } else if (path.endsWith(".png") || path.endsWith(".png.gz")) {
             contentType = F("image/png");
-        } else if (path.endsWith(".jpg") || path.endsWith(".jpeg")) {
+        } else if (path.endsWith(".jpg") || path.endsWith(".jpeg") ||
+                   path.endsWith(".jpg.gz") || path.endsWith(".jpeg.gz")) {
             contentType = F("image/jpeg");
-        } else if (path.endsWith(".svg")) {
+        } else if (path.endsWith(".svg") || path.endsWith(".svg.gz")) {
             contentType = F("image/svg+xml");
         }
 
