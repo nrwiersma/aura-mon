@@ -4,6 +4,9 @@
 
 #include "auramon.h"
 
+#include <Updater.h>
+#include <LittleFS.h>
+
 const char *contentTypeJSON PROGMEM = "application/json";
 const char *contentTypePlain PROGMEM = "text/plain";
 const char *contentTypeHTML PROGMEM = "text/html";
@@ -16,6 +19,8 @@ void handleStatus();
 void handleEnergy();
 void handleLogs();
 void handleNotFound();
+void handleOtaFinish();
+void handleOtaUpload();
 
 void setupAPI() {
     server.on("/config", HTTP_GET, handleGetConfig);
@@ -23,6 +28,7 @@ void setupAPI() {
     server.on("/status", HTTP_GET, handleStatus);
     server.on("/energy", HTTP_GET, handleEnergy);
     server.on("/logs", HTTP_GET, handleLogs);
+    server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
     // Metrics
     server.on("/readyz", HTTP_GET, returnOK);
     server.on("/livez", HTTP_GET, returnOK);
@@ -97,7 +103,7 @@ void handlePostConfig() {
 void handleStatus() {
     JsonDocument doc;
 
-    doc["version"]= AURAMON_VERSION;
+    doc["version"] = AURAMON_VERSION;
 
     JsonObject statsObj = doc["stats"].to<JsonObject>();
     statsObj["startTime"] = startTime;
@@ -305,6 +311,95 @@ void handleLogs() {
     mutex_exit(&sdMu);
 
     server.send(404, contentTypeJSON, "Not Found");
+}
+
+static bool    otaRestartNeeded = false;
+static bool    otaUploadFailed = false;
+static uint8_t otaErrorCode = UPDATE_ERROR_OK;
+
+void handleOtaFinish() {
+    if (otaUploadFailed || Update.hasError()) {
+        String msg = F("{\"error\":\"Update failed\",\"code\":");
+        msg.concat(otaErrorCode);
+        msg.concat("}");
+        server.send(500, contentTypeJSON, msg);
+
+        if (otaRestartNeeded) {
+            LOGE("OTA: update failed with code %u. Rebooting", otaErrorCode);
+
+            mutex_enter_blocking(&sdMu);
+            delay(100);
+            rp2040.reboot();
+        }
+
+        LOGE("OTA: update failed with code %u", otaErrorCode);
+
+        return;
+    }
+
+    LOGI("OTA: update finished, rebooting");
+
+    server.send(204, contentTypePlain, "");
+    mutex_enter_blocking(&sdMu);
+    delay(100);
+    rp2040.reboot();
+}
+
+void handleOtaUpload() {
+    HTTPUpload &upload = server.upload();
+
+    if (upload.status == UPLOAD_FILE_START) {
+        otaUploadFailed = false;
+        otaErrorCode = UPDATE_ERROR_OK;
+        Update.clearError();
+
+        if (upload.name != "firmware") {
+            otaUploadFailed = true;
+            otaErrorCode = UPDATE_ERROR_NO_DATA;
+            LOGE("OTA: unexpected form field name: %s", upload.name.c_str());
+            return;
+        }
+
+        FSInfo i;
+        LittleFS.begin();
+        LittleFS.info(i);
+        uint32_t update_size = i.totalBytes - i.usedBytes;
+
+        LOGI("OTA: start upload size=%u", update_size);
+
+        if (!Update.begin(update_size)) {
+            otaUploadFailed = true;
+            otaErrorCode = Update.getError();
+            LOGE("OTA: begin failed (%u)", otaErrorCode);
+            return;
+        }
+
+        LOGD("OTA: update started");
+    } else if (upload.status == UPLOAD_FILE_WRITE && !otaUploadFailed) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            otaUploadFailed = true;
+            otaErrorCode = Update.getError();
+            LOGE("OTA: write failed (%u)", otaErrorCode);
+            return;
+        }
+
+        LOGD("OTA: written %u bytes", upload.totalSize);
+    } else if (upload.status == UPLOAD_FILE_END && !otaUploadFailed) {
+        if (!Update.end(true)) {
+            otaUploadFailed = true;
+            otaErrorCode = Update.getError();
+            LOGE("OTA: end failed (%u)", otaErrorCode);
+            return;
+        }
+
+        LOGI("OTA: upload complete (%u bytes)", upload.totalSize);
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+        otaUploadFailed = true;
+        otaErrorCode = UPDATE_ERROR_STREAM;
+        Update.end();
+
+        LOGE("OTA: upload aborted\r");
+    }
 }
 
 void handleNotFound() {

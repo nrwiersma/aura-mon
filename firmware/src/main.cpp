@@ -48,7 +48,6 @@ void setup() {
 
     waitForSerial();
 
-    LOGI("Firmware version: %s", AURAMON_VERSION);
     LOGD("Booting");
 
     mutex_init(&sdMu);
@@ -60,6 +59,7 @@ void setup() {
         while (1) { delay(1000); }
     }
 
+    LOGI("Firmware version: %s", AURAMON_VERSION);
     LOGI("SD Card initialised");
 
     rtc.begin(&Wire1);

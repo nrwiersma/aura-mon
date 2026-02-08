@@ -5,7 +5,7 @@
 - [x] Status Endpoint
 - [ ] Assignment and locating Endpoints
 - [ ] Metrics Endpoint
-- [ ] OTA + Endpoint
+- [x] OTA + Endpoint
 - [ ] Web frontend
 - [ ] Front Button to add device
 - [ ] Watchdog
