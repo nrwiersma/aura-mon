@@ -21,6 +21,8 @@ void handleLogs();
 void handleNotFound();
 void handleOtaFinish();
 void handleOtaUpload();
+void handlePublicUploadFinish();
+void handlePublicUpload();
 
 void setupAPI() {
     server.on("/config", HTTP_GET, handleGetConfig);
@@ -29,6 +31,7 @@ void setupAPI() {
     server.on("/energy", HTTP_GET, handleEnergy);
     server.on("/logs", HTTP_GET, handleLogs);
     server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
+    server.on("/ota/public", HTTP_POST, handlePublicUploadFinish, handlePublicUpload);
     // Metrics
     server.on("/readyz", HTTP_GET, returnOK);
     server.on("/livez", HTTP_GET, returnOK);
@@ -403,6 +406,114 @@ void handleOtaUpload() {
         Update.end();
 
         LOGE("OTA: upload aborted\r");
+    }
+}
+
+static bool    publicUploadFailed = false;
+static int     publicUploadStatus = 200;
+static String  publicUploadError;
+static bool    publicUploadMutexHeld = false;
+static FsFile  publicUploadFile;
+
+void handlePublicUploadFinish() {
+    if (publicUploadFailed) {
+        String msg = F("{\"error\":\"Upload failed\",\"reason\":\"");
+        msg.concat(publicUploadError);
+        msg.concat("\"}");
+        server.send(publicUploadStatus, contentTypeJSON, msg);
+        return;
+    }
+
+    server.send(204, contentTypePlain, "");
+}
+
+void handlePublicUpload() {
+    HTTPUpload &upload = server.upload();
+
+    if (upload.status == UPLOAD_FILE_START) {
+        publicUploadFailed = false;
+        publicUploadStatus = 200;
+        publicUploadError = "";
+
+        if (upload.name != "file") {
+            publicUploadFailed = true;
+            publicUploadStatus = 400;
+            publicUploadError = F("Unexpected form field name");
+            LOGE("Public upload: unexpected form field name: %s", upload.name.c_str());
+            return;
+        }
+
+        if (upload.filename.length() == 0 || upload.filename.indexOf('/') >= 0 ||
+            upload.filename.indexOf('\\') >= 0) {
+            publicUploadFailed = true;
+            publicUploadStatus = 400;
+            publicUploadError = F("Invalid filename");
+            LOGE("Public upload: invalid filename: %s", upload.filename.c_str());
+            return;
+        }
+
+        if (!mutex_enter_block_until(&sdMu, 100)) {
+            publicUploadFailed = true;
+            publicUploadStatus = 408;
+            publicUploadError = F("Request Timeout");
+            LOGE("Public upload: failed to acquire sdMu");
+            return;
+        }
+        publicUploadMutexHeld = true;
+
+        String path = "public/";
+        path.concat(upload.filename);
+
+        publicUploadFile = sd.open(path.c_str(), O_WRITE | O_CREAT | O_TRUNC);
+        if (!publicUploadFile) {
+            publicUploadFailed = true;
+            publicUploadStatus = 500;
+            publicUploadError = F("Failed to open file");
+            LOGE("Public upload: failed to open %s", path.c_str());
+            mutex_exit(&sdMu);
+            publicUploadMutexHeld = false;
+            return;
+        }
+
+        LOGI("Public upload: start %s", path.c_str());
+    } else if (upload.status == UPLOAD_FILE_WRITE && !publicUploadFailed) {
+        if (publicUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            publicUploadFailed = true;
+            publicUploadStatus = 500;
+            publicUploadError = F("Write failed");
+            LOGE("Public upload: write failed at %u bytes", upload.totalSize);
+            publicUploadFile.close();
+            if (publicUploadMutexHeld) {
+                mutex_exit(&sdMu);
+                publicUploadMutexHeld = false;
+            }
+            return;
+        }
+    } else if (upload.status == UPLOAD_FILE_END && !publicUploadFailed) {
+        publicUploadFile.flush();
+        publicUploadFile.close();
+
+        if (publicUploadMutexHeld) {
+            mutex_exit(&sdMu);
+            publicUploadMutexHeld = false;
+        }
+
+        LOGI("Public upload: complete (%u bytes)", upload.totalSize);
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+        publicUploadFailed = true;
+        publicUploadStatus = 500;
+        publicUploadError = F("Upload aborted");
+
+        if (publicUploadFile) {
+            publicUploadFile.close();
+        }
+
+        if (publicUploadMutexHeld) {
+            mutex_exit(&sdMu);
+            publicUploadMutexHeld = false;
+        }
+
+        LOGE("Public upload: aborted");
     }
 }
 

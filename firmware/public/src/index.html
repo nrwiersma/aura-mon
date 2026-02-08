@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Aura Mon Device Manager</title>
+  <title>Aura Mon</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -127,19 +127,41 @@
       </button>
     </div>
 
-    <form id="ota-form" class="drawer-body" action="/ota" method="POST" enctype="multipart/form-data">
-      <label class="field" for="firmware">
-        <span class="field-label">Firmware file</span>
-        <input id="firmware" name="firmware" type="file" class="file-input" />
-      </label>
+    <div class="drawer-body">
+      <form id="ota-form" action="/ota" method="POST" enctype="multipart/form-data">
+        <label class="field" for="firmware">
+          <span class="field-label">Firmware file</span>
+          <input id="firmware" name="firmware" type="file" class="file-input" />
+        </label>
 
-      <p class="helper-text">Select a firmware file and submit to start the OTA update.</p>
+        <p class="helper-text">Select a firmware file and submit to start the OTA update.</p>
+
+        <div class="drawer-actions">
+          <div class="drawer-actions-right">
+            <button class="btn btn-primary" type="submit">Upload firmware</button>
+          </div>
+        </div>
+      </form>
+
+      <form id="ota-public-form" action="/ota/public" method="POST" enctype="multipart/form-data">
+        <label class="field" for="public-file">
+          <span class="field-label">Public asset</span>
+          <input id="public-file" name="file" type="file" class="file-input" />
+        </label>
+
+        <p class="helper-text">Upload a file to the SD card public folder for the web UI.</p>
+
+        <div class="drawer-actions">
+          <div class="drawer-actions-right">
+            <button class="btn btn-primary" type="submit">Upload public file</button>
+          </div>
+        </div>
+      </form>
 
       <div class="drawer-actions">
         <button class="btn" type="button" id="ota-cancel">Cancel</button>
-        <button class="btn btn-primary" type="submit">Upload</button>
       </div>
-    </form>
+    </div>
   </aside>
 
   <script src="/app.js"></script>

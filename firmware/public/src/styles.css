@@ -435,6 +435,7 @@ input[type="checkbox"] {
 
 .helper-text {
   margin: 0;
+  padding: 10px 0;
   font-size: 13px;
   color: var(--muted);
 }

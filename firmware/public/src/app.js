@@ -27,7 +27,9 @@ const elements = {
   otaClose: document.getElementById("ota-close"),
   otaCancel: document.getElementById("ota-cancel"),
   otaForm: document.getElementById("ota-form"),
-  otaFile: document.getElementById("firmware")
+  otaFile: document.getElementById("firmware"),
+  otaPublicForm: document.getElementById("ota-public-form"),
+  otaPublicFile: document.getElementById("public-file")
 };
 
 const state = {
@@ -393,6 +395,7 @@ function openOtaDrawer() {
   elements.otaBackdrop.classList.add("open");
   elements.otaBackdrop.classList.remove("hidden");
   setInputError(elements.otaFile, false);
+  setInputError(elements.otaPublicFile, false);
 }
 
 function closeOtaDrawer() {
@@ -403,7 +406,11 @@ function closeOtaDrawer() {
   if (elements.otaForm) {
     elements.otaForm.reset();
   }
+  if (elements.otaPublicForm) {
+    elements.otaPublicForm.reset();
+  }
   setInputError(elements.otaFile, false);
+  setInputError(elements.otaPublicFile, false);
 }
 
 function commitDrawerDevice() {
@@ -525,6 +532,19 @@ async function init() {
       if (!elements.otaFile || !elements.otaFile.files || elements.otaFile.files.length === 0) {
         event.preventDefault();
         setInputError(elements.otaFile, true);
+      }
+    });
+  }
+  if (elements.otaPublicFile) {
+    elements.otaPublicFile.addEventListener("change", () => {
+      setInputError(elements.otaPublicFile, false);
+    });
+  }
+  if (elements.otaPublicForm) {
+    elements.otaPublicForm.addEventListener("submit", (event) => {
+      if (!elements.otaPublicFile || !elements.otaPublicFile.files || elements.otaPublicFile.files.length === 0) {
+        event.preventDefault();
+        setInputError(elements.otaPublicFile, true);
       }
     });
   }
