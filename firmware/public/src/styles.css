@@ -483,6 +483,12 @@ input[type="number"] {
   background: var(--button-bg);
 }
 
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .btn-ghost {
   background: transparent;
   border: 1px solid transparent;

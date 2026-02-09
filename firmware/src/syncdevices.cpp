@@ -29,6 +29,15 @@ void syncDeviceInfo() {
     }
 }
 
+void syncDeviceAction() {
+    if (deviceActionControl.type == deviceActionType::None) {
+        return;
+    }
+
+    deviceActionData = deviceActionControl;
+    deviceActionControl = {deviceActionType::None, 0};
+}
+
 void syncDeviceData() {
     for (uint32_t i = 0; i < MAX_DEVICES; i++) {
         if (devices[i] == nullptr) {
@@ -68,6 +77,15 @@ uint32_t syncDevices(void *param) {
     }
 
     mutex_exit(&deviceInfoMu);
+
+    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
+        LOGE("syncDevices: could not acquire deviceActionMu");
+        return 50;
+    }
+
+    syncDeviceAction();
+
+    mutex_exit(&deviceActionMu);
 
     if (!mutex_enter_block_until(&deviceDataMu, 100)) {
         LOGE("syncDevices: could not acquire deviceDataMu");

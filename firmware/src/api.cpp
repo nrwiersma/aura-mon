@@ -23,12 +23,14 @@ void handleOtaFinish();
 void handleOtaUpload();
 void handlePublicUploadFinish();
 void handlePublicUpload();
+void handleDeviceAction();
 
 void setupAPI() {
     server.on("/config", HTTP_GET, handleGetConfig);
     server.on("/config", HTTP_POST, handlePostConfig);
     server.on("/status", HTTP_GET, handleStatus);
     server.on("/energy", HTTP_GET, handleEnergy);
+    server.on("/device/action", HTTP_POST, handleDeviceAction);
     server.on("/logs", HTTP_GET, handleLogs);
     server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
     server.on("/ota/public", HTTP_POST, handlePublicUploadFinish, handlePublicUpload);
@@ -105,6 +107,61 @@ void handlePostConfig() {
     mutex_exit(&deviceInfoMu);
 
     server.send(200, contentTypePlain, "");
+}
+
+void handleDeviceAction() {
+    if (server.hasArg("plain") == false) {
+        server.send(400, contentTypeJSON, F("{\"error\":\"No data provided\"}"));
+        return;
+    }
+
+    String body = server.arg("plain");
+
+    JsonDocument doc;
+    if (auto err = deserializeJson(doc, body); err) {
+        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid JSON\"}"));
+        return;
+    }
+
+    if (!doc["action"].is<const char *>() || !doc["address"].is<uint32_t>()) {
+        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid action payload\"}"));
+        return;
+    }
+
+    const char *     actionStr = doc["action"].as<const char *>();
+    uint32_t         address = doc["address"].as<uint32_t>();
+    deviceActionType action = deviceActionType::None;
+
+    if (strcmp(actionStr, "locate") == 0) {
+        action = deviceActionType::Locate;
+    } else if (strcmp(actionStr, "assign") == 0) {
+        action = deviceActionType::Assign;
+    } else {
+        server.send(400, contentTypeJSON, F("{\"error\":\"Unknown action\"}"));
+        return;
+    }
+
+    if (address == 0 || address > MAX_DEVICES) {
+        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid address\"}"));
+        return;
+    }
+
+    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
+        returnInternalError("could not acquire deviceInfoMu");
+        return;
+    }
+
+    if (deviceActionControl.type != deviceActionType::None) {
+        mutex_exit(&deviceActionMu);
+        server.send(409, contentTypeJSON, F("{\"error\":\"Action already pending\"}"));
+        return;
+    }
+
+    deviceActionControl = {action, static_cast<uint8_t>(address)};
+
+    mutex_exit(&deviceActionMu);
+
+    server.send(202, contentTypeJSON, F("{\"status\":\"queued\"}"));
 }
 
 void handleStatus() {
@@ -409,11 +466,11 @@ void handleOtaUpload() {
     }
 }
 
-static bool    publicUploadFailed = false;
-static int     publicUploadStatus = 200;
-static String  publicUploadError;
-static bool    publicUploadMutexHeld = false;
-static FsFile  publicUploadFile;
+static bool   publicUploadFailed = false;
+static int    publicUploadStatus = 200;
+static String publicUploadError;
+static bool   publicUploadMutexHeld = false;
+static FsFile publicUploadFile;
 
 void handlePublicUploadFinish() {
     if (publicUploadFailed) {

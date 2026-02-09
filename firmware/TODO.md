@@ -3,7 +3,7 @@
 - [x] Log Endpoint
 - [x] Status LED
 - [x] Status Endpoint
-- [ ] Assignment and locating Endpoints
+- [x] Assignment and locating Endpoints
 - [ ] Metrics Endpoint
 - [x] OTA + Endpoint
 - [x] Web frontend

@@ -62,4 +62,11 @@ struct inputDeviceData {
     double hz;
 };
 
+enum class deviceActionType : uint8_t { None = 0, Locate, Assign };
+
+struct deviceActionRequest {
+    deviceActionType type;
+    uint8_t          address;
+};
+
 #endif //FIRMWARE_CHANNEL_H

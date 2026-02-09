@@ -1,6 +1,7 @@
 const MAX_DEVICES = 15;
 const SAVE_DEBOUNCE_MS = 600;
 const THEME_STORAGE_KEY = "theme";
+const DEVICE_ACTION_ENDPOINT = "/device/action";
 
 const elements = {
   version: document.getElementById("version"),
@@ -20,6 +21,7 @@ const elements = {
   formName: document.getElementById("form-name"),
   formCalibration: document.getElementById("form-calibration"),
   formReversed: document.getElementById("form-reversed"),
+  formBroadcast: document.getElementById("form-broadcast"),
   formDelete: document.getElementById("form-delete"),
   formCancel: document.getElementById("form-cancel"),
   themeToggle: document.getElementById("theme-toggle"),
@@ -258,6 +260,56 @@ async function saveConfig() {
   }
 }
 
+async function postDeviceAction(action, address) {
+  if (!Number.isInteger(address) || address <= 0) {
+    console.warn("Device action ignored: invalid address", address);
+    return false;
+  }
+
+  try {
+    const response = await fetch(DEVICE_ACTION_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, address })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Device action failed: ${response.status}`);
+    }
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
+}
+
+async function locateDevice(device, button) {
+  if (!device) {
+    return;
+  }
+  const address = Number(device.address);
+  if (!Number.isInteger(address) || address <= 0) {
+    console.warn("Locate ignored: invalid address", address);
+    return;
+  }
+  if (button) {
+    button.disabled = true;
+  }
+  await postDeviceAction("locate", address);
+  if (button) {
+    button.disabled = false;
+  }
+}
+
+async function broadcastDeviceAddress(address) {
+  if (!Number.isInteger(address) || address <= 0) {
+    console.warn("Broadcast ignored: invalid address", address);
+    return;
+  }
+  await postDeviceAction("assign", address);
+}
+
 function createAddressBadge(value) {
   const badge = document.createElement("span");
   badge.className = "address-chip";
@@ -303,14 +355,27 @@ function createRow(device) {
   row.appendChild(powerCell);
 
   const actionCell = document.createElement("td");
+  const actionWrap = document.createElement("div");
+  actionWrap.className = "row-actions";
+
+  const locateButton = document.createElement("button");
+  locateButton.type = "button";
+  locateButton.className = "btn-icon-only";
+  locateButton.innerHTML = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"7\" stroke=\"currentColor\" stroke-width=\"1.6\"/><circle cx=\"12\" cy=\"12\" r=\"2\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M12 3v2M12 19v2M3 12h2M19 12h2\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>";
+  locateButton.setAttribute("aria-label", "Locate device");
+
   const editButton = document.createElement("button");
   editButton.type = "button";
   editButton.className = "btn-icon-only";
-  editButton.innerHTML = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M4 20h4l10-10a2.828 2.828 0 1 0-4-4L4 16v4z\" stroke=\"#344054\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M13 7l4 4\" stroke=\"#344054\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
+  editButton.innerHTML = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M4 20h4l10-10a2.828 2.828 0 1 0-4-4L4 16v4z\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M13 7l4 4\" stroke=\"#344054\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
   editButton.setAttribute("aria-label", "Edit device");
-  actionCell.appendChild(editButton);
+
+  actionWrap.appendChild(locateButton);
+  actionWrap.appendChild(editButton);
+  actionCell.appendChild(actionWrap);
   row.appendChild(actionCell);
 
+  locateButton.addEventListener("click", () => locateDevice(device, locateButton));
   editButton.addEventListener("click", () => openDrawer(device));
 
   return { row, device };
@@ -372,6 +437,9 @@ function openDrawer(device) {
     ? String(state.activeDevice.calibration)
     : "";
   elements.formReversed.checked = Boolean(state.activeDevice.reversed);
+  if (elements.formBroadcast) {
+    elements.formBroadcast.checked = state.isAdding;
+  }
 
   elements.formDelete.disabled = state.isAdding;
   elements.formDelete.style.visibility = state.isAdding ? "hidden" : "visible";
@@ -425,6 +493,9 @@ function commitDrawerDevice() {
   state.activeDevice.calibration = Number.parseFloat(elements.formCalibration.value);
   state.activeDevice.reversed = elements.formReversed.checked;
 
+  const shouldBroadcast = Boolean(elements.formBroadcast && elements.formBroadcast.checked);
+  const broadcastAddress = Number(state.activeDevice.address);
+
   const isValid = validateDevice(state.activeDevice);
   setInputError(elements.formName, !state.activeDevice.name);
   setInputError(elements.formCalibration, !Number.isFinite(state.activeDevice.calibration));
@@ -439,6 +510,11 @@ function commitDrawerDevice() {
   renderTable();
   scheduleSave();
   closeDrawer();
+
+  if (shouldBroadcast) {
+    broadcastDeviceAddress(broadcastAddress);
+  }
+
   return true;
 }
 

@@ -43,6 +43,12 @@ const char *modbusError(uint8_t err) {
     return modbusErrStr[err];
 }
 
+void locateModbusDevice(uint16_t id) {
+    if (const uint8_t err = modbus.writeSingleHoldingRegister(id, 0x2710, 0x5055)) {
+        LOGE("Could not locate modbus device: %s", modbusError(err));
+    }
+}
+
 void assignModbusAddress(uint16_t id) {
     Serial1.begin(9600);
     modbus.begin(9600);
