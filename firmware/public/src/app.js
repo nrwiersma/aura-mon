@@ -668,7 +668,7 @@ function App() {
                 <table class="device-table" aria-label="Device configuration">
                   <thead>
                     <tr>
-                      <th>Address</th>
+                      <th></th>
                       <th>Name</th>
                       <th>Volts</th>
                       <th>Power</th>
@@ -682,7 +682,7 @@ function App() {
                       const locateDisabled = locatingAddresses.has(Number(device.address));
                       return html`
                         <tr class=${device.enabled ? "" : "row-disabled"}>
-                          <td>
+                          <td class="fit-content">
                             <span class="address-chip">${Number.isFinite(device.address) ? String(device.address) : "--"}</span>
                           </td>
                           <td>${device.name || "--"}</td>
@@ -719,7 +719,7 @@ function App() {
                                 : ""}
                             </span>
                           </td>
-                          <td>
+                          <td class="fit-content">
                             <div class="row-actions">
                               <button
                                 type="button"

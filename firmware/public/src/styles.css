@@ -297,6 +297,11 @@ p {
   vertical-align: middle;
 }
 
+.device-table tbody td.fit-content {
+    width: 1%;
+    white-space: nowrap;
+}
+
 .device-table tbody tr:last-child td {
   border-bottom: none;
 }
