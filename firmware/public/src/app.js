@@ -1,63 +1,40 @@
+import {
+  html,
+  render,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "/preact.mjs";
+
 const MAX_DEVICES = 15;
 const SAVE_DEBOUNCE_MS = 600;
 const THEME_STORAGE_KEY = "theme";
 const DEVICE_ACTION_ENDPOINT = "/device/action";
 
-const elements = {
-  version: document.getElementById("version"),
-  statusPill: document.getElementById("status-pill"),
-  deviceCount: document.getElementById("device-count"),
-  saveStatus: document.getElementById("save-status"),
-  addButton: document.getElementById("add-device"),
-  tableBody: document.getElementById("devices-body"),
-  emptyState: document.getElementById("empty-state"),
-  drawer: document.getElementById("device-drawer"),
-  drawerBackdrop: document.getElementById("drawer-backdrop"),
-  drawerTitle: document.getElementById("drawer-title"),
-  drawerClose: document.getElementById("drawer-close"),
-  form: document.getElementById("device-form"),
-  formEnabled: document.getElementById("form-enabled"),
-  formAddress: document.getElementById("form-address"),
-  formName: document.getElementById("form-name"),
-  formCalibration: document.getElementById("form-calibration"),
-  formReversed: document.getElementById("form-reversed"),
-  formBroadcast: document.getElementById("form-broadcast"),
-  formDelete: document.getElementById("form-delete"),
-  formCancel: document.getElementById("form-cancel"),
-  themeToggle: document.getElementById("theme-toggle"),
-  otaOpen: document.getElementById("ota-open"),
-  otaDrawer: document.getElementById("ota-drawer"),
-  otaBackdrop: document.getElementById("ota-backdrop"),
-  otaClose: document.getElementById("ota-close"),
-  otaCancel: document.getElementById("ota-cancel"),
-  otaForm: document.getElementById("ota-form"),
-  otaFile: document.getElementById("firmware"),
-  otaPublicForm: document.getElementById("ota-public-form"),
-  otaPublicFile: document.getElementById("public-file")
-};
+function setHtmlTheme(theme) {
+  const isDark = theme === "dark";
+  document.documentElement.classList.toggle("theme-dark", isDark);
+}
 
-const state = {
-  config: null,
-  status: null,
-  statusMap: new Map(),
-  rowNodes: [],
-  saveTimer: null,
-  statusInFlight: false,
-  activeDevice: null,
-  isAdding: false
-};
-
-function setSaveStatus(text, variant) {
-  elements.saveStatus.textContent = text;
-  elements.saveStatus.classList.remove("ok", "error", "saving");
-  if (variant) {
-    elements.saveStatus.classList.add(variant);
+function getStoredTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "dark" || stored === "light" ? stored : null;
+  } catch (error) {
+    return null;
   }
 }
 
-function setStatusPill(isLive) {
-  elements.statusPill.textContent = isLive ? "Live" : "Offline";
-  elements.statusPill.classList.toggle("offline", !isLive);
+function getPreferredTheme() {
+  const stored = getStoredTheme();
+  if (stored) {
+    return stored;
+  }
+  if (window.matchMedia) {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return "light";
 }
 
 async function fetchJson(url) {
@@ -136,46 +113,6 @@ function formatPower(metrics) {
   return `${wattsLabel} W, pf ${formatMetric(pf, 2)}`;
 }
 
-function updateVersion() {
-  elements.version.textContent = state.status?.version || "--";
-}
-
-function updateStatusMap() {
-  state.statusMap.clear();
-  const devices = state.status?.devices || [];
-  devices.forEach((device) => {
-    if (device.name) {
-      state.statusMap.set(device.name, device);
-    }
-  });
-}
-
-function updateMetrics() {
-  state.rowNodes.forEach(({ row, device }) => {
-    const name = device?.name ? device.name.trim() : "";
-    const metrics = name ? state.statusMap.get(name) : null;
-    const voltsText = row.querySelector("[data-volts-text]");
-    if (voltsText) {
-      voltsText.textContent = formatVoltage(metrics);
-    }
-    const powerText = row.querySelector("[data-power-text]");
-    if (powerText) {
-      powerText.textContent = formatPower(metrics);
-    }
-  });
-}
-
-function updateDeviceCount() {
-  const count = state.config?.devices.length || 0;
-  elements.deviceCount.textContent = `${count}/${MAX_DEVICES}`;
-  elements.addButton.disabled = count >= MAX_DEVICES;
-}
-
-function setInputError(input, hasError) {
-  if (!input) return;
-  input.classList.toggle("input-error", hasError);
-}
-
 function validateDevice(device) {
   let valid = true;
   const nameValid = device.name && device.name.trim().length > 0;
@@ -186,11 +123,11 @@ function validateDevice(device) {
   return valid;
 }
 
-function validateConfig() {
+function validateConfig(config) {
   let valid = true;
   const addressCounts = new Map();
 
-  state.config?.devices.forEach((device) => {
+  config?.devices.forEach((device) => {
     const addr = Number(device.address);
     const addrValid = Number.isInteger(addr) && addr >= 1 && addr <= MAX_DEVICES;
     if (addrValid) {
@@ -204,7 +141,7 @@ function validateConfig() {
     }
   });
 
-  state.config?.devices.forEach((device) => {
+  config?.devices.forEach((device) => {
     const addr = Number(device.address);
     const duplicate = Number.isInteger(addr) && addressCounts.get(addr) > 1;
     if (duplicate) {
@@ -213,51 +150,6 @@ function validateConfig() {
   });
 
   return valid;
-}
-
-function scheduleSave() {
-  if (!state.config) {
-    return;
-  }
-
-  if (!validateConfig()) {
-    setSaveStatus("Fix highlighted fields", "error");
-    return;
-  }
-
-  setSaveStatus("Unsaved changes", "saving");
-  clearTimeout(state.saveTimer);
-  state.saveTimer = setTimeout(saveConfig, SAVE_DEBOUNCE_MS);
-}
-
-async function saveConfig() {
-  if (!state.config) {
-    return;
-  }
-
-  if (!validateConfig()) {
-    setSaveStatus("Fix highlighted fields", "error");
-    return;
-  }
-
-  setSaveStatus("Saving...", "saving");
-
-  try {
-    const response = await fetch("/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(state.config)
-    });
-
-    if (!response.ok) {
-      throw new Error(`Save failed: ${response.status}`);
-    }
-
-    setSaveStatus("Saved", "ok");
-  } catch (error) {
-    console.error(error);
-    setSaveStatus("Save failed", "error");
-  }
 }
 
 async function postDeviceAction(action, address) {
@@ -284,24 +176,6 @@ async function postDeviceAction(action, address) {
   }
 }
 
-async function locateDevice(device, button) {
-  if (!device) {
-    return;
-  }
-  const address = Number(device.address);
-  if (!Number.isInteger(address) || address <= 0) {
-    console.warn("Locate ignored: invalid address", address);
-    return;
-  }
-  if (button) {
-    button.disabled = true;
-  }
-  await postDeviceAction("locate", address);
-  if (button) {
-    button.disabled = false;
-  }
-}
-
 async function broadcastDeviceAddress(address) {
   if (!Number.isInteger(address) || address <= 0) {
     console.warn("Broadcast ignored: invalid address", address);
@@ -310,100 +184,8 @@ async function broadcastDeviceAddress(address) {
   await postDeviceAction("assign", address);
 }
 
-function createAddressBadge(value) {
-  const badge = document.createElement("span");
-  badge.className = "address-chip";
-  badge.textContent = Number.isFinite(value) ? String(value) : "--";
-  return badge;
-}
-
-function createRow(device) {
-  const row = document.createElement("tr");
-  row.classList.toggle("row-disabled", !device.enabled);
-
-  const addressCell = document.createElement("td");
-  const addressBadge = createAddressBadge(device.address);
-  addressCell.appendChild(addressBadge);
-  row.appendChild(addressCell);
-
-  const nameCell = document.createElement("td");
-  nameCell.textContent = device.name || "--";
-  row.appendChild(nameCell);
-
-  const voltsCell = document.createElement("td");
-  voltsCell.setAttribute("data-volts-text", "true");
-  voltsCell.textContent = "--";
-  row.appendChild(voltsCell);
-
-  const powerCell = document.createElement("td");
-  powerCell.className = "metric";
-  powerCell.setAttribute("data-power", "true");
-  const powerWrap = document.createElement("span");
-  powerWrap.className = "power-cell";
-  const powerText = document.createElement("span");
-  powerText.setAttribute("data-power-text", "true");
-  powerText.textContent = "--";
-  powerWrap.appendChild(powerText);
-  if (device.reversed) {
-    const reversedIcon = document.createElement("span");
-    reversedIcon.className = "power-icon active";
-    reversedIcon.setAttribute("title", "Reversed");
-    reversedIcon.innerHTML = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><path d=\"M12 5a7 7 0 1 1-6.22 10.22\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M4.5 9V5.5H8\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
-    powerWrap.appendChild(reversedIcon);
-  }
-  powerCell.appendChild(powerWrap);
-  row.appendChild(powerCell);
-
-  const actionCell = document.createElement("td");
-  const actionWrap = document.createElement("div");
-  actionWrap.className = "row-actions";
-
-  const locateButton = document.createElement("button");
-  locateButton.type = "button";
-  locateButton.className = "btn-icon-only";
-  locateButton.innerHTML = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"7\" stroke=\"currentColor\" stroke-width=\"1.6\"/><circle cx=\"12\" cy=\"12\" r=\"2\" stroke=\"currentColor\" stroke-width=\"1.6\"/><path d=\"M12 3v2M12 19v2M3 12h2M19 12h2\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\"/></svg>";
-  locateButton.setAttribute("aria-label", "Locate device");
-
-  const editButton = document.createElement("button");
-  editButton.type = "button";
-  editButton.className = "btn-icon-only";
-  editButton.innerHTML = "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M4 20h4l10-10a2.828 2.828 0 1 0-4-4L4 16v4z\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M13 7l4 4\" stroke=\"#344054\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
-  editButton.setAttribute("aria-label", "Edit device");
-
-  actionWrap.appendChild(locateButton);
-  actionWrap.appendChild(editButton);
-  actionCell.appendChild(actionWrap);
-  row.appendChild(actionCell);
-
-  locateButton.addEventListener("click", () => locateDevice(device, locateButton));
-  editButton.addEventListener("click", () => openDrawer(device));
-
-  return { row, device };
-}
-
-function renderTable() {
-  elements.tableBody.innerHTML = "";
-  state.rowNodes = [];
-
-  if (!state.config || state.config.devices.length === 0) {
-    elements.emptyState.classList.remove("hidden");
-  } else {
-    elements.emptyState.classList.add("hidden");
-  }
-
-  state.config?.devices.forEach((device) => {
-    const { row } = createRow(device);
-    elements.tableBody.appendChild(row);
-    state.rowNodes.push({ row, device });
-  });
-
-  updateDeviceCount();
-  updateMetrics();
-}
-
-function findAvailableAddress() {
-  const devices = state.config?.devices || [];
-  if (devices.length === 0) {
+function findAvailableAddress(devices) {
+  if (!devices || devices.length === 0) {
     return 1;
   }
   const maxAddress = Math.max(...devices.map((device) => Number(device.address) || 0));
@@ -411,289 +193,804 @@ function findAvailableAddress() {
   return next <= MAX_DEVICES ? next : null;
 }
 
-function openDrawer(device) {
-  state.activeDevice = device;
-  state.isAdding = !device;
+function App() {
+  const [config, setConfig] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [isLive, setIsLive] = useState(false);
+  const [saveStatus, setSaveStatus] = useState({ text: "Loading...", variant: "saving" });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [otaOpen, setOtaOpen] = useState(false);
+  const [activeDevice, setActiveDevice] = useState(null);
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [broadcastChecked, setBroadcastChecked] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({ name: false, calibration: false });
+  const [locatingAddresses, setLocatingAddresses] = useState(() => new Set());
+  const [otaFileError, setOtaFileError] = useState(false);
+  const [otaPublicFileError, setOtaPublicFileError] = useState(false);
+  const [theme, setTheme] = useState(getPreferredTheme());
 
-  if (state.isAdding) {
-    const address = findAvailableAddress();
-    if (!address) {
+  const saveTimerRef = useRef(null);
+  const statusInFlightRef = useRef(false);
+  const configRef = useRef(config);
+  const otaFormRef = useRef(null);
+  const otaPublicFormRef = useRef(null);
+  const otaFileRef = useRef(null);
+  const otaPublicFileRef = useRef(null);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  useEffect(() => {
+    setHtmlTheme(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (!window.matchMedia) {
+      return undefined;
+    }
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    if (typeof media.addEventListener !== "function") {
+      return undefined;
+    }
+    const handler = (event) => {
+      if (getStoredTheme()) {
+        return;
+      }
+      setTheme(event.matches ? "dark" : "light");
+    };
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, []);
+
+  function setSaveStatusState(text, variant) {
+    setSaveStatus({ text, variant });
+  }
+
+  function setThemeAndStore(nextTheme) {
+    setHtmlTheme(nextTheme);
+    setTheme(nextTheme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    } catch (error) {
+      // Ignore storage errors and still apply the theme.
+    }
+  }
+
+  function toggleTheme() {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setThemeAndStore(nextTheme);
+  }
+
+  async function loadConfig() {
+    try {
+      const loaded = await fetchJson("/config");
+      setConfig(normalizeConfig(loaded));
+      setSaveStatusState("Loaded", "ok");
+    } catch (error) {
+      console.error(error);
+      setConfig(normalizeConfig({ devices: [] }));
+      setSaveStatusState("Config load failed", "error");
+    }
+  }
+
+  async function loadStatus() {
+    if (statusInFlightRef.current) {
       return;
     }
-    state.activeDevice = {
-      enabled: true,
-      address,
-      name: "",
-      calibration: 1.0,
-      reversed: false
+
+    statusInFlightRef.current = true;
+    try {
+      const nextStatus = await fetchJson("/status");
+      setStatus(nextStatus);
+      setIsLive(true);
+    } catch (error) {
+      console.error(error);
+      setIsLive(false);
+    } finally {
+      statusInFlightRef.current = false;
+    }
+  }
+
+  async function saveConfig() {
+    const current = configRef.current;
+    if (!current) {
+      return;
+    }
+
+    if (!validateConfig(current)) {
+      setSaveStatusState("Fix highlighted fields", "error");
+      return;
+    }
+
+    setSaveStatusState("Saving...", "saving");
+
+    try {
+      const response = await fetch("/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(current)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Save failed: ${response.status}`);
+      }
+
+      setSaveStatusState("Saved", "ok");
+    } catch (error) {
+      console.error(error);
+      setSaveStatusState("Save failed", "error");
+    }
+  }
+
+  function scheduleSave() {
+    const current = configRef.current;
+    if (!current) {
+      return;
+    }
+
+    if (!validateConfig(current)) {
+      setSaveStatusState("Fix highlighted fields", "error");
+      return;
+    }
+
+    setSaveStatusState("Unsaved changes", "saving");
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(saveConfig, SAVE_DEBOUNCE_MS);
+  }
+
+  useEffect(() => {
+    setSaveStatusState("Loading...", "saving");
+    setIsLive(false);
+
+    loadConfig();
+    loadStatus();
+
+    const interval = setInterval(loadStatus, 1000);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
+  const statusMap = useMemo(() => {
+    const map = new Map();
+    (status?.devices || []).forEach((device) => {
+      if (device.name) {
+        map.set(device.name, device);
+      }
+    });
+    return map;
+  }, [status]);
+
+  const devices = config?.devices || [];
+  const deviceCount = devices.length;
+  const versionText = status?.version || "--";
+  const themePressed = theme === "dark" ? "true" : "false";
+  const themeLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  const drawerTitle = isAdding ? "Add device" : "Edit device";
+
+  function closeDrawer() {
+    setDrawerOpen(false);
+    setActiveDevice(null);
+    setEditingIndex(null);
+    setIsAdding(false);
+    setBroadcastChecked(false);
+    setFieldErrors({ name: false, calibration: false });
+  }
+
+  function openDrawerFor(device, index) {
+    if (!configRef.current) {
+      return;
+    }
+
+    if (!device) {
+      const address = findAvailableAddress(configRef.current.devices);
+      if (!address) {
+        return;
+      }
+      setActiveDevice({
+        enabled: true,
+        address,
+        name: "",
+        calibration: "1.0",
+        reversed: false
+      });
+      setIsAdding(true);
+      setEditingIndex(null);
+      setBroadcastChecked(true);
+    } else {
+      setActiveDevice({
+        enabled: Boolean(device.enabled),
+        address: device.address,
+        name: device.name || "",
+        calibration: Number.isFinite(device.calibration) ? String(device.calibration) : "",
+        reversed: Boolean(device.reversed)
+      });
+      setIsAdding(false);
+      setEditingIndex(index);
+      setBroadcastChecked(false);
+    }
+
+    setFieldErrors({ name: false, calibration: false });
+    setDrawerOpen(true);
+  }
+
+  function handleActiveChange(field) {
+    return (event) => {
+      const { type, checked, value } = event.target;
+      const nextValue = type === "checkbox" ? checked : value;
+      setActiveDevice((prev) => (prev ? { ...prev, [field]: nextValue } : prev));
+      if (field === "name") {
+        setFieldErrors((prev) => ({ ...prev, name: false }));
+      }
+      if (field === "calibration") {
+        setFieldErrors((prev) => ({ ...prev, calibration: false }));
+      }
     };
   }
 
-  elements.drawerTitle.textContent = state.isAdding ? "Add device" : "Edit device";
-  elements.formEnabled.checked = Boolean(state.activeDevice.enabled);
-  elements.formAddress.value = String(state.activeDevice.address || "");
-  elements.formName.value = state.activeDevice.name || "";
-  elements.formCalibration.value = Number.isFinite(state.activeDevice.calibration)
-    ? String(state.activeDevice.calibration)
-    : "";
-  elements.formReversed.checked = Boolean(state.activeDevice.reversed);
-  if (elements.formBroadcast) {
-    elements.formBroadcast.checked = state.isAdding;
+  function commitDrawerDevice(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    if (!activeDevice) {
+      return false;
+    }
+
+    const trimmedName = activeDevice.name.trim();
+    const calibrationValue = Number.parseFloat(activeDevice.calibration);
+    const nextDevice = {
+      enabled: Boolean(activeDevice.enabled),
+      address: Number(activeDevice.address),
+      name: trimmedName,
+      calibration: calibrationValue,
+      reversed: Boolean(activeDevice.reversed)
+    };
+
+    const isValid = validateDevice(nextDevice);
+    setFieldErrors({
+      name: !trimmedName,
+      calibration: !Number.isFinite(calibrationValue)
+    });
+
+    if (!isValid) {
+      return false;
+    }
+
+    setConfig((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const nextDevices = [...prev.devices];
+      if (isAdding) {
+        nextDevices.push(nextDevice);
+      } else if (Number.isInteger(editingIndex) && editingIndex >= 0) {
+        nextDevices[editingIndex] = nextDevice;
+      }
+      return { ...prev, devices: nextDevices };
+    });
+
+    scheduleSave();
+    closeDrawer();
+
+    if (broadcastChecked) {
+      broadcastDeviceAddress(nextDevice.address);
+    }
+
+    return true;
   }
 
-  elements.formDelete.disabled = state.isAdding;
-  elements.formDelete.style.visibility = state.isAdding ? "hidden" : "visible";
-
-  elements.drawer.classList.add("open");
-  elements.drawer.setAttribute("aria-hidden", "false");
-  elements.drawerBackdrop.classList.add("open");
-  elements.drawerBackdrop.classList.remove("hidden");
-}
-
-function closeDrawer() {
-  elements.drawer.classList.remove("open");
-  elements.drawer.setAttribute("aria-hidden", "true");
-  elements.drawerBackdrop.classList.remove("open");
-  elements.drawerBackdrop.classList.add("hidden");
-  state.activeDevice = null;
-  state.isAdding = false;
-}
-
-function openOtaDrawer() {
-  elements.otaDrawer.classList.add("open");
-  elements.otaDrawer.setAttribute("aria-hidden", "false");
-  elements.otaBackdrop.classList.add("open");
-  elements.otaBackdrop.classList.remove("hidden");
-  setInputError(elements.otaFile, false);
-  setInputError(elements.otaPublicFile, false);
-}
-
-function closeOtaDrawer() {
-  elements.otaDrawer.classList.remove("open");
-  elements.otaDrawer.setAttribute("aria-hidden", "true");
-  elements.otaBackdrop.classList.remove("open");
-  elements.otaBackdrop.classList.add("hidden");
-  if (elements.otaForm) {
-    elements.otaForm.reset();
-  }
-  if (elements.otaPublicForm) {
-    elements.otaPublicForm.reset();
-  }
-  setInputError(elements.otaFile, false);
-  setInputError(elements.otaPublicFile, false);
-}
-
-function commitDrawerDevice() {
-  if (!state.activeDevice) {
-    return false;
-  }
-
-  state.activeDevice.enabled = elements.formEnabled.checked;
-  state.activeDevice.name = elements.formName.value.trim();
-  state.activeDevice.calibration = Number.parseFloat(elements.formCalibration.value);
-  state.activeDevice.reversed = elements.formReversed.checked;
-
-  const shouldBroadcast = Boolean(elements.formBroadcast && elements.formBroadcast.checked);
-  const broadcastAddress = Number(state.activeDevice.address);
-
-  const isValid = validateDevice(state.activeDevice);
-  setInputError(elements.formName, !state.activeDevice.name);
-  setInputError(elements.formCalibration, !Number.isFinite(state.activeDevice.calibration));
-  if (!isValid) {
-    return false;
-  }
-
-  if (state.isAdding) {
-    state.config.devices.push(state.activeDevice);
-  }
-
-  renderTable();
-  scheduleSave();
-  closeDrawer();
-
-  if (shouldBroadcast) {
-    broadcastDeviceAddress(broadcastAddress);
-  }
-
-  return true;
-}
-
-function deleteActiveDevice() {
-  if (!state.activeDevice || state.isAdding) {
-    return;
-  }
-  if (!confirm(`Delete device "${state.activeDevice.name}"?`)) {
-    return;
-  }
-  state.config.devices = state.config.devices.filter((device) => device !== state.activeDevice);
-  renderTable();
-  scheduleSave();
-  closeDrawer();
-}
-
-function addDevice() {
-  if (!state.config) {
-    return;
-  }
-  openDrawer(null);
-}
-
-async function loadConfig() {
-  try {
-    const config = await fetchJson("/config");
-    state.config = normalizeConfig(config);
-    setSaveStatus("Loaded", "ok");
-  } catch (error) {
-    console.error(error);
-    state.config = normalizeConfig({ devices: [] });
-    setSaveStatus("Config load failed", "error");
-  }
-}
-
-async function loadStatus() {
-  if (state.statusInFlight) {
-    return;
-  }
-
-  state.statusInFlight = true;
-  try {
-    state.status = await fetchJson("/status");
-    updateVersion();
-    updateStatusMap();
-    updateMetrics();
-    setStatusPill(true);
-  } catch (error) {
-    console.error(error);
-    setStatusPill(false);
-  } finally {
-    state.statusInFlight = false;
-  }
-}
-
-function getStoredTheme() {
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    return stored === "dark" || stored === "light" ? stored : null;
-  } catch (error) {
-    return null;
-  }
-}
-
-function getPreferredTheme() {
-  const stored = getStoredTheme();
-  if (stored) {
-    return stored;
-  }
-  if (window.matchMedia) {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-  return "light";
-}
-
-function applyTheme(theme) {
-  const isDark = theme === "dark";
-  document.documentElement.classList.toggle("theme-dark", isDark);
-  if (elements.themeToggle) {
-    elements.themeToggle.setAttribute("aria-pressed", isDark ? "true" : "false");
-    elements.themeToggle.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
-  }
-}
-
-function setTheme(theme) {
-  applyTheme(theme);
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-  } catch (error) {
-    // Ignore storage errors and still apply the theme.
-  }
-}
-
-function toggleTheme() {
-  const nextTheme = document.documentElement.classList.contains("theme-dark") ? "light" : "dark";
-  setTheme(nextTheme);
-}
-
-function watchSystemTheme() {
-  if (!window.matchMedia) {
-    return;
-  }
-  const media = window.matchMedia("(prefers-color-scheme: dark)");
-  if (typeof media.addEventListener !== "function") {
-    return;
-  }
-  media.addEventListener("change", (event) => {
-    if (getStoredTheme()) {
+  function deleteActiveDevice() {
+    if (!activeDevice || isAdding) {
       return;
     }
-    applyTheme(event.matches ? "dark" : "light");
-  });
+    if (!confirm(`Delete device "${activeDevice.name}"?`)) {
+      return;
+    }
+
+    setConfig((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const nextDevices = prev.devices.filter((_, idx) => idx !== editingIndex);
+      return { ...prev, devices: nextDevices };
+    });
+
+    scheduleSave();
+    closeDrawer();
+  }
+
+  async function locateDevice(device) {
+    if (!device) {
+      return;
+    }
+    const address = Number(device.address);
+    if (!Number.isInteger(address) || address <= 0) {
+      console.warn("Locate ignored: invalid address", address);
+      return;
+    }
+    setLocatingAddresses((prev) => {
+      const next = new Set(prev);
+      next.add(address);
+      return next;
+    });
+    await postDeviceAction("locate", address);
+    setLocatingAddresses((prev) => {
+      const next = new Set(prev);
+      next.delete(address);
+      return next;
+    });
+  }
+
+  function openOtaDrawer() {
+    setOtaOpen(true);
+    setOtaFileError(false);
+    setOtaPublicFileError(false);
+  }
+
+  function closeOtaDrawer() {
+    setOtaOpen(false);
+    setOtaFileError(false);
+    setOtaPublicFileError(false);
+    if (otaFormRef.current) {
+      otaFormRef.current.reset();
+    }
+    if (otaPublicFormRef.current) {
+      otaPublicFormRef.current.reset();
+    }
+  }
+
+  function handleOtaSubmit(event) {
+    const input = otaFileRef.current;
+    if (!input || !input.files || input.files.length === 0) {
+      event.preventDefault();
+      setOtaFileError(true);
+    }
+  }
+
+  function handleOtaPublicSubmit(event) {
+    const input = otaPublicFileRef.current;
+    if (!input || !input.files || input.files.length === 0) {
+      event.preventDefault();
+      setOtaPublicFileError(true);
+    }
+  }
+
+  return html`
+    <div>
+      <div class="page">
+        <header class="topbar">
+          <img class="logo" src="/logo.svg" alt="Aura Mon" />
+          <div class="topbar-meta">
+            <div class="version-wrap">
+              <button
+                id="theme-toggle"
+                class="btn btn-ghost btn-theme"
+                type="button"
+                aria-label=${themeLabel}
+                aria-pressed=${themePressed}
+                onClick=${toggleTheme}
+              >
+                <svg
+                  class="theme-icon theme-icon-moon"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <svg
+                  class="theme-icon theme-icon-sun"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" />
+                  <path
+                    d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <div class="version">
+                Version <span id="version">${versionText}</span>
+              </div>
+              <button
+                id="ota-open"
+                class="btn btn-ghost btn-ota"
+                type="button"
+                aria-haspopup="dialog"
+                aria-controls="ota-drawer"
+                aria-label="Open OTA upload"
+                onClick=${openOtaDrawer}
+              >
+                <svg
+                  class="ota-icon"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                >
+                  <path d="M12 16V4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                  <path
+                    d="M8 8l4-4 4 4"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <path d="M4 20h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div id="status-pill" class=${`status-pill${isLive ? "" : " offline"}`}>
+              ${isLive ? "Live" : "Offline"}
+            </div>
+          </div>
+        </header>
+
+        <main class="content">
+          <section class="card">
+            <div class="card-header">
+              <div>
+                <h1>
+                  Devices <span id="device-count" class="device-count">${deviceCount}/${MAX_DEVICES}</span>
+                </h1>
+              </div>
+              <div class="actions">
+                <span id="save-status" class=${`save-status ${saveStatus.variant || ""}`}>
+                  ${saveStatus.text}
+                </span>
+              </div>
+            </div>
+
+            <div class="table-shell">
+              <div class="table-wrap">
+                <table class="device-table" aria-label="Device configuration">
+                  <thead>
+                    <tr>
+                      <th>Address</th>
+                      <th>Name</th>
+                      <th>Volts</th>
+                      <th>Power</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="devices-body">
+                    ${devices.map((device, index) => {
+                      const name = device?.name ? device.name.trim() : "";
+                      const metrics = name ? statusMap.get(name) : null;
+                      const locateDisabled = locatingAddresses.has(Number(device.address));
+                      return html`
+                        <tr class=${device.enabled ? "" : "row-disabled"}>
+                          <td>
+                            <span class="address-chip">${Number.isFinite(device.address) ? String(device.address) : "--"}</span>
+                          </td>
+                          <td>${device.name || "--"}</td>
+                          <td data-volts-text="true">${formatVoltage(metrics)}</td>
+                          <td class="metric" data-power="true">
+                            <span class="power-cell">
+                              <span data-power-text="true">${formatPower(metrics)}</span>
+                              ${device.reversed
+                                ? html`<span class="power-icon active" title="Reversed">
+                                    <svg
+                                      width="16"
+                                      height="16"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                      aria-hidden="true"
+                                    >
+                                      <path
+                                        d="M12 5a7 7 0 1 1-6.22 10.22"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                      />
+                                      <path
+                                        d="M4.5 9V5.5H8"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                      />
+                                    </svg>
+                                  </span>`
+                                : ""}
+                            </span>
+                          </td>
+                          <td>
+                            <div class="row-actions">
+                              <button
+                                type="button"
+                                class="btn-icon-only"
+                                aria-label="Locate device"
+                                disabled=${locateDisabled}
+                                onClick=${() => locateDevice(device)}
+                              >
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  aria-hidden="true"
+                                >
+                                  <circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.6" />
+                                  <circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.6" />
+                                  <path
+                                    d="M12 3v2M12 19v2M3 12h2M19 12h2"
+                                    stroke="currentColor"
+                                    stroke-width="1.6"
+                                    stroke-linecap="round"
+                                  />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-icon-only"
+                                aria-label="Edit device"
+                                onClick=${() => openDrawerFor(device, index)}
+                              >
+                                <svg
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <path
+                                    d="M4 20h4l10-10a2.828 2.828 0 1 0-4-4L4 16v4z"
+                                    stroke="currentColor"
+                                    stroke-width="1.6"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                  />
+                                  <path
+                                    d="M13 7l4 4"
+                                    stroke="#344054"
+                                    stroke-width="1.6"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                  />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      `;
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div id="empty-state" class=${deviceCount === 0 ? "empty-state" : "empty-state hidden"}>
+                No devices configured yet. Add a device to get started.
+              </div>
+
+              <div class="table-actions">
+                <button
+                  id="add-device"
+                  class="btn btn-primary"
+                  type="button"
+                  disabled=${deviceCount >= MAX_DEVICES}
+                  onClick=${() => openDrawerFor(null, null)}
+                >
+                  <span class="btn-icon">+</span>
+                  Add device
+                </button>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <div
+        id="drawer-backdrop"
+        class=${drawerOpen ? "drawer-backdrop open" : "drawer-backdrop hidden"}
+        onClick=${closeDrawer}
+      ></div>
+      <aside id="device-drawer" class=${drawerOpen ? "drawer open" : "drawer"} aria-hidden=${drawerOpen ? "false" : "true"}>
+        <div class="drawer-header">
+          <div>
+            <div id="drawer-title" class="drawer-title">${drawerTitle}</div>
+            <div class="drawer-subtitle">Update device configuration and save.</div>
+          </div>
+          <button id="drawer-close" class="btn btn-ghost" type="button" aria-label="Close" onClick=${closeDrawer}>
+            <span class="btn-icon">×</span>
+          </button>
+        </div>
+
+        <form id="device-form" class="drawer-body" onSubmit=${commitDrawerDevice}>
+          <label class="field">
+            <span class="field-label">Enabled</span>
+            <span class="toggle">
+              <input
+                id="form-enabled"
+                type="checkbox"
+                checked=${Boolean(activeDevice?.enabled)}
+                onChange=${handleActiveChange("enabled")}
+              />
+              <span class="toggle-track" aria-hidden="true"></span>
+            </span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Address</span>
+            <input id="form-address" type="text" readOnly value=${activeDevice?.address ?? ""} />
+          </label>
+
+          <label class="field">
+            <span class="field-label">Name</span>
+            <input
+              id="form-name"
+              type="text"
+              placeholder="Device name"
+              required
+              class=${fieldErrors.name ? "input-error" : ""}
+              value=${activeDevice?.name ?? ""}
+              onInput=${handleActiveChange("name")}
+            />
+          </label>
+
+          <label class="field">
+            <span class="field-label">Calibration</span>
+            <input
+              id="form-calibration"
+              type="number"
+              min="0.01"
+              max="2"
+              step="0.001"
+              required
+              class=${fieldErrors.calibration ? "input-error" : ""}
+              value=${activeDevice?.calibration ?? ""}
+              onInput=${handleActiveChange("calibration")}
+            />
+          </label>
+
+          <label class="field">
+            <span class="field-label">Reversed</span>
+            <span class="toggle">
+              <input
+                id="form-reversed"
+                type="checkbox"
+                checked=${Boolean(activeDevice?.reversed)}
+                onChange=${handleActiveChange("reversed")}
+              />
+              <span class="toggle-track" aria-hidden="true"></span>
+            </span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Broadcast address</span>
+            <span class="toggle">
+              <input
+                id="form-broadcast"
+                type="checkbox"
+                checked=${broadcastChecked}
+                onChange=${(event) => setBroadcastChecked(event.target.checked)}
+              />
+              <span class="toggle-track" aria-hidden="true"></span>
+            </span>
+          </label>
+
+          <div class="drawer-actions">
+            <button
+              id="form-delete"
+              class="btn btn-danger"
+              type="button"
+              disabled=${isAdding}
+              style=${isAdding ? "visibility: hidden;" : "visibility: visible;"}
+              onClick=${deleteActiveDevice}
+            >
+              Delete
+            </button>
+            <div class="drawer-actions-right">
+              <button id="form-cancel" class="btn" type="button" onClick=${closeDrawer}>Cancel</button>
+              <button id="form-save" class="btn btn-primary" type="submit">Save</button>
+            </div>
+          </div>
+        </form>
+      </aside>
+
+      <div
+        id="ota-backdrop"
+        class=${otaOpen ? "drawer-backdrop open" : "drawer-backdrop hidden"}
+        onClick=${closeOtaDrawer}
+      ></div>
+      <aside id="ota-drawer" class=${otaOpen ? "drawer open" : "drawer"} aria-hidden=${otaOpen ? "false" : "true"}>
+        <div class="drawer-header">
+          <div>
+            <div class="drawer-title">Firmware update</div>
+            <div class="drawer-subtitle">Upload a new firmware file to update the device.</div>
+          </div>
+          <button id="ota-close" class="btn btn-ghost" type="button" aria-label="Close" onClick=${closeOtaDrawer}>
+            <span class="btn-icon">×</span>
+          </button>
+        </div>
+
+        <div class="drawer-body">
+          <form id="ota-form" action="/ota" method="POST" enctype="multipart/form-data" ref=${otaFormRef} onSubmit=${handleOtaSubmit}>
+            <label class="field" for="firmware">
+              <span class="field-label">Firmware file</span>
+              <input
+                id="firmware"
+                name="firmware"
+                type="file"
+                class=${`file-input${otaFileError ? " input-error" : ""}`}
+                ref=${otaFileRef}
+                onChange=${() => setOtaFileError(false)}
+              />
+            </label>
+
+            <p class="helper-text">Select a firmware file and submit to start the OTA update.</p>
+
+            <div class="drawer-actions">
+              <div class="drawer-actions-right">
+                <button class="btn btn-primary" type="submit">Upload firmware</button>
+              </div>
+            </div>
+          </form>
+
+          <form
+            id="ota-public-form"
+            action="/ota/public"
+            method="POST"
+            enctype="multipart/form-data"
+            ref=${otaPublicFormRef}
+            onSubmit=${handleOtaPublicSubmit}
+          >
+            <label class="field" for="public-file">
+              <span class="field-label">Public asset</span>
+              <input
+                id="public-file"
+                name="file"
+                type="file"
+                class=${`file-input${otaPublicFileError ? " input-error" : ""}`}
+                ref=${otaPublicFileRef}
+                onChange=${() => setOtaPublicFileError(false)}
+              />
+            </label>
+
+            <p class="helper-text">Upload a file to the SD card public folder for the web UI.</p>
+
+            <div class="drawer-actions">
+              <div class="drawer-actions-right">
+                <button class="btn btn-primary" type="submit">Upload public file</button>
+              </div>
+            </div>
+          </form>
+
+          <div class="drawer-actions">
+            <button class="btn" type="button" id="ota-cancel" onClick=${closeOtaDrawer}>Cancel</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  `;
 }
 
-async function init() {
-  setSaveStatus("Loading...", "saving");
-  setStatusPill(false);
-
-  applyTheme(getPreferredTheme());
-  watchSystemTheme();
-
-  await loadConfig();
-  renderTable();
-  await loadStatus();
-
-  elements.addButton.addEventListener("click", addDevice);
-  elements.drawerClose.addEventListener("click", closeDrawer);
-  elements.drawerBackdrop.addEventListener("click", closeDrawer);
-  elements.formCancel.addEventListener("click", closeDrawer);
-  elements.formDelete.addEventListener("click", deleteActiveDevice);
-  elements.form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    commitDrawerDevice();
-  });
-
-  if (elements.themeToggle) {
-    elements.themeToggle.addEventListener("click", toggleTheme);
-  }
-
-  if (elements.otaOpen) {
-    elements.otaOpen.addEventListener("click", openOtaDrawer);
-  }
-  if (elements.otaClose) {
-    elements.otaClose.addEventListener("click", closeOtaDrawer);
-  }
-  if (elements.otaCancel) {
-    elements.otaCancel.addEventListener("click", closeOtaDrawer);
-  }
-  if (elements.otaBackdrop) {
-    elements.otaBackdrop.addEventListener("click", closeOtaDrawer);
-  }
-  if (elements.otaFile) {
-    elements.otaFile.addEventListener("change", () => {
-      setInputError(elements.otaFile, false);
-    });
-  }
-  if (elements.otaForm) {
-    elements.otaForm.addEventListener("submit", (event) => {
-      if (!elements.otaFile || !elements.otaFile.files || elements.otaFile.files.length === 0) {
-        event.preventDefault();
-        setInputError(elements.otaFile, true);
-      }
-    });
-  }
-  if (elements.otaPublicFile) {
-    elements.otaPublicFile.addEventListener("change", () => {
-      setInputError(elements.otaPublicFile, false);
-    });
-  }
-  if (elements.otaPublicForm) {
-    elements.otaPublicForm.addEventListener("submit", (event) => {
-      if (!elements.otaPublicFile || !elements.otaPublicFile.files || elements.otaPublicFile.files.length === 0) {
-        event.preventDefault();
-        setInputError(elements.otaPublicFile, true);
-      }
-    });
-  }
-
-  setInterval(loadStatus, 1000);
+const root = document.getElementById("app-root");
+if (root) {
+  render(html`<${App} />`, root);
 }
-
-window.addEventListener("DOMContentLoaded", init);
