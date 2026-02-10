@@ -24,6 +24,7 @@ void handleOtaUpload();
 void handlePublicUploadFinish();
 void handlePublicUpload();
 void handleDeviceAction();
+void handleMetrics();
 
 void setupAPI() {
     server.on("/config", HTTP_GET, handleGetConfig);
@@ -34,10 +35,13 @@ void setupAPI() {
     server.on("/logs", HTTP_GET, handleLogs);
     server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
     server.on("/ota/public", HTTP_POST, handlePublicUploadFinish, handlePublicUpload);
-    // Metrics
+    server.on("/metrics", HTTP_GET, handleMetrics);
     server.on("/readyz", HTTP_GET, returnOK);
     server.on("/livez", HTTP_GET, returnOK);
+
     server.onNotFound(handleNotFound); // Serve "public" from SD Card.
+    server.enableCORS(true);
+    server.enableCrossOrigin(true);
 }
 
 void returnOK() {
@@ -162,6 +166,32 @@ void handleDeviceAction() {
     mutex_exit(&deviceActionMu);
 
     server.send(202, contentTypeJSON, F("{\"status\":\"queued\"}"));
+}
+
+void handleMetrics() {
+    const uint32_t errors = metrics.modbus_errors_total.load(std::memory_order_relaxed);
+    const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
+    const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
+
+    String response;
+    response.reserve(320);
+    response += F("# HELP auramon_modbus_errors_total Total modbus collection errors.\n");
+    response += F("# TYPE auramon_modbus_errors_total counter\n");
+    response += F("auramon_modbus_errors_total ");
+    response += String(errors);
+    response += '\n';
+    response += F("# HELP auramon_collect_time_seconds_total Total time spent collecting data in seconds.\n");
+    response += F("# TYPE auramon_collect_time_seconds_total counter\n");
+    response += F("auramon_collect_time_seconds_total ");
+    response += String(totalMs / 1000.0, 6);
+    response += '\n';
+    response += F("# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
+    response += F("# TYPE auramon_collect_time_seconds_avg gauge\n");
+    response += F("auramon_collect_time_seconds_avg ");
+    response += String(avgMs / 1000.0, 6);
+    response += '\n';
+
+    server.send(200, contentTypePlain, response);
 }
 
 void handleStatus() {

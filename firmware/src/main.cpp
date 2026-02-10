@@ -31,6 +31,8 @@ inputDeviceInfo *   deviceInfos[MAX_DEVICES] = {};
 inputDevice *       devices[MAX_DEVICES] = {};
 dataLog             datalog;
 
+promMetrics metrics;
+
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
 WebServer server(80);

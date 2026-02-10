@@ -25,6 +25,7 @@
 #include "modbus.h"
 #include "api.h"
 #include "device.h"
+#include "metrics.h"
 #include "version.h"
 
 #define WAIT_FOR_SERIAL 0
@@ -84,6 +85,8 @@ extern inputDeviceInfo *   deviceInfos[MAX_DEVICES];
 extern inputDevice *       devices[MAX_DEVICES];
 
 extern dataLog datalog;
+
+extern promMetrics metrics;
 
 extern logger msgLog;
 #define LOGE(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);

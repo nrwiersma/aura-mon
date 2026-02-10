@@ -4,7 +4,7 @@
 - [x] Status LED
 - [x] Status Endpoint
 - [x] Assignment and locating Endpoints
-- [ ] Metrics Endpoint
+- [x] Metrics Endpoint
 - [x] OTA + Endpoint
 - [x] Web frontend
 - [ ] Front Button to add device
