@@ -163,6 +163,8 @@ void setup1() {
     // Set the initial monotonic ts so we know
     // how long it took before the first log write.
     initLogData();
+
+    rp2040.wdt_begin(800);
 }
 
 void loop1() {
@@ -175,6 +177,8 @@ void loop1() {
         if (!c1Queue.runNextTask()) {
             delay(10);
         }
+
+        rp2040.wdt_reset();
     }
 }
 

@@ -8,4 +8,4 @@
 - [x] OTA + Endpoint
 - [x] Web frontend
 - [ ] Front Button to add device
-- [ ] Watchdog
+- [x] Watchdog
