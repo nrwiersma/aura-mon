@@ -642,7 +642,7 @@ void handleNotFound() {
             contentType = F("text/html");
         } else if (path.endsWith(".css") || path.endsWith(".css.gz")) {
             contentType = F("text/css");
-        } else if (path.endsWith(".js")) {
+        } else if (path.endsWith(".js") || path.endsWith(".js.gz")) {
             contentType = F("application/javascript");
         } else if (path.endsWith(".json") || path.endsWith(".json.gz")) {
             contentType = contentTypeJSON;

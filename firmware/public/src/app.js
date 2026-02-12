@@ -5,7 +5,7 @@ import {
   useMemo,
   useRef,
   useState
-} from "/preact.mjs";
+} from "/preact.js";
 
 const MAX_DEVICES = 15;
 const SAVE_DEBOUNCE_MS = 600;
