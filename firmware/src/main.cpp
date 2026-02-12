@@ -43,6 +43,7 @@ taskQueue c1Queue = {};
 volatile bool setupComplete = false;
 
 void blinkLED();
+void handleButtonPress();
 void waitForSerial();
 
 void setup() {
@@ -50,6 +51,8 @@ void setup() {
     pinMode(LED_GREEN, OUTPUT);
     digitalWrite(LED_RED, HIGH);
     digitalWrite(LED_GREEN, HIGH);
+
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
 
     waitForSerial();
 
@@ -151,6 +154,7 @@ void setup() {
 
 void loop() {
     server.handleClient();
+    handleButtonPress();
 
     if (!c0Queue.runNextTask()) {
         delay(10);
@@ -201,6 +205,31 @@ void blinkLED() {
             break;
     }
     on = !on;
+}
+
+void handleButtonPress() {
+    static int lastReading = HIGH;
+    static int stableState = HIGH;
+    static unsigned long lastChangeMs = 0;
+
+    int reading = digitalRead(BUTTON_PIN);
+    if (reading != lastReading) {
+        lastChangeMs = millis();
+        lastReading = reading;
+    }
+
+    if (millis() - lastChangeMs < BUTTON_DEBOUNCE_MS) {
+        return;
+    }
+
+    if (stableState == reading) {
+        return;
+    }
+
+    stableState = reading;
+    if (stableState == HIGH) {
+        c0Queue.add(addDeviceFromButton, 6);
+    }
 }
 
 void waitForSerial() {

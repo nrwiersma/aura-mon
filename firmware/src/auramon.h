@@ -39,6 +39,8 @@
 #define LED_RED 10
 #define LED_GREEN 11
 
+#define BUTTON_PIN 3
+
 #define ETH_INT  20
 #define ETH_FREQ 40000000 // 40MHz
 
@@ -51,6 +53,8 @@
 #define RS485_RX 1
 #define RS485_DE 2
 #define RS485_BAUDRATE 38400
+
+#define BUTTON_DEBOUNCE_MS 200
 
 enum LEDColor { Red, Orange, Green };
 
@@ -101,6 +105,7 @@ void     syncDeviceInfo();
 uint32_t syncDevices(void *param);
 uint32_t syncState(void *param);
 uint32_t deviceActionTask(void *param);
+uint32_t addDeviceFromButton(void *param);
 
 void collect();
 
