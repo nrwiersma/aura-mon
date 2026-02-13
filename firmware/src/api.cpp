@@ -185,7 +185,8 @@ void handleMetrics() {
     response += F("auramon_collect_time_seconds_total ");
     response += String(totalMs / 1000.0, 6);
     response += '\n';
-    response += F("# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
+    response += F(
+        "# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
     response += F("# TYPE auramon_collect_time_seconds_avg gauge\n");
     response += F("auramon_collect_time_seconds_avg ");
     response += String(avgMs / 1000.0, 6);
@@ -261,6 +262,10 @@ void handleEnergy() {
     if (start >= end || interval == 0) {
         server.send(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
         return;
+    }
+    if (end > start + interval * 100) {
+        // Limit to 100 rows to prevent excessively large responses.
+        end = start + interval * 100;
     }
 
     if (!datalog.entries()) {
