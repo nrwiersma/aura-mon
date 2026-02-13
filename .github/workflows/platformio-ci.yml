@@ -26,6 +26,3 @@ jobs:
       - name: Run native tests
         run: pio test -e native
 
-      - name: Build aura_mon
-        run: pio run -e aura_mon
-
