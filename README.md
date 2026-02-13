@@ -31,10 +31,18 @@ The board can be powered using an external 5V power supply connected to the scre
 
 ## Firmware
 
-The firmware is currently in development and will be made available on GitHub once it is stable enough for public use.
+The firmware is written in C++ using the [Arduino framework](https://www.arduino.cc/en/framework) and is available in the `firmware` folder. It is designed to specifically meet my initial needs,
+but is open for contributions and improvements. The firmware is responsible for reading data from the SPM01, storing it on the SDCard, and serving it over HTTP.
+
+**Note**: The firmware is still in development and is not yet ready for production use. It is currently only tested on the hardware I have, so there may be bugs and issues that need to be addressed.
+
+### API
+
+The firmware exposes an HTTP API that can be used to retrieve the stored data and configure the device. The API is documented in the `API.md` file.
 
 ## Changelog
 
 #### v0.1.0
 
 * Initial schematic and board
+* Initial firmware with basic functionality to read from the SPM01 and store data on the SDCard
