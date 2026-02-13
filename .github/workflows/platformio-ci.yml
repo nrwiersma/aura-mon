@@ -15,11 +15,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Setup C++ environment
-        uses: aminya/setup-cpp@v1
-        with:
-          compiler: 'gcc'
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:

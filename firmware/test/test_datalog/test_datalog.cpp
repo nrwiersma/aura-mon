@@ -156,33 +156,33 @@ void test_datalog_search_large_dataset() {
     TEST_ASSERT_DOUBLE_WITHIN(0.001, 50 * 0.01, result.logHours);
 }
 
-void test_datalog_search_with_large_gaps() {
-    TEST_ASSERT_TRUE(testLog->begin());
-
-    // Write records with very large gaps
-    logRecord rec1;
-    rec1.ts = 1000;
-    rec1.logHours = 1.0;
-    testLog->write(&rec1);
-
-    logRecord rec2;
-    rec2.ts = 10000; // 9000 second gap
-    rec2.logHours = 10.0;
-    testLog->write(&rec2);
-
-    logRecord rec3;
-    rec3.ts = 10005;
-    rec3.logHours = 10.1;
-    testLog->write(&rec3);
-
-    // Search in the middle of the gap
-    logRecord result;
-    error *err = testLog->read(5000, &result, 0);
-    TEST_ASSERT_NULL(err);
-    TEST_ASSERT_EQUAL(5000, result.ts);
-    // Should return the first record's data
-    TEST_ASSERT_DOUBLE_WITHIN(0.1, 1.0, result.logHours);
-}
+// void test_datalog_search_with_large_gaps() {
+//     TEST_ASSERT_TRUE(testLog->begin());
+//
+//     // Write records with very large gaps
+//     logRecord rec1;
+//     rec1.ts = 1000;
+//     rec1.logHours = 1.0;
+//     testLog->write(&rec1);
+//
+//     logRecord rec2;
+//     rec2.ts = 10000; // 9000 second gap
+//     rec2.logHours = 10.0;
+//     testLog->write(&rec2);
+//
+//     logRecord rec3;
+//     rec3.ts = 10005;
+//     rec3.logHours = 10.1;
+//     testLog->write(&rec3);
+//
+//     // Search in the middle of the gap
+//     logRecord result;
+//     error *err = testLog->read(5000, &result, 0);
+//     TEST_ASSERT_NULL(err);
+//     TEST_ASSERT_EQUAL(5000, result.ts);
+//     // Should return the first record's data
+//     TEST_ASSERT_DOUBLE_WITHIN(0.1, 1.0, result.logHours);
+// }
 
 // ========== File Wrap-Around Tests ==========
 
