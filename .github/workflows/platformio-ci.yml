@@ -11,6 +11,9 @@ jobs:
     defaults:
       run:
         working-directory: firmware
+    env:
+      CC: gcc-17
+      CXX: g++-17
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -19,6 +22,11 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
+      - name: Install GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-17 g++-17
 
       - name: Install PlatformIO
         run: pip install --upgrade platformio
