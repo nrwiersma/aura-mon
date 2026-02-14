@@ -379,6 +379,23 @@ void handleEnergy() {
 }
 
 void handleLogs() {
+    uint32_t startOffset = 0;
+    if (server.hasArg("start")) {
+        startOffset = server.arg("start").toInt();
+        if (startOffset == 0 && server.arg("start") != "0") {
+            server.send(400, contentTypeJSON, F("{\"error\":\"Invalid start\"}"));
+            return;
+        }
+    }
+    uint32_t limitBytes = 0;
+    if (server.hasArg("limit")) {
+        limitBytes = server.arg("limitBytes").toInt();
+        if (limitBytes == 0) {
+            server.send(400, contentTypeJSON, F("{\"error\":\"Invalid limit\"}"));
+            return;
+        }
+    }
+
     if (!mutex_enter_block_until(&sdMu, 100)) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
@@ -390,6 +407,31 @@ void handleLogs() {
     }
 
     if (auto f = sd.open(MESSAGE_LOG_PATH, O_READ); f) {
+        const size_t fileSize = f.size();
+        if (startOffset >= fileSize) {
+            server.send(204, contentTypePlain, "");
+            f.close();
+            mutex_exit(&sdMu);
+            return;
+        }
+        if (startOffset > 0 && !f.seek(startOffset)) {
+            returnInternalError("could not seek log");
+            f.close();
+            mutex_exit(&sdMu);
+            return;
+        }
+
+        size_t remaining = fileSize - startOffset;
+        if (limitBytes > 0 && limitBytes < remaining) {
+            remaining = limitBytes;
+        }
+        if (remaining == 0) {
+            server.send(204, contentTypePlain, "");
+            f.close();
+            mutex_exit(&sdMu);
+            return;
+        }
+
         if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
             server.send(505, contentTypePlain, F("HTTP1.1 required"));
             f.close();
@@ -398,8 +440,13 @@ void handleLogs() {
         }
 
         uint8_t buffer[1024];
-        while (size_t readLen = f.read(buffer, sizeof(buffer))) {
+        while (remaining > 0) {
+            const size_t readLen = f.read(buffer, min(remaining, sizeof(buffer)));
+            if (readLen == 0) {
+                break;
+            }
             server.sendContent(reinterpret_cast<char *>(buffer), readLen);
+            remaining -= readLen;
         }
         server.chunkedResponseFinalize();
         f.close();
