@@ -379,6 +379,15 @@ void handleEnergy() {
 }
 
 void handleLogs() {
+    uint32_t startOffset = 0;
+    if (server.hasArg("start")) {
+        startOffset = server.arg("start").toInt();
+        if (startOffset == 0 && server.arg("start") != "0") {
+            server.send(400, contentTypeJSON, F("{\"error\":\"Invalid start\"}"));
+            return;
+        }
+    }
+
     if (!mutex_enter_block_until(&sdMu, 100)) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
@@ -390,6 +399,20 @@ void handleLogs() {
     }
 
     if (auto f = sd.open(MESSAGE_LOG_PATH, O_READ); f) {
+        const size_t fileSize = f.size();
+        if (startOffset >= fileSize) {
+            server.send(204, contentTypePlain, "");
+            f.close();
+            mutex_exit(&sdMu);
+            return;
+        }
+        if (startOffset > 0 && !f.seek(startOffset)) {
+            returnInternalError("could not seek log");
+            f.close();
+            mutex_exit(&sdMu);
+            return;
+        }
+
         if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
             server.send(505, contentTypePlain, F("HTTP1.1 required"));
             f.close();

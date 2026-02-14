@@ -149,7 +149,16 @@ Notes:
 Streams the message log file from the SD card.
 
 - Response content type: `text/plain`
+- Query parameters:
+  - `start` (optional): byte offset to start streaming from.
+- Returns `204` when `start` is at or beyond the end of the file.
+- Returns `400` for an invalid `start` value.
 - Returns `404` if the log file is missing.
+
+Example:
+```bash
+curl "http://<device-ip>/logs?start=1024"
+```
 
 ### `POST /ota`
 
