@@ -316,7 +316,7 @@ void handleEnergy() {
         return;
     }
 
-    String header = F("timestamp");
+    String header = F("timestamp,Hz");
     for (size_t i = 0; i < deviceCount; i++) {
         const String &name = deviceColumns[i].name;
         header += "," + name + ".V";
@@ -348,6 +348,9 @@ void handleEnergy() {
 
         auto row = String(ts);
         row.reserve(row.length() + deviceCount * 48);
+
+        const double hz = (rec.hzHrs - prevRec.hzHrs) / elapsedHours;
+        appendCSVValue(row, hz, 2);
 
         for (size_t i = 0; i < deviceCount; i++) {
             const uint8_t idx = deviceColumns[i].index;
