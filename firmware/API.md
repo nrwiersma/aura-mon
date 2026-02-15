@@ -117,6 +117,7 @@ Behavior:
 
 CSV columns:
 - `timestamp`
+- `Hz`
 - For each enabled device: `<name>.V`, `<name>.A`, `<name>.W`, `<name>.Wh`, `<name>.PF`
 
 Example:
