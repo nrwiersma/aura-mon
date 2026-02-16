@@ -38,11 +38,11 @@
 
 :root.theme-dark {
   color-scheme: dark;
-  --bg: #0b0f17;
-  --card: #111827;
+  --bg: #232428;
+  --card: #232428;
   --text: #f8fafc;
-  --muted: #94a3b8;
-  --border: #1f2937;
+  --muted: #a7a9ad;
+  --border: #3f4044;
   --primary: #60a5fa;
   --primary-hover: #3b82f6;
   --danger: #f87171;
@@ -50,28 +50,28 @@
   --success: #34d399;
   --warning: #fbbf24;
   --shadow: 0 2px 14px rgba(2, 6, 23, 0.6);
-  --surface-muted: #0b1220;
-  --surface-subtle: #0f172a;
-  --surface-disabled: #111827;
+  --surface-muted: #313234;
+  --surface-subtle: #282829;
+  --surface-disabled: #242728;
   --text-strong: #e2e8f0;
-  --text-disabled: #64748b;
+  --text-disabled: #a7a9ad;
   --border-muted: #334155;
-  --input-bg: #0f172a;
-  --button-bg: #1f2937;
+  --input-bg: #272b2e;
+  --button-bg: #3a3b3f;
   --button-text: #e2e8f0;
-  --backdrop: rgba(2, 6, 23, 0.65);
+  --backdrop: rgb(0, 0, 0, 0.65);
   --status-live-bg: rgba(16, 185, 129, 0.15);
   --status-live-text: #6ee7b7;
   --status-offline-bg: rgba(248, 113, 113, 0.15);
   --status-offline-text: #fca5a5;
-  --chip-bg: #0b1220;
+  --chip-bg: #272b2e;
   --chip-border: #1f2937;
-  --chip-bg-disabled: #0f172a;
+  --chip-bg-disabled: #272b2e;
   --chip-border-disabled: #1f2937;
   --danger-bg: rgba(248, 113, 113, 0.16);
   --danger-bg-hover: rgba(248, 113, 113, 0.24);
   --danger-border: rgba(248, 113, 113, 0.35);
-  --ghost-hover: #1f2937;
+  --ghost-hover: #3a3b3f;
 }
 
 * {
@@ -181,14 +181,6 @@ p {
 }
 
 .card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-  padding: 20px;
-}
-
-.card {
     max-width: 800px;
     margin: 0  auto;
 }
@@ -269,8 +261,8 @@ p {
 .table-wrap {
   width: 100%;
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  /*border: 1px solid var(--border);*/
+  /*border-radius: 12px;*/
 }
 
 .device-table {
@@ -285,9 +277,7 @@ p {
   font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--muted);
   padding: 12px 14px;
-  background: var(--surface-muted);
   border-bottom: 1px solid var(--border);
 }
 
@@ -401,7 +391,7 @@ input[type="number"] {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--card);
+  background: #ffffff;
   border: 1px solid var(--border);
   transform: translate(0, -50%);
   transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
