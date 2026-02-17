@@ -817,7 +817,7 @@ function App() {
             <div class="drawer-subtitle">Update device configuration and save.</div>
           </div>
           <button id="drawer-close" class="btn btn-ghost" type="button" aria-label="Close" onClick=${closeDrawer}>
-            <span class="btn-icon">×</span>
+            ×
           </button>
         </div>
 
@@ -925,7 +925,7 @@ function App() {
             <div class="drawer-subtitle">Upload a new firmware file to update the device.</div>
           </div>
           <button id="ota-close" class="btn btn-ghost" type="button" aria-label="Close" onClick=${closeOtaDrawer}>
-            <span class="btn-icon">×</span>
+            ×
           </button>
         </div>
 
