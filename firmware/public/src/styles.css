@@ -538,7 +538,7 @@ input[type="number"] {
 }
 
 .drawer-header .btn {
-  margin: 2px auto;
+  margin: 2px 0;
 }
 
 .drawer-title {
