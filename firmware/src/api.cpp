@@ -60,7 +60,7 @@ struct deviceColumn {
     String  name;
 };
 
-void appendCSVValue(String &row, double value, uint8_t precision = 3) {
+void appendCSVValue(String &row, double value, const uint8_t precision = 3) {
     row += ",";
     if (std::isfinite(value)) {
         row += String(value, precision);
@@ -228,7 +228,9 @@ void handleStatus() {
 
     JsonObject datalogObj = doc["datalog"].to<JsonObject>();
     datalogObj["firstRev"] = datalog.firstRev();
+    datalogObj["firstTS"] = datalog.firstTS();
     datalogObj["lastRev"] = datalog.lastRev();
+    datalogObj["lastTS"] = datalog.lastTS();
     datalogObj["interval"] = datalog.interval();
 
     JsonObject networkObj = doc["network"].to<JsonObject>();
