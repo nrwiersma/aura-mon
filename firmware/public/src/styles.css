@@ -537,6 +537,10 @@ input[type="number"] {
   border-bottom: 1px solid var(--border);
 }
 
+.drawer-header .btn {
+  margin: 2px auto;
+}
+
 .drawer-title {
   font-size: 18px;
   font-weight: 600;
