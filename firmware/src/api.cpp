@@ -708,6 +708,8 @@ void handleNotFound() {
         } else if (path.endsWith(".jpg") || path.endsWith(".jpeg") ||
                    path.endsWith(".jpg.gz") || path.endsWith(".jpeg.gz")) {
             contentType = F("image/jpeg");
+        } else if (path.endsWith(".ico") || path.endsWith(".ico.gz")) {
+            contentType = F("image/x-icon");
         } else if (path.endsWith(".svg") || path.endsWith(".svg.gz")) {
             contentType = F("image/svg+xml");
         }
