@@ -71,7 +71,9 @@ uint32_t logData(void *param) {
         currHZHrs += dev->current.hzHrs;
         count++;
     }
-    currHZHrs = currHZHrs / count;
+    if (count > 0) {
+        currHZHrs = currHZHrs / count;
+    }
     rec->hzHrs += currHZHrs - hzHrs;
     hzHrs = currHZHrs;
 
