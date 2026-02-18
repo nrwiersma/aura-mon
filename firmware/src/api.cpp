@@ -369,7 +369,7 @@ void handleEnergy() {
             appendCSVValue(row, voltage);
             appendCSVValue(row, current);
             appendCSVValue(row, power);
-            appendCSVValue(row, energyWh);
+            appendCSVValue(row, energyWh, 6);
             appendCSVValue(row, powerFactor, 4);
         }
 
