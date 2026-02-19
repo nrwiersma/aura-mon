@@ -35,8 +35,7 @@ public:
                                                          _first{},
                                                          _last{},
                                                          _wrapPos(0),
-                                                         _lastCacheSize(60 / interval),
-                                                         _fileIO(0) {
+                                                         _lastCacheSize(60 / interval)  {
         const double recordsPerDay = 86400.0 / static_cast<double>(_interval);
         const uint32_t computedSize = static_cast<uint32_t>(days * recordsPerDay * _recordSize);
         _maxFileSize = max(static_cast<uint32_t>(_recordSize), computedSize);
@@ -52,6 +51,7 @@ public:
     uint32_t firstTS();
     uint32_t lastRev();
     uint32_t lastTS();
+    uint32_t fileSize();
     error *  read(uint32_t ts, logRecord *rec, uint32_t timeoutMS = 100);
     error *  write(logRecord *rec);
 
@@ -81,9 +81,6 @@ private:
     uint32_t   _lastCacheSize;
     uint32_t   _lastCachePos = 0;
     logRecord *_lastCache; // The last 60s of records.
-
-
-    uint32_t _fileIO;
 
     logRecordKey readKey(uint32_t pos);
     uint8_t      readRev(uint32_t rev, logRecord *rec);

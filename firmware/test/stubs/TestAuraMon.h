@@ -9,6 +9,7 @@
 #include "TestSdFat.h"
 #include "../../src/device.h"
 #include "../../src/ethernet.h"
+#include "../../src/metrics.h"
 
 // Mock the constants and globals needed
 #define DATA_LOG_PATH "aura-mon/data.log"
@@ -24,3 +25,5 @@ inline mutex_t deviceInfoMu;
 inline inputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
 
 inline NetworkConfig netCfg;
+
+inline promMetrics metrics;

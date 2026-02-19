@@ -89,6 +89,13 @@ uint32_t dataLog::lastTS() {
     return t;
 }
 
+uint32_t dataLog::fileSize() {
+    mutex_enter_blocking(&_mu);
+    auto s = _fileSize;
+    mutex_exit(&_mu);
+    return s;
+}
+
 error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     ts -= ts % _interval;
 
@@ -210,7 +217,7 @@ error *dataLog::write(logRecord *rec) {
         _first = key;
         mutex_exit(&sdMu);
 
-        _fileIO++;
+        metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
 
         mutex_exit(&_mu);
         return nullptr;
@@ -231,7 +238,7 @@ error *dataLog::write(logRecord *rec) {
         _first.ts = rec->ts;
         _first.rev = rec->rev;
     }
-    _fileIO++;
+    metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
 
     mutex_exit(&_mu);
     return nullptr;
@@ -258,7 +265,9 @@ uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
 
     _readCache[_readCachePos++] = logRecordKey{rec->rev, rec->ts};
     _readCachePos %= _readCacheSize;
-    _fileIO++;
+
+    metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
+
     return 0;
 }
 
