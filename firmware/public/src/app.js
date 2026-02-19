@@ -233,6 +233,7 @@ function App() {
   const [otaFileError, setOtaFileError] = useState(false);
   const [otaPublicFileError, setOtaPublicFileError] = useState(false);
   const [theme, setTheme] = useState(getPreferredTheme());
+  const [rebootPending, setRebootPending] = useState(false);
 
   const saveTimerRef = useRef(null);
   const statusInFlightRef = useRef(false);
@@ -584,6 +585,28 @@ function App() {
     }
   }
 
+  async function rebootDevice() {
+    if (rebootPending) {
+      return;
+    }
+    if (!confirm("Reboot device now?")) {
+      return;
+    }
+
+    setRebootPending(true);
+
+    try {
+      const response = await fetch("/rebbot", { method: "POST" });
+      if (!response.ok) {
+        throw new Error(`Reboot failed: ${response.status}`);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Reboot failed. Try again.");
+      setRebootPending(false);
+    }
+  }
+
   return html`
     <div>
       <div class="page">
@@ -638,6 +661,33 @@ function App() {
               <div class="version">
                 Version <span id="version">${versionText}</span>
               </div>
+              <button
+                id="reboot-device"
+                class="btn btn-ghost"
+                type="button"
+                aria-label="Reboot device"
+                title="Reboot device"
+                disabled=${rebootPending}
+                onClick=${rebootDevice}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                >
+                  <path d="M12 2v10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                  <path
+                    d="M6.22 5.22a8 8 0 1 0 11.56 0"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
               <button
                 id="ota-open"
                 class="btn btn-ghost btn-ota"
