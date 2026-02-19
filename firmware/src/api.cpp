@@ -172,6 +172,7 @@ void handleMetrics() {
     const uint32_t errors = metrics.modbus_errors_total.load(std::memory_order_relaxed);
     const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
+    const uint32_t datalogIO = metrics.datalog_io.load(std::memory_order_relaxed);
 
     String response;
     response.reserve(320);
@@ -190,6 +191,12 @@ void handleMetrics() {
     response += F("# TYPE auramon_collect_time_seconds_avg gauge\n");
     response += F("auramon_collect_time_seconds_avg ");
     response += String(avgMs / 1000.0, 6);
+    response += '\n';
+    response += F(
+        "# HELP auramon_datalog_io Number of IO operations performed on the datalog.\n");
+    response += F("# TYPE auramon_datalog_io counter\n");
+    response += F("auramon_datalog_io ");
+    response += String(datalogIO);
     response += '\n';
 
     server.send(200, contentTypePlain, response);
@@ -232,6 +239,7 @@ void handleStatus() {
     datalogObj["lastRev"] = datalog.lastRev();
     datalogObj["lastTS"] = datalog.lastTS();
     datalogObj["interval"] = datalog.interval();
+    datalogObj["size"] = datalog.fileSize();
 
     JsonObject networkObj = doc["network"].to<JsonObject>();
     networkObj["hostname"] = netCfg.hostname;
