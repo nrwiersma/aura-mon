@@ -25,6 +25,7 @@ void handlePublicUploadFinish();
 void handlePublicUpload();
 void handleDeviceAction();
 void handleMetrics();
+void handleReboot();
 
 void setupAPI() {
     server.on("/config", HTTP_GET, handleGetConfig);
@@ -36,6 +37,7 @@ void setupAPI() {
     server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
     server.on("/ota/public", HTTP_POST, handlePublicUploadFinish, handlePublicUpload);
     server.on("/metrics", HTTP_GET, handleMetrics);
+    server.on("/reboot", HTTP_POST, handleReboot);
     server.on("/readyz", HTTP_GET, returnOK);
     server.on("/livez", HTTP_GET, returnOK);
 
@@ -166,6 +168,16 @@ void handleDeviceAction() {
     mutex_exit(&deviceActionMu);
 
     server.send(202, contentTypeJSON, F("{\"status\":\"queued\"}"));
+}
+
+void handleReboot() {
+    LOGI("Reboot requested");
+
+    server.send(204, contentTypePlain, "");
+
+    mutex_enter_blocking(&sdMu);
+    delay(100);
+    rp2040.reboot();
 }
 
 void handleMetrics() {

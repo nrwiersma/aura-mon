@@ -233,6 +233,7 @@ function App() {
   const [otaFileError, setOtaFileError] = useState(false);
   const [otaPublicFileError, setOtaPublicFileError] = useState(false);
   const [theme, setTheme] = useState(getPreferredTheme());
+  const [rebootPending, setRebootPending] = useState(false);
 
   const saveTimerRef = useRef(null);
   const statusInFlightRef = useRef(false);
@@ -584,6 +585,28 @@ function App() {
     }
   }
 
+  async function rebootDevice() {
+    if (rebootPending) {
+      return;
+    }
+    if (!confirm("Reboot device now?")) {
+      return;
+    }
+
+    setRebootPending(true);
+
+    try {
+      const response = await fetch("/rebbot", { method: "POST" });
+      if (!response.ok) {
+        throw new Error(`Reboot failed: ${response.status}`);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Reboot failed. Try again.");
+      setRebootPending(false);
+    }
+  }
+
   return html`
     <div>
       <div class="page">
@@ -599,45 +622,23 @@ function App() {
                 aria-pressed=${themePressed}
                 onClick=${toggleTheme}
               >
-                <svg
-                  class="theme-icon theme-icon-moon"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                <svg
-                  class="theme-icon theme-icon-sun"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.6" />
-                  <path
-                    d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
+                <span class="theme-icon theme-icon-moon" aria-hidden="true"></span>
+                <span class="theme-icon theme-icon-sun" aria-hidden="true"></span>
               </button>
               <div class="version">
                 Version <span id="version">${versionText}</span>
               </div>
+              <button
+                id="reboot-device"
+                class="btn btn-ghost"
+                type="button"
+                aria-label="Reboot device"
+                title="Reboot device"
+                disabled=${rebootPending}
+                onClick=${rebootDevice}
+              >
+                <span class="icon icon-reboot" aria-hidden="true"></span>
+              </button>
               <button
                 id="ota-open"
                 class="btn btn-ghost btn-ota"
@@ -647,25 +648,7 @@ function App() {
                 aria-label="Open OTA upload"
                 onClick=${openOtaDrawer}
               >
-                <svg
-                  class="ota-icon"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <path d="M12 16V4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                  <path
-                    d="M8 8l4-4 4 4"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                  <path d="M4 20h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                </svg>
+                <span class="icon icon-ota" aria-hidden="true"></span>
               </button>
             </div>
             <div id="status-pill" class=${`status-pill${isLive ? "" : " offline"}`}>
@@ -718,29 +701,7 @@ function App() {
                               <span data-power-text="true">${formatPower(metrics)}</span>
                               ${device.reversed
                                 ? html`<span class="power-icon active" title="Reversed">
-                                    <svg
-                                      width="16"
-                                      height="16"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      aria-hidden="true"
-                                    >
-                                      <path
-                                        d="M12 5a7 7 0 1 1-6.22 10.22"
-                                        stroke="currentColor"
-                                        stroke-width="1.6"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                      />
-                                      <path
-                                        d="M4.5 9V5.5H8"
-                                        stroke="currentColor"
-                                        stroke-width="1.6"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                      />
-                                    </svg>
+                                    <span class="icon icon-reversed" aria-hidden="true"></span>
                                   </span>`
                                 : ""}
                             </span>
@@ -754,23 +715,7 @@ function App() {
                                 disabled=${locateDisabled}
                                 onClick=${() => locateDevice(device)}
                               >
-                                <svg
-                                  width="16"
-                                  height="16"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  aria-hidden="true"
-                                >
-                                  <circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1.6" />
-                                  <circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.6" />
-                                  <path
-                                    d="M12 3v2M12 19v2M3 12h2M19 12h2"
-                                    stroke="currentColor"
-                                    stroke-width="1.6"
-                                    stroke-linecap="round"
-                                  />
-                                </svg>
+                                <span class="icon icon-locate" aria-hidden="true"></span>
                               </button>
                               <button
                                 type="button"
@@ -778,28 +723,7 @@ function App() {
                                 aria-label="Edit device"
                                 onClick=${() => openDrawerFor(device, index)}
                               >
-                                <svg
-                                  width="16"
-                                  height="16"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  xmlns="http://www.w3.org/2000/svg"
-                                >
-                                  <path
-                                    d="M4 20h4l10-10a2.828 2.828 0 1 0-4-4L4 16v4z"
-                                    stroke="currentColor"
-                                    stroke-width="1.6"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                  />
-                                  <path
-                                    d="M13 7l4 4"
-                                    stroke="#344054"
-                                    stroke-width="1.6"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                  />
-                                </svg>
+                                <span class="icon icon-edit" aria-hidden="true"></span>
                               </button>
                             </div>
                           </td>
