@@ -217,6 +217,63 @@ p {
   margin-top: 16px;
 }
 
+.info-section {
+  margin-top: 24px;
+}
+
+.section-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.info-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--surface-subtle);
+}
+
+.info-card-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.info-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.info-row dt {
+  margin: 0;
+  color: var(--muted);
+}
+
+.info-row dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .btn-icon {
   display: inline-flex;
   align-items: center;
@@ -618,5 +675,9 @@ input[type="number"] {
   .table-shell,
   .table-wrap {
     max-width: 100%;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
   }
 }

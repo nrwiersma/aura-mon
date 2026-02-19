@@ -75,6 +75,30 @@ function formatMetric(value, decimals = 3) {
   return fixed.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
 }
 
+function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  const decimals = size >= 100 ? 0 : size >= 10 ? 1 : 2;
+  return `${formatMetric(size, decimals)} ${units[unitIndex]}`;
+}
+
+function formatTimestamp(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) {
+    return "--";
+  }
+  return new Date(value * 1000).toLocaleString();
+}
+
 function formatVoltage(metrics) {
   if (!metrics) {
     return "--";
@@ -370,6 +394,8 @@ function App() {
   const themePressed = theme === "dark" ? "true" : "false";
   const themeLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   const drawerTitle = isAdding ? "Add device" : "Edit device";
+  const datalog = status?.datalog || {};
+  const network = status?.network || {};
 
   function closeDrawer() {
     setDrawerOpen(false);
@@ -799,6 +825,59 @@ function App() {
                   <span class="btn-icon">+</span>
                   Add device
                 </button>
+              </div>
+            </div>
+
+            <div class="info-section" aria-label="Information">
+              <h2 class="section-title">Information</h2>
+              <div class="info-grid">
+                <div class="info-card">
+                  <h3 class="info-card-title">Data log</h3>
+                  <dl class="info-list">
+                    <div class="info-row">
+                      <dt>First timestamp</dt>
+                      <dd>${formatTimestamp(datalog.firstTS)}</dd>
+                    </div>
+                    <div class="info-row">
+                      <dt>Last timestamp</dt>
+                      <dd>${formatTimestamp(datalog.lastTS)}</dd>
+                    </div>
+                    <div class="info-row">
+                      <dt>Size</dt>
+                      <dd>${formatBytes(datalog.size)}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div class="info-card">
+                  <h3 class="info-card-title">Network</h3>
+                  <dl class="info-list">
+                    <div class="info-row">
+                      <dt>Hostname</dt>
+                      <dd>${network.hostname || "--"}</dd>
+                    </div>
+                    <div class="info-row">
+                      <dt>IP address</dt>
+                      <dd>${network.ip || "--"}</dd>
+                    </div>
+                    <div class="info-row">
+                      <dt>Gateway</dt>
+                      <dd>${network.gateway || "--"}</dd>
+                    </div>
+                    <div class="info-row">
+                      <dt>Subnet</dt>
+                      <dd>${network.subnet || "--"}</dd>
+                    </div>
+                    <div class="info-row">
+                      <dt>DNS</dt>
+                      <dd>${network.dns || "--"}</dd>
+                    </div>
+                    <div class="info-row">
+                      <dt>MAC</dt>
+                      <dd>${network.mac || "--"}</dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
             </div>
           </section>
