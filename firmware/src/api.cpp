@@ -173,6 +173,7 @@ void handleMetrics() {
     const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
     const uint32_t datalogIO = metrics.datalog_io.load(std::memory_order_relaxed);
+    const uint32_t datalogCacheHit = metrics.datalog_cache_hit.load(std::memory_order_relaxed);
 
     String response;
     response.reserve(320);
@@ -197,6 +198,12 @@ void handleMetrics() {
     response += F("# TYPE auramon_datalog_io counter\n");
     response += F("auramon_datalog_io ");
     response += String(datalogIO);
+    response += '\n';
+    response += F(
+        "# HELP auramon_datalog_cache_hit Number of cache hits when reading records from the datalog.\n");
+    response += F("# TYPE auramon_datalog_cache_hit counter\n");
+    response += F("auramon_datalog_cache_hit ");
+    response += String(datalogCacheHit);
     response += '\n';
 
     server.send(200, contentTypePlain, response);

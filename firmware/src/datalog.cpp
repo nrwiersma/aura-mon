@@ -145,6 +145,8 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
             if (cacheTS == ts) {
                 rp2040.memcpyDMA(rec, &_lastCache[i], sizeof(logRecord));
 
+                metrics.datalog_cache_hit.fetch_add(1, std::memory_order_relaxed);
+
                 mutex_exit(&_mu);
                 return nullptr;
             }
