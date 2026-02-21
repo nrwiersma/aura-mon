@@ -596,7 +596,7 @@ function App() {
     setRebootPending(true);
 
     try {
-      const response = await fetch("/rebbot", { method: "POST" });
+      const response = await fetch("/reboot", { method: "POST" });
       if (!response.ok) {
         throw new Error(`Reboot failed: ${response.status}`);
       }
