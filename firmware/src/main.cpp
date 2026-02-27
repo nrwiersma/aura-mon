@@ -40,8 +40,6 @@ WebServer server(80);
 taskQueue c0Queue = {};
 taskQueue c1Queue = {};
 
-volatile bool setupComplete = false;
-
 void blinkLED();
 void handleButtonPress();
 void waitForSerial();
@@ -149,7 +147,8 @@ void setup() {
     syncState(nullptr);
     ledTimer.attach(1, blinkLED);
 
-    setupComplete = true;
+    // Indicate that setup is complete and core 1 can start.
+    rp2040.fifo.push(1);
 }
 
 void loop() {
@@ -162,9 +161,8 @@ void loop() {
 }
 
 void setup1() {
-    while (!setupComplete) {
-        delay(10);
-    }
+    // Wait for core 0 to indicate that setup is complete before starting.
+    rp2040.fifo.pop();
 
     // Set the initial monotonic ts so we know
     // how long it took before the first log write.
@@ -208,8 +206,8 @@ void blinkLED() {
 }
 
 void handleButtonPress() {
-    static int lastReading = HIGH;
-    static int stableState = HIGH;
+    static int           lastReading = HIGH;
+    static int           stableState = HIGH;
     static unsigned long lastChangeMs = 0;
 
     int reading = digitalRead(BUTTON_PIN);
