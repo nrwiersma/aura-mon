@@ -1,6 +1,6 @@
 # Firmware Architecture
 
-The firmware runs on an RP2040 dual-core microcontroller. Each core has a dedicated role: **Core 0** handles networking, the web API, and system housekeeping, while **Core 1** handles real-time energy data collection and storage.
+The firmware runs on an RP2040 dual-core microcontroller. Each core has a dedicated role: **Core 0 (Control Plane)** handles networking, the web API, and system housekeeping, while **Core 1 (Data Plane)** handles real-time energy data collection and storage.
 
 ```mermaid
 flowchart TD
@@ -18,7 +18,7 @@ flowchart TD
         B10 --> B11[Signal Core 1 via FIFO]
     end
 
-    subgraph C0["Core 0 — Networking & Control"]
+    subgraph C0["Core 0 — Control Plane"]
         direction TB
 
         subgraph C0LOOP["loop()  —  runs continuously"]
@@ -40,7 +40,7 @@ flowchart TD
         C0LOOP --> C0TASKS
     end
 
-    subgraph C1["Core 1 — Data Collection & Logging"]
+    subgraph C1["Core 1 — Data Plane"]
         direction TB
 
         subgraph C1INIT["setup1()"]
@@ -72,17 +72,6 @@ flowchart TD
         M1["deviceDataMu\ninputDeviceData[15]\n(V, A, PF, Hz — read by API)"]
         M2["deviceActionMu\ndeviceActionControl / Data\n(C0 writes, C1 executes)"]
         M3["deviceInfoMu\ninputDeviceInfo[15]\ndevicesChanged flag"]
-        M4["sdMu\nSdFs  (SD Card)"]
-    end
-
-    subgraph HW["Hardware Peripherals"]
-        direction LR
-        HW1[W5500 Ethernet SPI]
-        HW2[RS-485 Modbus RTU\nSerial1]
-        HW3[SD Card SDIO]
-        HW4[PCF85063A RTC\nI²C / Wire1]
-        HW5[LED Red / Green]
-        HW6[Physical Button]
     end
 
     BOOT --> C0
@@ -96,16 +85,6 @@ flowchart TD
 
     C0LOOP -- "writes deviceInfos\ndevicesChanged" --> M3
     C1TASKS -- "reads deviceInfos" --> M3
-
-    C0TASKS -- "SD reads/writes" --> M4
-    C1TASKS -- "SD writes (datalog)" --> M4
-
-    C0LOOP --> HW1
-    C1LOOP --> HW2
-    M4 --> HW3
-    BOOT --> HW4
-    C0TASKS -- "controls" --> HW5
-    C0LOOP -- "reads" --> HW6
 ```
 
 ## Core Responsibilities
@@ -128,4 +107,15 @@ flowchart TD
 | `deviceActionTask` | 1 | 5 |
 | `checkEthernet` | 0 | 5 |
 | `syncState` | 0 | 4 |
+
+## Hardware Peripherals
+
+| Peripheral | Interface | Used By |
+|---|---|---|
+| W5500 Ethernet | SPI | Control Plane — HTTP server, NTP, link monitoring |
+| RS-485 / Modbus RTU | Serial1 | Data Plane — device polling & address assignment |
+| SD Card | SDIO (`sdMu`) | Control Plane — config r/w; Data Plane — datalog writes |
+| PCF85063A RTC | I²C / Wire1 | Boot — set system clock |
+| LED (Red / Green) | GPIO 10 / 11 | Control Plane — `syncState` sets colour, `Ticker` blinks at 1 Hz |
+| Physical Button | GPIO 3 | Control Plane — triggers `addDeviceFromButton` on press |
 
