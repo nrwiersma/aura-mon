@@ -67,24 +67,8 @@ flowchart TD
         C1LOOP --> C1TASKS
     end
 
-    subgraph SHARED["Shared State  (mutex-protected)"]
-        direction LR
-        M1["deviceDataMu\ninputDeviceData[15]\n(V, A, PF, Hz — read by API)"]
-        M2["deviceActionMu\ndeviceActionControl / Data\n(C0 writes, C1 executes)"]
-        M3["deviceInfoMu\ninputDeviceInfo[15]\ndevicesChanged flag"]
-    end
-
     BOOT --> C0
     BOOT --> C1
-
-    C0LOOP -- "reads deviceData" --> M1
-    C1TASKS -- "writes deviceData" --> M1
-
-    C0LOOP -- "writes deviceActionControl" --> M2
-    C1TASKS -- "reads / clears deviceActionData" --> M2
-
-    C0LOOP -- "writes deviceInfos\ndevicesChanged" --> M3
-    C1TASKS -- "reads deviceInfos" --> M3
 ```
 
 ## Core Responsibilities
