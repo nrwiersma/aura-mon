@@ -7,68 +7,45 @@ flowchart TD
     subgraph BOOT["Boot Sequence (Core 0)"]
         direction TB
         B1[Init Serial & LEDs] --> B2[Init SD Card]
-        B2 --> B3[Init RTC → set system time]
-        B3 --> B4[Load config from SD]
-        B4 --> B5[syncDeviceInfo]
-        B5 --> B6[Init Ethernet / W5500]
-        B6 --> B7[Init Datalog]
-        B7 --> B8[Init Modbus RTU / RS-485]
-        B8 --> B9[Setup Web API & HTTP Server]
-        B9 --> B10[Register Core 0 tasks]
-        B10 --> B11[Signal Core 1 via FIFO]
+        B2 --> B3[Init RTC & set system time]
+        B3 --> B4[Load config & sync device info]
+        B4 --> B5[Init Ethernet / W5500]
+        B5 --> B6[Init Datalog]
+        B6 --> B7[Init Modbus RTU / RS-485]
+        B7 --> B8[Setup Web API & HTTP server]
+        B8 --> B9[Register tasks & signal Core 1 via FIFO]
     end
 
     subgraph C0["Core 0 — Control Plane"]
         direction TB
+        L0A[server.handleClient\nServe HTTP API requests]
+        L0B[handleButtonPress\nDebounce button & queue addDeviceFromButton]
+        L0C[c0Queue.runNextTask]
 
-        subgraph C0LOOP["loop()  —  runs continuously"]
-            direction TB
-            L0A[server.handleClient\nServe HTTP API requests]
-            L0B[handleButtonPress\nDebounce & queue addDeviceFromButton]
-            L0C[c0Queue.runNextTask\nRun next scheduled task]
-            L0A --> L0B --> L0C
-        end
+        T0A["⏱ timeSync  · 60s\nNTP sync, update RTC\nReboot after 42 days"]
+        T0B["⏱ checkEthernet  · 1s\nMonitor link & IP\nReboot after 60 min offline"]
+        T0C["⏱ syncState  · 1s\nCheck SD & Ethernet\nUpdate LED  🔴 · 🟠 · 🟢"]
+        T0D["▶ addDeviceFromButton  · on demand\nAssign free Modbus address\nSave config to SD"]
 
-        subgraph C0TASKS["Core 0 Task Queue"]
-            direction TB
-            T0A["⏱ timeSync  (every 60s / 5s)\nNTP sync via UDP\nUpdate RTC & system clock\nReboot after 42 days"]
-            T0B["⏱ checkEthernet  (every 1s)\nMonitor link/IP status\nLog connect/disconnect\nReboot after 60 min offline"]
-            T0C["⏱ syncState  (every 1s)\nCheck SD Card health\nCheck Ethernet link\nUpdate LED colour\n🔴 SD error · 🟠 No link · 🟢 OK"]
-            T0D["▶ addDeviceFromButton  (on demand)\nFind free Modbus address\nCreate deviceInfo entry\nSave config to SD\nQueue Assign action"]
-        end
-
-        C0LOOP --> C0TASKS
+        L0C --> T0A & T0B & T0C & T0D
     end
 
     subgraph C1["Core 1 — Data Plane"]
         direction TB
+        S1[Wait for FIFO signal] --> S2[initLogData & start watchdog 800ms]
 
-        subgraph C1INIT["setup1()"]
-            S1[Wait for FIFO signal from Core 0] --> S2[initLogData — set baseline timestamp]
-            S2 --> S3[Start watchdog timer 800 ms]
-        end
+        L1A["collect()  · each cycle\nPoll all devices over Modbus RTU\nDecode V, A, W, VA, PF, Hz\nUpdate metrics"]
+        L1B[c1Queue.runNextTask\nKick watchdog]
 
-        subgraph C1LOOP["loop1()  —  1 s cycle"]
-            direction TB
-            L1A["collect()\nPoll every enabled inputDevice\nover Modbus RTU / RS-485\nDecode V, A, W, VA, PF, Hz\nUpdate device.current bucket\nUpdate Prometheus metrics"]
-            L1B[c1Queue.runNextTask\nRun next scheduled task]
-            L1C[rp2040.wdt_reset\nKick watchdog]
-            L1A --> L1B --> L1C
-        end
+        T1A["⏱ logData  · per interval\nAccumulate Wh / VAh / VoltHrs\nWrite record to SD datalog"]
+        T1B["⏱ syncDevices  · 1s\nSync device info, actions\n& live readings via mutexes"]
+        T1C["⏱ deviceActionTask  · 1s\nLocate: flash device LED\nAssign: set Modbus address"]
 
-        subgraph C1TASKS["Core 1 Task Queue"]
-            direction TB
-            T1A["⏱ logData  (every interval)\nAccumulate Wh, VAh, VoltHrs\nWrite logRecord to SD datalog\nSkip if RTC not running"]
-            T1B["⏱ syncDevices  (every 1s)\nAcquire mutex → syncDeviceInfo\n(apply config changes)\nAcquire mutex → syncDeviceAction\n(promote control→data)\nAcquire mutex → syncDeviceData\n(copy live readings to shared struct)"]
-            T1C["⏱ deviceActionTask  (every 1s)\nRead deviceActionData\nLocate: flash device LED via Modbus\nAssign: set Modbus address on device"]
-        end
-
-        C1INIT --> C1LOOP
-        C1LOOP --> C1TASKS
+        S2 --> L1A --> L1B
+        L1B --> T1A & T1B & T1C
     end
 
-    BOOT --> C0
-    BOOT --> C1
+    BOOT --> C0 & C1
 ```
 
 ## Core Responsibilities
