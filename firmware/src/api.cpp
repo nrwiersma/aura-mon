@@ -365,6 +365,9 @@ void handleEnergy() {
             return;
         }
 
+        if (rec.ts <= prevRec.ts) {
+            continue;
+        }
         if (rec.rev == prevRec.rev) {
             continue;
         }
@@ -375,7 +378,7 @@ void handleEnergy() {
             continue;
         }
 
-        auto row = String(ts);
+        auto row = String(rec.ts);
         row.reserve(row.length() + deviceCount * 48);
 
         const double hz = (rec.hzHrs - prevRec.hzHrs) / elapsedHours;

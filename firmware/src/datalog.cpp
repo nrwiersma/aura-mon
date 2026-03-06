@@ -163,14 +163,12 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     for (int i = 0; i < _readCacheSize; i++) {
         const uint32_t cacheTS = _readCache[i].ts;
         if (cacheTS == ts) {
-            // If the cache position is not changed to the current
-            // item, you could potentially fill the read cache with
-            // a single record key.
-            _readCachePos = i;
+            // Move the cache position back one so we do not fill the cache with the same record again.
+            _readCachePos = (_readCachePos + _readCacheSize - 1) % _readCacheSize;
             readRev(_readCache[i].rev, rec);
 
             mutex_exit(&_mu);
-            return 0;
+            return nullptr;
         }
         if (cacheTS > lowTS && cacheTS < ts) {
             lowTS = cacheTS;
@@ -179,6 +177,15 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
             highTS = cacheTS;
             highRev = _readCache[i].rev;
         }
+    }
+    if(highRev - lowRev == 1) {
+        // Hole in file?
+        _readCachePos = (_readCachePos + _readCacheSize - 1) % _readCacheSize;
+        readRev(lowRev, rec);
+        rec->ts = ts;
+
+        mutex_exit(&_mu);
+        return nullptr;
     }
     search(ts, rec, lowTS, lowRev, highTS, highRev);
     rec->ts = ts;
