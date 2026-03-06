@@ -40,8 +40,8 @@ public:
         const uint32_t computedSize = static_cast<uint32_t>(days * recordsPerDay * _recordSize);
         _maxFileSize = max(static_cast<uint32_t>(_recordSize), computedSize);
         mutex_init(&_mu);
-        _readCache = new logRecordKey[_readCacheSize];
-        _lastCache = new logRecord[_lastCacheSize];
+        _readCache = new logRecordKey[_readCacheSize]{};
+        _lastCache = new logRecord[_lastCacheSize]{};
     };
 
     bool     begin();
@@ -85,7 +85,7 @@ private:
     logRecordKey readKey(uint32_t pos);
     uint8_t      readRev(uint32_t rev, logRecord *rec);
     void         search(uint32_t ts, logRecord * rec,
-                uint32_t         lowTS, int32_t  lowRev,
-                uint32_t         highTS, int32_t highRev);
+                uint32_t         lowTS, uint32_t  lowRev,
+                uint32_t         highTS, uint32_t highRev);
     uint32_t findWrapPos(uint32_t highPos, uint32_t highTS, uint32_t lowPos, uint32_t lowTS);
 };

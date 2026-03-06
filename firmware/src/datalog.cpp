@@ -160,26 +160,36 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
 
     // Limit the search space by checking the read cache,
     // it will give hits in the correct direction to search.
-    for (int i = 0; i < _readCacheSize; i++) {
-        const uint32_t cacheTS = _readCache[i].ts;
-        if (cacheTS == ts) {
-            // Move the cache position back one so we do not fill the cache with the same record again.
-            _readCachePos = (_readCachePos + _readCacheSize - 1) % _readCacheSize;
-            readRev(_readCache[i].rev, rec);
-
-            mutex_exit(&_mu);
-            return nullptr;
-        }
-        if (cacheTS > lowTS && cacheTS < ts) {
-            lowTS = cacheTS;
-            lowRev = _readCache[i].rev;
-        } else if (cacheTS < highTS && cacheTS > ts) {
-            highTS = cacheTS;
-            highRev = _readCache[i].rev;
-        }
-    }
+    // for (int i = 0; i < _readCacheSize; i++) {
+    //     const uint32_t cacheTS = _readCache[i].ts;
+    //     const uint32_t cacheRev = _readCache[i].rev;
+    //
+    //     // Skip stale/uninitialized/invalid cache slots.
+    //     if (cacheRev < _first.rev || cacheRev > _last.rev) continue;
+    //     if (cacheTS < _first.ts || cacheTS > _last.ts) continue;
+    //
+    //     if (cacheTS == ts) {
+    //         // Move the cache position back one so we do not fill the cache with the same record again.
+    //         _readCachePos = (_readCachePos + _readCacheSize - 1) % _readCacheSize;
+    //         readRev(cacheRev, rec);
+    //
+    //         mutex_exit(&_mu);
+    //         return nullptr;
+    //     }
+    //     if (cacheTS < ts && cacheTS > lowTS && cacheRev >= lowRev) {
+    //         lowTS = cacheTS;
+    //         lowRev = cacheRev;
+    //     } else if (cacheTS > ts && cacheTS < highTS && cacheRev <= highRev) {
+    //         highTS = cacheTS;
+    //         highRev = cacheRev;
+    //     }
+    // }
+    // // Safety: fallback if cache produced invalid bounds.
+    // if (lowRev >= highRev || lowTS > ts || highTS < ts) {
+    //     lowRev = _first.rev; lowTS = _first.ts;
+    //     highRev = _last.rev; highTS = _last.ts;
+    // }
     if(highRev - lowRev == 1) {
-        // Hole in file?
         _readCachePos = (_readCachePos + _readCacheSize - 1) % _readCacheSize;
         readRev(lowRev, rec);
         rec->ts = ts;
@@ -272,6 +282,11 @@ uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
     _file.read(rec, _recordSize);
     mutex_exit(&sdMu);
 
+    if (rec->rev != rev) {
+        LOGE("log: readRev expected rev %u but got %u at pos %u", rev, rec->rev, pos);
+        return 1;
+    }
+
     _readCache[_readCachePos++] = logRecordKey{rec->rev, rec->ts};
     _readCachePos %= _readCacheSize;
 
@@ -281,36 +296,42 @@ uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
 }
 
 void dataLog::search(const uint32_t ts, logRecord *        rec,
-                     const uint32_t lowTS, const int32_t  lowRev,
-                     const uint32_t highTS, const int32_t highRev) {
+                     const uint32_t lowTS, const uint32_t  lowRev,
+                     const uint32_t highTS, const uint32_t highRev) {
     // This is straight out of IoTaWatt and very smart. Check if this section of the
     // file is gapless, and if not, potentially drastically limit the search space by
     // getting the limit from the other limits' perspective.
-    int32_t floorRev = lowRev;
-    if (highTS >= ts) {
-        floorRev = max(lowRev, highRev - static_cast<int32_t>(highTS - ts) / _interval);
-    }
-    int32_t ceilRev = highRev;
-    if (ts >= lowTS) {
-        ceilRev = min(highRev, lowRev + static_cast<int32_t>(ts - lowTS) / _interval);
-    }
-
-    if (ceilRev < highRev || floorRev == ceilRev) {
-        readRev(ceilRev, rec);
-        if (rec->ts == ts) {
-            return;
-        }
-        search(ts, rec, lowTS, lowRev, rec->ts, static_cast<int32_t>(rec->rev));
-        return;
-    }
-    if (floorRev > lowRev) {
-        readRev(floorRev, rec);
-        if (rec->ts == ts) {
-            return;
-        }
-        search(ts, rec, rec->ts, static_cast<int32_t>(rec->rev), highTS, highRev);
-        return;
-    }
+    // int32_t floorRev = lowRev;
+    // if (highTS >= ts) {
+    //     floorRev = max(lowRev, highRev - (highTS - ts) / _interval);
+    // }
+    // int32_t ceilRev = highRev;
+    // if (ts >= lowTS) {
+    //     ceilRev = min(highRev, lowRev + (ts - lowTS) / _interval);
+    // }
+    //
+    // if (ceilRev < highRev || floorRev == ceilRev) {
+    //     readRev(ceilRev, rec);
+    //     if (rec->ts == ts) return;
+    //
+    //     if (rec->ts < ts) {
+    //         search(ts, rec, rec->ts, rec->rev, highTS, highRev);
+    //     } else {
+    //         search(ts, rec, lowTS, lowRev, rec->ts, rec->rev);
+    //     }
+    //     return;
+    // }
+    // if (floorRev > lowRev) {
+    //     readRev(floorRev, rec);
+    //     if (rec->ts == ts) return;
+    //
+    //     if (rec->ts < ts) {
+    //         search(ts, rec, rec->ts, rec->rev, highTS, highRev);
+    //     } else {
+    //         search(ts, rec, lowTS, lowRev, rec->ts, rec->rev);
+    //     }
+    //     return;
+    // }
 
     // That did not narrow things, follow a normal binary search.
     if (highRev - lowRev <= 1) {
@@ -322,10 +343,10 @@ void dataLog::search(const uint32_t ts, logRecord *        rec,
         return;
     }
     if (rec->ts < ts) {
-        search(ts, rec, rec->ts, static_cast<int32_t>(rec->rev), highTS, highRev);
+        search(ts, rec, rec->ts, rec->rev, highTS, highRev);
         return;
     }
-    search(ts, rec, lowTS, lowRev, rec->ts, static_cast<int32_t>(rec->rev));
+    search(ts, rec, lowTS, lowRev, rec->ts, rec->rev);
 }
 
 uint32_t dataLog::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const uint32_t highPos,
