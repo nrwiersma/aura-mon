@@ -160,36 +160,34 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
 
     // Limit the search space by checking the read cache,
     // it will give hits in the correct direction to search.
-    // for (int i = 0; i < _readCacheSize; i++) {
-    //     const uint32_t cacheTS = _readCache[i].ts;
-    //     const uint32_t cacheRev = _readCache[i].rev;
-    //
-    //     // Skip stale/uninitialized/invalid cache slots.
-    //     if (cacheRev < _first.rev || cacheRev > _last.rev) continue;
-    //     if (cacheTS < _first.ts || cacheTS > _last.ts) continue;
-    //
-    //     if (cacheTS == ts) {
-    //         // Move the cache position back one so we do not fill the cache with the same record again.
-    //         _readCachePos = (_readCachePos + _readCacheSize - 1) % _readCacheSize;
-    //         readRev(cacheRev, rec);
-    //
-    //         mutex_exit(&_mu);
-    //         return nullptr;
-    //     }
-    //     if (cacheTS < ts && cacheTS > lowTS && cacheRev >= lowRev) {
-    //         lowTS = cacheTS;
-    //         lowRev = cacheRev;
-    //     } else if (cacheTS > ts && cacheTS < highTS && cacheRev <= highRev) {
-    //         highTS = cacheTS;
-    //         highRev = cacheRev;
-    //     }
-    // }
-    // // Safety: fallback if cache produced invalid bounds.
-    // if (lowRev >= highRev || lowTS > ts || highTS < ts) {
-    //     lowRev = _first.rev; lowTS = _first.ts;
-    //     highRev = _last.rev; highTS = _last.ts;
-    // }
+    for (int i = 0; i < _readCacheSize; i++) {
+        const uint32_t cacheTS = _readCache[i].ts;
+        const uint32_t cacheRev = _readCache[i].rev;
+
+        if (cacheTS == ts) {
+            // Move the cache position back one so we do not fill the cache with the same record again.
+            _readCachePos = (_readCachePos + _readCacheSize - 1) % _readCacheSize;
+            readRev(cacheRev, rec);
+
+            mutex_exit(&_mu);
+            return nullptr;
+        }
+        if (cacheTS < ts && cacheTS > lowTS && cacheRev >= lowRev) {
+            lowTS = cacheTS;
+            lowRev = cacheRev;
+        } else if (cacheTS > ts && cacheTS < highTS && cacheRev <= highRev) {
+            highTS = cacheTS;
+            highRev = cacheRev;
+        }
+    }
+    // Safety: fallback if cache produced invalid bounds.
+    if (lowRev >= highRev || lowTS > ts || highTS < ts) {
+        lowRev = _first.rev; lowTS = _first.ts;
+        highRev = _last.rev; highTS = _last.ts;
+    }
     if(highRev - lowRev == 1) {
+        // It is possible there is a gap in the file, but if there is only one record between the bounds,
+        // just read it and return it, otherwise we can get stuck in an infinite loop.
         _readCachePos = (_readCachePos + _readCacheSize - 1) % _readCacheSize;
         readRev(lowRev, rec);
         rec->ts = ts;
@@ -281,11 +279,6 @@ uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
     _file.seek(pos);
     _file.read(rec, _recordSize);
     mutex_exit(&sdMu);
-
-    if (rec->rev != rev) {
-        LOGE("log: readRev expected rev %u but got %u at pos %u", rev, rec->rev, pos);
-        return 1;
-    }
 
     _readCache[_readCachePos++] = logRecordKey{rec->rev, rec->ts};
     _readCachePos %= _readCacheSize;
