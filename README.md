@@ -9,40 +9,69 @@
 [![GitHub release](https://img.shields.io/github/release/nrwiersma/aura-mon.svg)](https://github.com/nrwiersma/aura-mon/releases)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/nrwiersma/aura-mon/master/LICENSE)
 
-`Aura Mon` is an energy datalogger specifically targeting the tiny [SPM01](https://www.bituo-technik.com/product/spm01-flexible-1pn-63a/).
+`Aura Mon` is an RP2350-based energy data logger built around the tiny [SPM01](https://www.bituo-technik.com/product/spm01-flexible-1pn-63a/) Modbus meter. It samples power data over RS485, stores it on an SD card, and serves a local HTTP API and web UI over Ethernet.
 
-Features:
+## At a glance
 
 * RP2350 microcontroller
+* Modbus RTU over RS485 (SPM01)
 * Ethernet for reliable network connectivity
-* SDCard for storage
-* RTC
-* Modbus RTU over RS485
+* SD card logging and static web UI hosting
+* RTC for timestamped data
+* HTTP API with OTA updates and metrics
+
+## System overview
+
+![system diagram](assets/system-diagram.svg)
+
+## Data flow
+
+![data flow](assets/data-flow.svg)
 
 ## Why
 
-The goal of this project is to create a reliable and easy to use energy datalogger that can be used to monitor energy consumption in a home or small business.
-The SPM01 is a very affordable energy meter that can measure voltage, current, power, energy and power factor. This reduces the space needed in small electrical panels,
-making it ideal for home use.
+The goal of this project is to create a reliable and easy-to-use energy data logger that can be used to monitor energy consumption in a home or small business. The SPM01 is a very affordable energy meter that can measure voltage, current, power, energy, and power factor while fitting in tight electrical panels.
 
-## Powering
+## Quick start
 
-The board can be powered using an external 5V power supply connected to the screw terminals. For testing purposes, it can also be powered via USB-C, after connecting the onboard jumper.
+1. Assemble the board and connect the SPM01 to the RS485 terminals.
+2. Insert an SD card (required for logging).
+3. Power the board with a regulated 5V supply on the screw terminals (or via USB-C with the jumper fitted for testing).
+4. Connect Ethernet and find the device IP via your router's DHCP lease table.
+5. Open `http://<device-ip>` to view the UI and use the API.
 
 ## Firmware
 
-The firmware is written in C++ using the [Arduino framework](https://www.arduino.cc/en/framework) and is available in the `firmware` folder. It is designed to specifically meet my initial needs,
-but is open for contributions and improvements. The firmware is responsible for reading data from the SPM01, storing it on the SDCard, and serving it over HTTP.
+The firmware lives in `firmware/` and is written in C++ using the Arduino framework.
 
-**Note**: The firmware is still in development and is not yet ready for production use. It is currently only tested on the hardware I have, so there may be bugs and issues that need to be addressed.
+* Build/flash instructions: `firmware/FIRMWARE.md`
+* HTTP API reference: `firmware/API.md`
 
-### API
+### API highlights
 
-The firmware exposes an HTTP API that can be used to retrieve the stored data and configure the device. The API is documented in the `API.md` file.
+* `GET /status` for live readings and runtime stats.
+* `GET /energy` for CSV data export.
+* `GET /logs` for log streaming.
+* `GET`/`POST /config` for device configuration.
+* `POST /ota` for firmware updates.
+* `GET /metrics` for Prometheus-style metrics.
+
+## Powering
+
+The board can be powered using an external 5V power supply connected to the screw terminals. For testing purposes, it can also be powered via USB-C after connecting the onboard jumper.
+
+## Safety
+
+> [!WARNING]
+> This project interfaces with mains-connected equipment. Only install it if you are qualified and follow local electrical safety requirements.
+
+## Project status
+
+The firmware and hardware are still in development and are only tested on the author's hardware. Expect rough edges and please report issues or improvements.
 
 ## Changelog
 
 #### v0.1.0
 
 * Initial schematic and board
-* Initial firmware with basic functionality to read from the SPM01 and store data on the SDCard
+* Initial firmware with basic functionality to read from the SPM01 and store data on the SD card

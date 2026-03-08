@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260">
+  <rect width="900" height="260" fill="#ffffff"/>
+  <style>
+    .box { fill: #f6f8fa; stroke: #1f2328; stroke-width: 1.5; rx: 10; }
+    .label { font: 15px sans-serif; fill: #1f2328; }
+    .small { font: 12px sans-serif; fill: #57606a; }
+    .arrow { stroke: #1f2328; stroke-width: 2; fill: none; }
+  </style>
+
+  <rect class="box" x="60" y="50" width="220" height="80"/>
+  <text class="label" x="170" y="85" text-anchor="middle">Sampler</text>
+  <text class="small" x="170" y="105" text-anchor="middle">Reads Modbus + RTC</text>
+
+  <rect class="box" x="340" y="40" width="220" height="100"/>
+  <text class="label" x="450" y="75" text-anchor="middle">Datalog</text>
+  <text class="small" x="450" y="95" text-anchor="middle">CSV rows on SD</text>
+  <text class="small" x="450" y="115" text-anchor="middle">Rolling log files</text>
+
+  <rect class="box" x="620" y="40" width="220" height="100"/>
+  <text class="label" x="730" y="70" text-anchor="middle">HTTP API</text>
+  <text class="small" x="730" y="90" text-anchor="middle">/status /energy /logs</text>
+  <text class="small" x="730" y="110" text-anchor="middle">/config /metrics</text>
+
+  <line class="arrow" x1="280" y1="90" x2="340" y2="90"/>
+  <polygon points="340,90 330,85 330,95" fill="#1f2328"/>
+
+  <line class="arrow" x1="560" y1="90" x2="620" y2="90"/>
+  <polygon points="620,90 610,85 610,95" fill="#1f2328"/>
+
+  <rect class="box" x="340" y="170" width="220" height="70"/>
+  <text class="label" x="450" y="205" text-anchor="middle">Web UI</text>
+  <text class="small" x="450" y="225" text-anchor="middle">Static files on SD</text>
+
+  <line class="arrow" x1="730" y1="140" x2="450" y2="170"/>
+  <polygon points="450,170 458,160 464,168" fill="#1f2328"/>
+</svg>
+
