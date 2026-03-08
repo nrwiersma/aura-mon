@@ -6,7 +6,7 @@
 #include "auramon.h"
 #else
 #include "../test/stubs/TestAuraMon.h"
-#include "dataLog.h"
+#include "datalog.h"
 #endif
 
 bool dataLog::begin() {
@@ -153,33 +153,22 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
         }
     }
 
+    // Check the last read record cache, it is likely that reads will be sequential, so this will give us a good hint
+    // of where to search.
+    if (_lastReadTS < ts) {
+        uint32_t rev = (ts - _lastReadTS) / _interval + _lastReadRev;
+        readRev(rev, rec);
+        if (rec->ts == ts) {
+            mutex_exit(&_mu);
+            return nullptr;
+        }
+    }
+
     uint32_t lowRev = _first.rev;
     uint32_t lowTS = _first.ts;
     uint32_t highRev = _last.rev;
     uint32_t highTS = _last.ts;
 
-    // Limit the search space by checking the read cache,
-    // it will give hits in the correct direction to search.
-    for (int i = 0; i < _readCacheSize; i++) {
-        const uint32_t cacheTS = _readCache[i].ts;
-        if (cacheTS == ts) {
-            // If the cache position is not changed to the current
-            // item, you could potentially fill the read cache with
-            // a single record key.
-            _readCachePos = i;
-            readRev(_readCache[i].rev, rec);
-
-            mutex_exit(&_mu);
-            return 0;
-        }
-        if (cacheTS > lowTS && cacheTS < ts) {
-            lowTS = cacheTS;
-            lowRev = _readCache[i].rev;
-        } else if (cacheTS < highTS && cacheTS > ts) {
-            highTS = cacheTS;
-            highRev = _readCache[i].rev;
-        }
-    }
     search(ts, rec, lowTS, lowRev, highTS, highRev);
     rec->ts = ts;
 
@@ -265,8 +254,8 @@ uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
     _file.read(rec, _recordSize);
     mutex_exit(&sdMu);
 
-    _readCache[_readCachePos++] = logRecordKey{rec->rev, rec->ts};
-    _readCachePos %= _readCacheSize;
+    _lastReadTS = rec->ts;
+    _lastReadRev = rec->rev;
 
     metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
 
@@ -274,38 +263,8 @@ uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
 }
 
 void dataLog::search(const uint32_t ts, logRecord *        rec,
-                     const uint32_t lowTS, const int32_t  lowRev,
-                     const uint32_t highTS, const int32_t highRev) {
-    // This is straight out of IoTaWatt and very smart. Check if this section of the
-    // file is gapless, and if not, potentially drastically limit the search space by
-    // getting the limit from the other limits' perspective.
-    int32_t floorRev = lowRev;
-    if (highTS >= ts) {
-        floorRev = max(lowRev, highRev - static_cast<int32_t>(highTS - ts) / _interval);
-    }
-    int32_t ceilRev = highRev;
-    if (ts >= lowTS) {
-        ceilRev = min(highRev, lowRev + static_cast<int32_t>(ts - lowTS) / _interval);
-    }
-
-    if (ceilRev < highRev || floorRev == ceilRev) {
-        readRev(ceilRev, rec);
-        if (rec->ts == ts) {
-            return;
-        }
-        search(ts, rec, lowTS, lowRev, rec->ts, static_cast<int32_t>(rec->rev));
-        return;
-    }
-    if (floorRev > lowRev) {
-        readRev(floorRev, rec);
-        if (rec->ts == ts) {
-            return;
-        }
-        search(ts, rec, rec->ts, static_cast<int32_t>(rec->rev), highTS, highRev);
-        return;
-    }
-
-    // That did not narrow things, follow a normal binary search.
+                     const uint32_t lowTS, const uint32_t  lowRev,
+                     const uint32_t highTS, const uint32_t highRev) {
     if (highRev - lowRev <= 1) {
         readRev(lowRev, rec);
         return;
@@ -315,10 +274,10 @@ void dataLog::search(const uint32_t ts, logRecord *        rec,
         return;
     }
     if (rec->ts < ts) {
-        search(ts, rec, rec->ts, static_cast<int32_t>(rec->rev), highTS, highRev);
+        search(ts, rec, rec->ts, rec->rev, highTS, highRev);
         return;
     }
-    search(ts, rec, lowTS, lowRev, rec->ts, static_cast<int32_t>(rec->rev));
+    search(ts, rec, lowTS, lowRev, rec->ts, rec->rev);
 }
 
 uint32_t dataLog::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const uint32_t highPos,

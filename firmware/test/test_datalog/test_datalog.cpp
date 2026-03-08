@@ -4,7 +4,7 @@
 
 #include <unity.h>
 #include "../test/stubs/TestAuraMon.h"
-#include "../../src/dataLog.h"
+#include "../../src/datalog.h"
 
 // Test fixtures
 dataLog* testLog;

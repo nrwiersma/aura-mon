@@ -13,33 +13,64 @@ logger::logger() : _restart(true) {
 void logger::errorf(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
-    writef(ERROR, format, arg);
+    char temp[64];
+    char* buffer = temp;
+    size_t len = vsnprintf(temp, sizeof(temp), format, arg);
     va_end(arg);
+    if (len > sizeof(temp) - 1) {
+        buffer = new char[len + 1];
+        if (!buffer) {
+            return;
+        }
+        va_start(arg, format);
+        vsnprintf(buffer, len + 1, format, arg);
+        va_end(arg);
+    }
+    write(ERROR, buffer, len);
+    if (buffer != temp) {
+        delete[] buffer;
+    }
 }
 
 void logger::infof(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
-    writef(INFO, format, arg);
+    char temp[64];
+    char* buffer = temp;
+    size_t len = vsnprintf(temp, sizeof(temp), format, arg);
     va_end(arg);
+    if (len > sizeof(temp) - 1) {
+        buffer = new char[len + 1];
+        if (!buffer) {
+            return;
+        }
+        va_start(arg, format);
+        vsnprintf(buffer, len + 1, format, arg);
+        va_end(arg);
+    }
+    write(INFO, buffer, len);
+    if (buffer != temp) {
+        delete[] buffer;
+    }
 }
 
 void logger::debugf(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
-    writef(DEBUG, format, arg);
+    char temp[64];
+    char* buffer = temp;
+    size_t len = vsnprintf(temp, sizeof(temp), format, arg);
     va_end(arg);
-}
-
-void logger::writef(const LVL lvl, const char *format, va_list args) {
-    char   temp[64];
-    char * buffer = temp;
-    size_t len = vsnprintf(temp, sizeof(temp), format, args);
     if (len > sizeof(temp) - 1) {
         buffer = new char[len + 1];
-        vsnprintf(buffer, len + 1, format, args);
+        if (!buffer) {
+            return;
+        }
+        va_start(arg, format);
+        vsnprintf(buffer, len + 1, format, arg);
+        va_end(arg);
     }
-    write(lvl, buffer, len);
+    write(DEBUG, buffer, len);
     if (buffer != temp) {
         delete[] buffer;
     }
