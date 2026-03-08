@@ -26,7 +26,6 @@ protected:
         ERROR
     };
 
-    void writef(LVL lvl, const char *format, va_list args);
     void write(LVL lvl, const char *buffer, size_t size);
 };
 

@@ -292,9 +292,9 @@ void handleEnergy() {
         server.send(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
         return;
     }
-    if (end > start + interval * 100) {
+    if (end > start + interval * 99) {
         // Limit to 100 rows to prevent excessively large responses.
-        end = start + interval * 100;
+        end = start + interval * 99;
     }
 
     if (!datalog.entries()) {
