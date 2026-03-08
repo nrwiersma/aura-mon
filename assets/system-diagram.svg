@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="280" viewBox="0 0 900 280">
+  <rect width="900" height="280" fill="#ffffff"/>
+  <style>
+    .box { fill: #f6f8fa; stroke: #1f2328; stroke-width: 1.5; rx: 10; }
+    .label { font: 16px sans-serif; fill: #1f2328; }
+    .small { font: 13px sans-serif; fill: #57606a; }
+    .arrow { stroke: #1f2328; stroke-width: 2; fill: none; }
+  </style>
+
+  <rect class="box" x="40" y="70" width="180" height="80"/>
+  <text class="label" x="130" y="105" text-anchor="middle">SPM01</text>
+  <text class="small" x="130" y="125" text-anchor="middle">Energy meter</text>
+
+  <rect class="box" x="320" y="50" width="220" height="120"/>
+  <text class="label" x="430" y="95" text-anchor="middle">AuraMon</text>
+  <text class="small" x="430" y="115" text-anchor="middle">RP2350 + Modbus RTU</text>
+  <text class="small" x="430" y="135" text-anchor="middle">SD log + HTTP API</text>
+
+  <rect class="box" x="660" y="70" width="200" height="80"/>
+  <text class="label" x="760" y="105" text-anchor="middle">Client</text>
+  <text class="small" x="760" y="125" text-anchor="middle">Dashboard / scripts</text>
+
+  <rect class="box" x="320" y="190" width="220" height="70"/>
+  <text class="label" x="430" y="225" text-anchor="middle">SD Card</text>
+  <text class="small" x="430" y="245" text-anchor="middle">Local storage</text>
+
+  <line class="arrow" x1="220" y1="110" x2="320" y2="110"/>
+  <polygon points="320,110 310,105 310,115" fill="#1f2328"/>
+  <text class="small" x="270" y="95" text-anchor="middle">RS485</text>
+
+  <line class="arrow" x1="540" y1="110" x2="660" y2="110"/>
+  <polygon points="660,110 650,105 650,115" fill="#1f2328"/>
+  <text class="small" x="600" y="95" text-anchor="middle">Ethernet</text>
+
+  <line class="arrow" x1="430" y1="170" x2="430" y2="190"/>
+  <polygon points="430,190 425,180 435,180" fill="#1f2328"/>
+</svg>
+
