@@ -6,7 +6,7 @@
 #include "auramon.h"
 #else
 #include "../test/stubs/TestAuraMon.h"
-#include "dataLog.h"
+#include "datalog.h"
 #endif
 
 bool dataLog::begin() {
