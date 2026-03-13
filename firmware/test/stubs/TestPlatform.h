@@ -8,55 +8,99 @@
 
 #include <stdint.h>
 #include <cstring>
+#include <cstdio>
+#include <ctime>
+#include <string>
+#include <cstdarg>
+
+// ---------------------------------------------------------------------------
+// PROGMEM / flash-string helpers (no-ops on native)
+// ---------------------------------------------------------------------------
+#define PROGMEM
+#define PSTR(s)       (s)
+#define memcpy_P      memcpy
+#define strncpy_P     strncpy
+#define strlen_P      strlen
+
+// ---------------------------------------------------------------------------
+// Arduino.h stand-in
+// ---------------------------------------------------------------------------
+// (Serial.begin / Serial.write captured by MockSerial below)
+
+// ---------------------------------------------------------------------------
+// Controllable time stub
+// mockNow is set by tests; logger.cpp calls time() which is redirected via
+// TestLogger.h to mockTime() so the system time() is not called.
+// ---------------------------------------------------------------------------
+inline time_t mockNow = 0;
+
+// ---------------------------------------------------------------------------
+// Controllable millis() stub
+// Set mockMillisManual = true and adjust mockMillisValue to control time
+// in tests that care about precise elapsed values.
+// ---------------------------------------------------------------------------
+inline unsigned long mockMillisValue = 0;
+inline bool         mockMillisManual = false;
+
+// ---------------------------------------------------------------------------
+// Serial stub – captures everything written to it
+// ---------------------------------------------------------------------------
+struct MockSerial {
+    std::string output;
+
+    void begin(unsigned long /*baud*/) {}
+
+    size_t write(const char *buf, size_t len) {
+        output.append(buf, len);
+        return len;
+    }
+
+    size_t write(uint8_t c) {
+        output.push_back(static_cast<char>(c));
+        return 1;
+    }
+
+    void reset() { output.clear(); }
+};
+
+inline MockSerial Serial;
+
+// ---------------------------------------------------------------------------
+// SD file-open mode used by logger
+// ---------------------------------------------------------------------------
+#define FILE_WRITE (O_RDWR | O_CREAT)
 
 // Mock Arduino types and functions
 inline unsigned long millis() {
+    if (mockMillisManual) {
+        return mockMillisValue;
+    }
     static unsigned long time = 0;
     time += 10; // Increment by 10ms each call
     return time;
 }
 
+// Arduino String backed by std::string – exposes only the methods used by
+// production code (isEmpty, indexOf, remove, c_str).
 class String {
 public:
-    char * buffer;
-    size_t len;
+    std::string s;
 
-    String() : buffer(nullptr), len(0) {
+    String() = default;
+    String(const char *str) : s(str ? str : "") {}
+    String(const String &) = default;
+    String &operator=(const char *str) { s = str ? str : ""; return *this; }
+    String &operator=(const String &) = default;
+
+    bool        isEmpty()            const { return s.empty(); }
+    const char *c_str()              const { return s.c_str(); }
+
+    int indexOf(char c, int from = 0) const {
+        auto pos = s.find(c, static_cast<size_t>(from));
+        return pos == std::string::npos ? -1 : static_cast<int>(pos);
     }
 
-    String(const char *str) {
-        len = strlen(str);
-        buffer = new char[len + 1];
-        strcpy(buffer, str);
-    }
-
-    ~String() { if (buffer) delete[] buffer; }
-
-    bool isEmpty() { return len == 0; }
-
-    void remove(size_t index) {
-        if (index < len) {
-            buffer[index] = '\0';
-            len = index;
-        }
-    }
-
-    int indexOf(char c, int from = 0) {
-        for (size_t i = from; i < len; i++) {
-            if (buffer[i] == c) return i;
-        }
-        return -1;
-    }
-
-    const char *c_str() const { return buffer ? buffer : ""; }
-
-    String &operator=(const char *str) {
-        if (buffer) delete[] buffer;
-        len = strlen(str);
-        buffer = new char[len + 1];
-        strcpy(buffer, str);
-        return *this;
-    }
+    void remove(size_t index) { s.erase(index); }
 };
 
 struct MockRP2040 {
@@ -65,9 +109,14 @@ struct MockRP2040 {
     MockRP2040() : rebootCalled(false) {
     }
 
-    void reset() { rebootCalled = false; }
+    void reset() {
+        rebootCalled = false;
+        mockMillisManual = false;
+        mockMillisValue = 0;
+    }
 
     void reboot() { rebootCalled = true; }
+    void wdt_reset() {}
     void memcpyDMA(void *dst, const void *src, size_t sz) { std::memcpy(dst, src, sz); }
 };
 

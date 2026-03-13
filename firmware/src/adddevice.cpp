@@ -2,7 +2,12 @@
 // Created by Nicholas Wiersma on 2026/02/12.
 //
 
+#ifndef UNIT_TEST
 #include "auramon.h"
+#else
+#include "../test/stubs/TestCore.h"
+#include "config.h"
+#endif
 
 uint8_t findAvailableAddressLocked() {
     bool used[MAX_DEVICES + 1] = {};

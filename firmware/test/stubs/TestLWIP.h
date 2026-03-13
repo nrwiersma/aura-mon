@@ -7,22 +7,23 @@
 
 inline uint32_t ipaddr_addr(const char *cp) {
     if (!cp || !*cp) return 0xFFFFFFFF; // IPADDR_NONE
-    // Simple validation: must have at least one dot and only digits/dots
+    // Validate dotted-decimal IPv4: exactly 3 dots, each octet 0-255.
+    int dots   = 0;
+    int octet  = -1; // -1 means "no digit seen yet in this octet"
     const char *p = cp;
-    int dots = 0;
-    bool hasDigit = false;
     while (*p) {
         if (*p == '.') {
+            if (octet < 0 || octet > 255) return 0xFFFFFFFF;
             dots++;
-            if (!hasDigit) return 0xFFFFFFFF; // dot without preceding digit
-            hasDigit = false;
+            octet = -1;
         } else if (*p >= '0' && *p <= '9') {
-            hasDigit = true;
+            octet = (octet < 0 ? 0 : octet) * 10 + (*p - '0');
+            if (octet > 255) return 0xFFFFFFFF;
         } else {
             return 0xFFFFFFFF; // invalid character
         }
         p++;
     }
-    if (dots != 3 || !hasDigit) return 0xFFFFFFFF;
+    if (dots != 3 || octet < 0 || octet > 255) return 0xFFFFFFFF;
     return 0; // Valid IP (not IPADDR_NONE)
 }

@@ -2,7 +2,13 @@
 // Created by Nicholas Wiersma on 2025/09/20.
 //
 
+#ifndef UNIT_TEST
 #include "auramon.h"
+#else
+#include "../test/stubs/TestCore.h"
+#include "device.h"
+#include "modbus.h"
+#endif
 
 uint8_t readFrame(inputDevice *device);
 float   float_abcd(uint16_t hi, uint16_t lo);

@@ -6,6 +6,7 @@
 #include "auramon.h"
 #include <lwip/inet.h>
 #else
+#include "../test/stubs/TestCore.h"
 #include "config.h"
 #endif
 
@@ -87,6 +88,8 @@ void removeDevicesFromLocked(size_t startIdx) {
 
     for (size_t i = startIdx; i < MAX_DEVICES; i++) {
         if (deviceInfos[i]) {
+            free(const_cast<char *>(deviceInfos[i]->name));
+            deviceInfos[i]->name = nullptr;
             delete deviceInfos[i];
             deviceInfos[i] = nullptr;
         }
@@ -110,6 +113,7 @@ void applyDevicesFromJson(JsonArrayConst devicesArr) {
         info->addr = addr;
         info->calibration = entry["calibration"].is<float>() ? entry["calibration"].as<float>() : 1.0f;
         info->reversed = entry["reversed"].is<bool>() ? entry["reversed"].as<bool>() : false;
+        free(const_cast<char *>(info->name));
         info->name = entry["name"].is<const char *>() ? strdup(entry["name"].as<const char *>()) : nullptr;
     }
 

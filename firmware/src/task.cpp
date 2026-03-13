@@ -2,7 +2,11 @@
 // Created by Nicholas Wiersma on 2025/10/20.
 //
 
+#ifndef UNIT_TEST
 #include "auramon.h"
+#else
+#include "../test/stubs/TestCore.h"
+#endif
 #include "task.h"
 
 void taskQueue::add(taskFunction func, uint8_t priority, void *param) {

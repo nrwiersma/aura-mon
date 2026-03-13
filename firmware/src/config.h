@@ -1,8 +1,5 @@
 #pragma once
 
-#ifdef UNIT_TEST
-#include "../stubs/TestAuraMon.h"
-#endif
 #include <ArduinoJson.h>
 #include <errors.h>
 

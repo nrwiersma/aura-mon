@@ -2,11 +2,16 @@
 // Created by Nicholas Wiersma on 2025/09/26.
 //
 
+#ifndef UNIT_TEST
 #include "auramon.h"
+#else
+#include "../test/stubs/TestCore.h"
+#include "device.h"
+#endif
 
 void inputDevice::reset() {
     enabled = false;
-    delete[] name;
+    free(const_cast<char *>(name));
     name = nullptr;
     calibration = 0;
     reversed = false;

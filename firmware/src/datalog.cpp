@@ -5,7 +5,7 @@
 #ifndef UNIT_TEST
 #include "auramon.h"
 #else
-#include "../test/stubs/TestAuraMon.h"
+#include "../test/stubs/TestCore.h"
 #include "datalog.h"
 #endif
 
