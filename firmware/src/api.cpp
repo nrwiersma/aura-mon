@@ -267,7 +267,8 @@ void handleStatus() {
     networkObj["subnet"] = eth.subnetMask().toString();
     networkObj["dns"] = eth.dnsIP().toString();
     char mac_str[18];
-    sprintf_P(mac_str, PSTR("%02X:%02X:%02X:%02X:%02X:%02X"), mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    snprintf_P(mac_str, sizeof(mac_str), PSTR("%02X:%02X:%02X:%02X:%02X:%02X"),
+               mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     networkObj["mac"] = mac_str;
 
     String response;
@@ -424,7 +425,7 @@ void handleLogs() {
     }
     uint32_t limitBytes = 0;
     if (server.hasArg("limit")) {
-        limitBytes = server.arg("limitBytes").toInt();
+        limitBytes = server.arg("limit").toInt();
         if (limitBytes == 0) {
             server.send(400, contentTypeJSON, F("{\"error\":\"Invalid limit\"}"));
             return;
@@ -439,6 +440,7 @@ void handleLogs() {
     if (!sd.exists(MESSAGE_LOG_PATH)) {
         mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
+        return;
     }
 
     if (auto f = sd.open(MESSAGE_LOG_PATH, O_READ); f) {
@@ -714,6 +716,7 @@ void handleNotFound() {
     } else if (!sd.exists(path.c_str())) {
         mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
+        return;
     }
 
     if (auto f = sd.open(path.c_str(), O_READ); f) {

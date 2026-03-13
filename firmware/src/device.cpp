@@ -6,7 +6,7 @@
 
 void inputDevice::reset() {
     enabled = false;
-    delete[] name;
+    free(const_cast<char *>(name));
     name = nullptr;
     calibration = 0;
     reversed = false;

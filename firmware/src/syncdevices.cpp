@@ -12,6 +12,8 @@ void syncDeviceInfo() {
             }
 
             // Remove device
+            free(const_cast<char *>(devices[i]->name));
+            devices[i]->name = nullptr;
             delete devices[i];
             devices[i] = nullptr;
             continue;
@@ -22,7 +24,8 @@ void syncDeviceInfo() {
                 devices[i] = new inputDevice(deviceInfos[i]->addr);
             }
             devices[i]->enabled = deviceInfos[i]->enabled;
-            devices[i]->name = deviceInfos[i]->name;
+            free(const_cast<char *>(devices[i]->name));
+            devices[i]->name = deviceInfos[i]->name ? strdup(deviceInfos[i]->name) : nullptr;
             devices[i]->calibration = deviceInfos[i]->calibration;
             devices[i]->reversed = deviceInfos[i]->reversed;
         }
@@ -42,6 +45,8 @@ void syncDeviceData() {
     for (uint32_t i = 0; i < MAX_DEVICES; i++) {
         if (devices[i] == nullptr) {
             if (deviceData[i] != nullptr) {
+                free(const_cast<char *>(deviceData[i]->name));
+                deviceData[i]->name = nullptr;
                 delete deviceData[i];
                 deviceData[i] = nullptr;
             }
@@ -52,7 +57,8 @@ void syncDeviceData() {
             deviceData[i] = new inputDeviceData{};
         }
 
-        deviceData[i]->name = devices[i]->name;
+        free(const_cast<char *>(deviceData[i]->name));
+        deviceData[i]->name = devices[i]->name ? strdup(devices[i]->name) : nullptr;
         deviceData[i]->volts = devices[i]->current.volts;
         deviceData[i]->amps = devices[i]->current.volts != 0.0
                                   ? (devices[i]->current.va / devices[i]->current.volts)
