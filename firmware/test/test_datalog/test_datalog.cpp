@@ -3,7 +3,7 @@
 //
 
 #include <unity.h>
-#include "../test/stubs/TestAuraMon.h"
+#include "../stubs/TestCore.h"
 #include "../../src/datalog.h"
 
 // Test fixtures

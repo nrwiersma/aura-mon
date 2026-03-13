@@ -80,76 +80,27 @@ inline unsigned long millis() {
     return time;
 }
 
+// Arduino String backed by std::string – exposes only the methods used by
+// production code (isEmpty, indexOf, remove, c_str).
 class String {
 public:
-    char * buffer;
-    size_t len;
+    std::string s;
 
-    String() : buffer(nullptr), len(0) {
+    String() = default;
+    String(const char *str) : s(str ? str : "") {}
+    String(const String &) = default;
+    String &operator=(const char *str) { s = str ? str : ""; return *this; }
+    String &operator=(const String &) = default;
+
+    bool        isEmpty()            const { return s.empty(); }
+    const char *c_str()              const { return s.c_str(); }
+
+    int indexOf(char c, int from = 0) const {
+        auto pos = s.find(c, static_cast<size_t>(from));
+        return pos == std::string::npos ? -1 : static_cast<int>(pos);
     }
 
-    String(const char *str) : buffer(nullptr), len(0) {
-        if (str) {
-            len = strlen(str);
-            buffer = new char[len + 1];
-            strcpy(buffer, str);
-        }
-    }
-
-    String(const String &other) : buffer(nullptr), len(0) {
-        if (other.buffer) {
-            len = other.len;
-            buffer = new char[len + 1];
-            strcpy(buffer, other.buffer);
-        }
-    }
-
-    ~String() { if (buffer) delete[] buffer; }
-
-    bool isEmpty() const { return len == 0 || buffer == nullptr; }
-
-    void remove(size_t index) {
-        if (index < len) {
-            buffer[index] = '\0';
-            len = index;
-        }
-    }
-
-    int indexOf(char c, int from = 0) {
-        for (size_t i = from; i < len; i++) {
-            if (buffer[i] == c) return i;
-        }
-        return -1;
-    }
-
-    const char *c_str() const { return buffer ? buffer : ""; }
-
-    String &operator=(const char *str) {
-        if (buffer) delete[] buffer;
-        if (str) {
-            len = strlen(str);
-            buffer = new char[len + 1];
-            strcpy(buffer, str);
-        } else {
-            buffer = nullptr;
-            len = 0;
-        }
-        return *this;
-    }
-
-    String &operator=(const String &other) {
-        if (this == &other) return *this;
-        if (buffer) delete[] buffer;
-        if (other.buffer) {
-            len = other.len;
-            buffer = new char[len + 1];
-            strcpy(buffer, other.buffer);
-        } else {
-            buffer = nullptr;
-            len = 0;
-        }
-        return *this;
-    }
+    void remove(size_t index) { s.erase(index); }
 };
 
 struct MockRP2040 {

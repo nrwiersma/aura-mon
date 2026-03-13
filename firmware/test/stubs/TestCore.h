@@ -1,13 +1,15 @@
 //
-// Minimal globals required to compile device.cpp, syncdevices.cpp,
-// adddevice.cpp and task.cpp under native tests.
+// Globals and stubs required by production code under native tests.
+// This is the single comprehensive stub header; all test suites include it.
 //
 
 #pragma once
 
 #include "TestPlatform.h"
+#include "TestLWIP.h"
 #include "TestSdFat.h"
 #include "../../src/device.h"
+#include "../../src/ethernet.h"
 #include "../../src/metrics.h"
 #include <errors.h>
 
@@ -22,7 +24,7 @@
 #define LOGI(...)
 #define LOGE(...)
 
-// ---- globals needed by syncdevices / adddevice -----------------------------
+// ---- globals ---------------------------------------------------------------
 inline mutex_t deviceInfoMu;
 inline volatile bool devicesChanged = false;
 inline inputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
@@ -37,7 +39,8 @@ inline mutex_t deviceActionMu;
 inline deviceActionRequest deviceActionControl = {deviceActionType::None, 0};
 inline deviceActionRequest deviceActionData    = {deviceActionType::None, 0};
 
-inline promMetrics metrics;
+inline NetworkConfig netCfg;
+inline promMetrics   metrics;
 
 // ---- ModbusRTUMaster stub (used by collect.cpp) ----------------------------
 struct ModbusRTUMaster {
@@ -47,10 +50,7 @@ struct ModbusRTUMaster {
 };
 inline ModbusRTUMaster modbus;
 
-// ---- saveConfig stub (no-op for unit tests) --------------------------------
-inline error *saveConfig() { return nullptr; }
-
-// ---- mutex helpers not in TestPlatform -------------------------------------
+// ---- additional mutex helper -----------------------------------------------
 inline bool mutex_enter_block_until(mutex_t *mtx, uint32_t /*timeout_ms*/) {
     (void) mtx;
     return true;

@@ -1,7 +1,5 @@
 #include <unity.h>
-#include <ArduinoJson.h>
-
-#include "../../.pio/libdeps/native/Unity/src/unity.h"
+#include "../stubs/TestCore.h"
 #include "../../src/config.h"
 
 // Helper to clean up device infos between tests

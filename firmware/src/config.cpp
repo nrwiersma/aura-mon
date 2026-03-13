@@ -6,6 +6,7 @@
 #include "auramon.h"
 #include <lwip/inet.h>
 #else
+#include "../test/stubs/TestCore.h"
 #include "config.h"
 #endif
 

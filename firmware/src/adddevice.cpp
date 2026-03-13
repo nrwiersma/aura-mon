@@ -6,6 +6,7 @@
 #include "auramon.h"
 #else
 #include "../test/stubs/TestCore.h"
+#include "config.h"
 #endif
 
 uint8_t findAvailableAddressLocked() {

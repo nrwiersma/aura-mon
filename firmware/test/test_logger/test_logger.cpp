@@ -5,7 +5,7 @@
 #include <unity.h>
 #include <cstring>
 #include <ctime>
-#include "../test/stubs/TestLogger.h"
+#include "../stubs/TestLogger.h"
 #include "../../src/logger.h"
 
 // Shared logger instance recreated for each test.
