@@ -8,6 +8,59 @@
 
 #include <stdint.h>
 #include <cstring>
+#include <cstdio>
+#include <ctime>
+#include <string>
+#include <cstdarg>
+
+// ---------------------------------------------------------------------------
+// PROGMEM / flash-string helpers (no-ops on native)
+// ---------------------------------------------------------------------------
+#define PROGMEM
+#define PSTR(s)       (s)
+#define memcpy_P      memcpy
+#define strncpy_P     strncpy
+#define strlen_P      strlen
+
+// ---------------------------------------------------------------------------
+// Arduino.h stand-in
+// ---------------------------------------------------------------------------
+// (Serial.begin / Serial.write captured by MockSerial below)
+
+// ---------------------------------------------------------------------------
+// Controllable time stub
+// mockNow is set by tests; logger.cpp calls time() which is redirected via
+// TestLogger.h to mockTime() so the system time() is not called.
+// ---------------------------------------------------------------------------
+inline time_t mockNow = 0;
+
+// ---------------------------------------------------------------------------
+// Serial stub – captures everything written to it
+// ---------------------------------------------------------------------------
+struct MockSerial {
+    std::string output;
+
+    void begin(unsigned long /*baud*/) {}
+
+    size_t write(const char *buf, size_t len) {
+        output.append(buf, len);
+        return len;
+    }
+
+    size_t write(uint8_t c) {
+        output.push_back(static_cast<char>(c));
+        return 1;
+    }
+
+    void reset() { output.clear(); }
+};
+
+inline MockSerial Serial;
+
+// ---------------------------------------------------------------------------
+// SD file-open mode used by logger
+// ---------------------------------------------------------------------------
+#define FILE_WRITE (O_RDWR | O_CREAT)
 
 // Mock Arduino types and functions
 inline unsigned long millis() {

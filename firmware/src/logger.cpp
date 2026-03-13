@@ -2,7 +2,12 @@
 // Created by Nicholas Wiersma on 2025/10/10.
 //
 
+#ifndef UNIT_TEST
 #include "auramon.h"
+#else
+#include "../test/stubs/TestLogger.h"
+#include "logger.h"
+#endif
 
 const char *lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
 

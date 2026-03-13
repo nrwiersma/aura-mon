@@ -11,6 +11,13 @@ dataLog* testLog;
 
 void setUp() {
     testLog = new dataLog(5, 1); // 5 sec interval, 1 day max
+
+    sd.fileExists = false;
+    if (sd.file) {
+        delete sd.file;
+        sd.file = nullptr;
+    }
+    sd.directories.clear();
 }
 
 void tearDown() {
@@ -341,9 +348,9 @@ void test_datalog_corrupted_file_detection() {
     rec2.ts = 1005;
     rec2.logHours = 1.1;
 
-    file->data.resize(sizeof(logRecord) * 2);
-    std::memcpy(&file->data[0], &rec1, sizeof(logRecord));
-    std::memcpy(&file->data[sizeof(logRecord)], &rec2, sizeof(logRecord));
+    file->data->resize(sizeof(logRecord) * 2);
+    std::memcpy(&(*file->data)[0], &rec1, sizeof(logRecord));
+    std::memcpy(&(*file->data)[sizeof(logRecord)], &rec2, sizeof(logRecord));
 
     sd.file = file;
 

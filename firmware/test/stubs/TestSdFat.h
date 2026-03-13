@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <memory>
 
 #include "TestPlatform.h"
 #include <vector>
@@ -13,20 +14,22 @@
 // Simple in-memory file stub
 class FsFile {
 public:
-    std::vector<uint8_t> data;
+    // Shared backing buffer so copies of FsFile (returned by MockSD::open)
+    // all write into the same memory.
+    std::shared_ptr<std::vector<uint8_t>> data;
     uint32_t position;
     bool open;
 
-    FsFile() : position(0), open(false) {}
+    FsFile() : data(std::make_shared<std::vector<uint8_t>>()), position(0), open(false) {}
 
     bool isOpen() const { return open; }
 
     operator bool() const { return isOpen(); }
 
-    uint32_t size() { return data.size(); }
+    uint32_t size() { return data->size(); }
 
     bool seek(uint32_t pos) {
-        if (pos > data.size()) {
+        if (pos > data->size()) {
             return false;
         }
         position = pos;
@@ -34,51 +37,50 @@ public:
     }
 
     int read() {
-        if (!open || position + 1 > data.size()) {
+        if (!open || position + 1 > data->size()) {
             return -1;
         }
-        uint8_t b = data[position];
+        uint8_t b = (*data)[position];
         position += 1;
         return 1;
     }
 
-    size_t read(void* buf, size_t size) {
-        if (!open || position + size > data.size()) {
+    size_t read(void* buf, size_t sz) {
+        if (!open || position + sz > data->size()) {
             return 0;
         }
-        std::memcpy(buf, &data[position], size);
-        position += size;
-        return size;
+        std::memcpy(buf, &(*data)[position], sz);
+        position += sz;
+        return sz;
     }
 
     void truncate() {
-        if (data.size() > 0) {
-            data.resize(0);
-        }
+        data->resize(0);
+        position = 0;
     }
 
-    size_t write(const void* buf, size_t size) {
+    size_t write(const void* buf, size_t sz) {
         if (!open) return 0;
-
-        // Resize if needed
-        if (position + size > data.size()) {
-            data.resize(position + size);
+        if (position + sz > data->size()) {
+            data->resize(position + sz);
         }
+        std::memcpy(&(*data)[position], buf, sz);
+        position += sz;
+        return sz;
+    }
 
-        std::memcpy(&data[position], buf, size);
-        position += size;
-        return size;
+    size_t write(const char* str) {
+        if (!open || !str) return 0;
+        size_t len = std::strlen(str);
+        return write(static_cast<const void*>(str), len);
     }
 
     size_t write(uint8_t c) {
         if (!open) return 0;
-
-        // Resize if needed
-        if (position + 1 > data.size()) {
-            data.resize(position + 1);
+        if (position + 1 > data->size()) {
+            data->resize(position + 1);
         }
-
-        data[position] = c;
+        (*data)[position] = c;
         position += 1;
         return 1;
     }
@@ -114,7 +116,7 @@ public:
 
     bool remove(const char* path) {
         if (file) {
-            file->data.clear();
+            file->data->clear();
             file->open = false;
         }
         fileExists = false;
@@ -125,10 +127,14 @@ public:
         if (!file) {
             file = new FsFile();
         }
-        file->open = true;
-        file->position = 0;
+        // Return a copy that shares the same backing data.
+        FsFile handle;
+        handle.data = file->data;
+        handle.open = true;
+        // Seek to end for append-style writes (FILE_WRITE behaviour).
+        handle.position = static_cast<uint32_t>(file->data->size());
         fileExists = true;
-        return *file;
+        return handle;
     }
 };
 
