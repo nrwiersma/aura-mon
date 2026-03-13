@@ -35,6 +35,14 @@
 inline time_t mockNow = 0;
 
 // ---------------------------------------------------------------------------
+// Controllable millis() stub
+// Set mockMillisManual = true and adjust mockMillisValue to control time
+// in tests that care about precise elapsed values.
+// ---------------------------------------------------------------------------
+inline unsigned long mockMillisValue = 0;
+inline bool         mockMillisManual = false;
+
+// ---------------------------------------------------------------------------
 // Serial stub – captures everything written to it
 // ---------------------------------------------------------------------------
 struct MockSerial {
@@ -64,6 +72,9 @@ inline MockSerial Serial;
 
 // Mock Arduino types and functions
 inline unsigned long millis() {
+    if (mockMillisManual) {
+        return mockMillisValue;
+    }
     static unsigned long time = 0;
     time += 10; // Increment by 10ms each call
     return time;
@@ -77,15 +88,25 @@ public:
     String() : buffer(nullptr), len(0) {
     }
 
-    String(const char *str) {
-        len = strlen(str);
-        buffer = new char[len + 1];
-        strcpy(buffer, str);
+    String(const char *str) : buffer(nullptr), len(0) {
+        if (str) {
+            len = strlen(str);
+            buffer = new char[len + 1];
+            strcpy(buffer, str);
+        }
+    }
+
+    String(const String &other) : buffer(nullptr), len(0) {
+        if (other.buffer) {
+            len = other.len;
+            buffer = new char[len + 1];
+            strcpy(buffer, other.buffer);
+        }
     }
 
     ~String() { if (buffer) delete[] buffer; }
 
-    bool isEmpty() { return len == 0; }
+    bool isEmpty() const { return len == 0 || buffer == nullptr; }
 
     void remove(size_t index) {
         if (index < len) {
@@ -105,9 +126,28 @@ public:
 
     String &operator=(const char *str) {
         if (buffer) delete[] buffer;
-        len = strlen(str);
-        buffer = new char[len + 1];
-        strcpy(buffer, str);
+        if (str) {
+            len = strlen(str);
+            buffer = new char[len + 1];
+            strcpy(buffer, str);
+        } else {
+            buffer = nullptr;
+            len = 0;
+        }
+        return *this;
+    }
+
+    String &operator=(const String &other) {
+        if (this == &other) return *this;
+        if (buffer) delete[] buffer;
+        if (other.buffer) {
+            len = other.len;
+            buffer = new char[len + 1];
+            strcpy(buffer, other.buffer);
+        } else {
+            buffer = nullptr;
+            len = 0;
+        }
         return *this;
     }
 };
@@ -118,9 +158,14 @@ struct MockRP2040 {
     MockRP2040() : rebootCalled(false) {
     }
 
-    void reset() { rebootCalled = false; }
+    void reset() {
+        rebootCalled = false;
+        mockMillisManual = false;
+        mockMillisValue = 0;
+    }
 
     void reboot() { rebootCalled = true; }
+    void wdt_reset() {}
     void memcpyDMA(void *dst, const void *src, size_t sz) { std::memcpy(dst, src, sz); }
 };
 

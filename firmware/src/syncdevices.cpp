@@ -2,7 +2,11 @@
 // Created by Nicholas Wiersma on 2026/01/25.
 //
 
+#ifndef UNIT_TEST
 #include "auramon.h"
+#else
+#include "../test/stubs/TestCore.h"
+#endif
 
 void syncDeviceInfo() {
     for (uint32_t i = 0; i < MAX_DEVICES; i++) {
