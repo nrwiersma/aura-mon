@@ -43,11 +43,20 @@ bool dataLog::begin() {
     }
 
     if (_fileSize && _last.rev - _first.rev + 1 != _entries) {
-        LOGE("log: File %s damaged.\r\n", DATA_LOG_PATH);
-        LOGE("log: Deleting %s and restarting.\r\n", DATA_LOG_PATH);
         _file.close();
         sd.remove(DATA_LOG_PATH);
+        mutex_exit(&sdMu);
+
+        LOGE("log: File %s damaged.\r\n", DATA_LOG_PATH);
+        LOGE("log: Deleting %s and restarting.\r\n", DATA_LOG_PATH);
+
+        mutex_enter_blocking(&sdMu);
+
         rp2040.reboot();
+
+        while (true) {
+            delay(10);
+        }
     }
 
     mutex_exit(&sdMu);
