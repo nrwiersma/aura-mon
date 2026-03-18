@@ -53,10 +53,6 @@ bool dataLog::begin() {
         mutex_enter_blocking(&sdMu);
 
         rp2040.reboot();
-
-        while (true) {
-            delay(10);
-        }
     }
 
     mutex_exit(&sdMu);
