@@ -87,7 +87,7 @@ uint32_t logData(void *param) {
     }
 
     const auto took = millis() - start;
-    // TODO: log the stats.
+    metrics.datalog_write_time_ms_total.fetch_add(took, std::memory_order_relaxed);
     LOGD("Wrote record %d to log took %dms", rec->ts, took);
 
     rec->ts += datalog.interval();

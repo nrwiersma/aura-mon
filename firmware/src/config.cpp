@@ -139,13 +139,16 @@ void populateDevicesJson(JsonArray devicesArray) {
     mutex_exit(&deviceInfoMu);
 }
 
-// TODO: make loading and saving config more robust by using temporary files and atomic renames.
 error *loadConfig() {
     mutex_enter_blocking(&sdMu);
     FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
     if (!file) {
-        mutex_exit(&sdMu);
-        return newError("could not open config file");
+        // Fall back to the last successful temp file.
+        file = sd.open(CONFIG_LOG_TMP_PATH, O_RDONLY);
+        if (!file) {
+            mutex_exit(&sdMu);
+            return newError("could not open config file");
+        }
     }
 
     JsonDocument doc;
@@ -168,8 +171,8 @@ void ensureConfigDirectoryLocked() {
     if (!slash) {
         return;
     }
-    char   dir[64];
-    size_t len = static_cast<size_t>(slash - path);
+    char dir[64];
+    auto len = static_cast<size_t>(slash - path);
     if (len >= sizeof(dir)) {
         len = sizeof(dir) - 1;
     }
@@ -184,18 +187,23 @@ error *saveConfig() {
 
     mutex_enter_blocking(&sdMu);
     ensureConfigDirectoryLocked();
-    FsFile file = sd.open(CONFIG_LOG_PATH, O_RDWR | O_CREAT | O_TRUNC);
+    FsFile file = sd.open(CONFIG_LOG_TMP_PATH, O_RDWR | O_CREAT | O_TRUNC);
     if (!file) {
         mutex_exit(&sdMu);
         return newError("could not create config file");
     }
-    file.truncate();
     if (serializeJson(doc, file) == 0) {
+        file.close();
         mutex_exit(&sdMu);
         return newError("could not write config file");
     }
     file.flush();
     file.close();
+    sd.remove(CONFIG_LOG_PATH);
+    if (!sd.rename(CONFIG_LOG_TMP_PATH, CONFIG_LOG_PATH)) {
+        mutex_exit(&sdMu);
+        return newError("could not rename config file");
+    }
     mutex_exit(&sdMu);
     return nullptr;
 }

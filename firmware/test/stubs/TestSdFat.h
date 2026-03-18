@@ -123,6 +123,10 @@ public:
         return true;
     }
 
+    bool rename(const char* oldpath, const char* newpath) {
+        return true;
+    }
+
     FsFile open(const char* path, int mode) {
         if (!file) {
             file = new FsFile();
