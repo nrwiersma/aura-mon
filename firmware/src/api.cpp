@@ -612,6 +612,7 @@ void handleLogsTrunc() {
     tmp.close();
     src.close();
 
+    sd.remove(MESSAGE_LOG_PATH);
     if (!sd.rename(tempPath, MESSAGE_LOG_PATH)) {
         sd.remove(tempPath);
         mutex_exit(&sdMu);
