@@ -17,6 +17,7 @@
 #include <ArduinoJSON.h>
 #include <Ticker.h>
 
+#include "crashhandler.h"
 #include "logger.h"
 #include "config.h"
 #include "ethernet.h"

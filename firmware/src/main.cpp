@@ -66,6 +66,7 @@ void setup() {
     }
 
     LOGI("Firmware version: %s", AURAMON_VERSION);
+    restartReasonLog();
     LOGI("SD Card initialised");
 
     rtc.begin(&Wire1);
