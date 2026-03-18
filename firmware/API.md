@@ -10,6 +10,7 @@ This document describes the HTTP endpoints exposed by the firmware. All endpoint
 - [`GET /energy`](#get-energy)
 - [`POST /device/action`](#post-deviceaction)
 - [`GET /logs`](#get-logs)
+- [`POST /logs/trunc`](#post-logstrunc)
 - [`POST /ota`](#post-ota)
 - [`POST /ota/public`](#post-otapublic)
 - [`GET /metrics`](#get-metrics)
@@ -160,6 +161,22 @@ Streams the message log file from the SD card.
 Example:
 ```bash
 curl "http://<device-ip>/logs?start=1024&limit=4096"
+```
+
+### `POST /logs/trunc`
+
+Truncates the message log by keeping content from the last `**** RESTART ****` marker to the end of the file.
+
+- Response content type: `text/plain`
+- Uses a temp file and replace flow (`temp -> log`) so truncation is resilient to partial writes.
+- Returns `204` on success.
+- Returns `404` if the log file is missing.
+- Returns `408` if the SD card mutex cannot be acquired.
+- Returns `500` for file IO/rename failures.
+
+Example:
+```bash
+curl -X POST http://<device-ip>/logs/trunc
 ```
 
 ### `POST /ota`

@@ -18,6 +18,7 @@ void handlePostConfig();
 void handleStatus();
 void handleEnergy();
 void handleLogs();
+void handleLogsTrunc();
 void handleNotFound();
 void handleOtaFinish();
 void handleOtaUpload();
@@ -34,6 +35,7 @@ void setupAPI() {
     server.on("/energy", HTTP_GET, handleEnergy);
     server.on("/device/action", HTTP_POST, handleDeviceAction);
     server.on("/logs", HTTP_GET, handleLogs);
+    server.on("/logs/trunc", HTTP_POST, handleLogsTrunc);
     server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
     server.on("/ota/public", HTTP_POST, handlePublicUploadFinish, handlePublicUpload);
     server.on("/metrics", HTTP_GET, handleMetrics);
@@ -478,12 +480,12 @@ void handleLogs() {
 
         uint8_t buffer[1024];
         while (remaining > 0) {
-            const size_t readLen = f.read(buffer, min(remaining, sizeof(buffer)));
-            if (readLen == 0) {
+            const int readLen = f.read(buffer, min(remaining, sizeof(buffer)));
+            if (readLen <= 0) {
                 break;
             }
-            server.sendContent(reinterpret_cast<char *>(buffer), readLen);
-            remaining -= readLen;
+            server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
+            remaining -= static_cast<size_t>(readLen);
         }
         server.chunkedResponseFinalize();
         f.close();
@@ -494,6 +496,134 @@ void handleLogs() {
     mutex_exit(&sdMu);
 
     server.send(404, contentTypeJSON, "Not Found");
+}
+
+void handleLogsTrunc() {
+    LOGI("Log truncation requested");
+
+    constexpr char   restartMarker[] = "**** RESTART ****";
+    constexpr size_t restartMarkerLen = sizeof(restartMarker) - 1;
+    constexpr char   tempPath[] = MESSAGE_LOG_PATH ".trunc";
+
+    if (!mutex_enter_block_until(&sdMu, 100)) {
+        server.send(408, contentTypePlain, "Request Timeout");
+        return;
+    }
+
+    if (!sd.exists(MESSAGE_LOG_PATH)) {
+        mutex_exit(&sdMu);
+        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
+        return;
+    }
+
+    auto src = sd.open(MESSAGE_LOG_PATH, O_READ);
+    if (!src) {
+        mutex_exit(&sdMu);
+        returnInternalError("could not open log");
+        return;
+    }
+
+    constexpr size_t chunkSize = 1024;
+    uint8_t          window[chunkSize + restartMarkerLen - 1];
+    uint8_t          overlap[restartMarkerLen - 1];
+    size_t           overlapLen = 0;
+    uint32_t         lastMarkerOffset = 0;
+    bool             markerFound = false;
+
+    for (uint32_t chunkEnd = src.size(); chunkEnd > 0 && !markerFound;) {
+        const uint32_t chunkStart = (chunkEnd > chunkSize) ? (chunkEnd - chunkSize) : 0;
+        const size_t   chunkLen = chunkEnd - chunkStart;
+
+        if (!src.seek(chunkStart)) {
+            src.close();
+            mutex_exit(&sdMu);
+            returnInternalError("could not seek log");
+            return;
+        }
+
+        const int readLen = src.read(window, chunkLen);
+        if (readLen < 0 || static_cast<size_t>(readLen) != chunkLen) {
+            src.close();
+            mutex_exit(&sdMu);
+            returnInternalError("could not read log");
+            return;
+        }
+        if (overlapLen > 0) {
+            // Copy the overlap to the end of the window.
+            memcpy(window + chunkLen, overlap, overlapLen);
+        }
+
+        const size_t totalLen = chunkLen + overlapLen;
+        if (totalLen >= restartMarkerLen) {
+            for (size_t i = totalLen - restartMarkerLen + 1; i > 0; i--) {
+                const size_t idx = i - 1;
+                if (memcmp(window + idx, restartMarker, restartMarkerLen) == 0) {
+                    lastMarkerOffset = chunkStart + idx;
+                    markerFound = true;
+                    break;
+                }
+            }
+        }
+
+        // Copy the start of the chunk into overlap, to be checked in the next round
+        // to find markers over the boundary.
+        overlapLen = min(chunkLen, restartMarkerLen - 1);
+        if (overlapLen > 0) {
+            memcpy(overlap, window, overlapLen);
+        }
+
+        chunkEnd = chunkStart;
+    }
+
+    const uint32_t startOffset = markerFound ? lastMarkerOffset : 0;
+    if (!src.seek(startOffset)) {
+        src.close();
+        mutex_exit(&sdMu);
+        returnInternalError("could not seek log");
+        return;
+    }
+
+    auto tmp = sd.open(tempPath, O_WRITE | O_CREAT | O_TRUNC);
+    if (!tmp) {
+        src.close();
+        mutex_exit(&sdMu);
+        returnInternalError("could not open temp log");
+        return;
+    }
+
+    uint8_t buffer[1024];
+    while (true) {
+        const int readLen = src.read(buffer, sizeof(buffer));
+        if (readLen <= 0) {
+            break;
+        }
+
+        if (tmp.write(buffer, static_cast<size_t>(readLen)) != static_cast<size_t>(readLen)) {
+            tmp.close();
+            src.close();
+            sd.remove(tempPath);
+            mutex_exit(&sdMu);
+            returnInternalError("could not write temp log");
+            return;
+        }
+    }
+
+    tmp.flush();
+    tmp.close();
+    src.close();
+
+    if (!sd.rename(tempPath, MESSAGE_LOG_PATH)) {
+        sd.remove(tempPath);
+        mutex_exit(&sdMu);
+        returnInternalError("could not replace log");
+        return;
+    }
+
+    LOGD("Log truncated at offset %u", startOffset);
+
+    mutex_exit(&sdMu);
+
+    server.send(204, contentTypePlain, "");
 }
 
 static bool    otaRestartNeeded = false;
@@ -755,8 +885,12 @@ void handleNotFound() {
         }
 
         uint8_t buffer[1024];
-        while (size_t readLen = f.read(buffer, sizeof(buffer))) {
-            server.sendContent(reinterpret_cast<char *>(buffer), readLen);
+        while (true) {
+            const int readLen = f.read(buffer, sizeof(buffer));
+            if (readLen <= 0) {
+                break;
+            }
+            server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
         }
         server.chunkedResponseFinalize();
         f.close();
