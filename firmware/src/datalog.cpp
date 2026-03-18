@@ -208,6 +208,7 @@ error *dataLog::write(logRecord *rec) {
         _wrapPos = (_wrapPos + _recordSize) % _fileSize;
         _file.write(rec, _recordSize);
         _file.flush();
+        _file.seek(_wrapPos);
 
         // Read the new first key.
         auto key = logRecordKey{};
@@ -256,7 +257,9 @@ uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
 
     uint32_t pos = ((rev - _first.rev) * _recordSize + _wrapPos) % _fileSize;
 
-    mutex_enter_blocking(&sdMu);
+    if (!mutex_enter_timeout_ms(&sdMu, 200)) {
+        return 1;
+    }
     _file.seek(pos);
     _file.read(rec, _recordSize);
     mutex_exit(&sdMu);
