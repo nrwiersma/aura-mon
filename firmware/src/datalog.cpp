@@ -177,7 +177,9 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
 }
 
 error *dataLog::write(logRecord *rec) {
-    mutex_enter_blocking(&_mu);
+    if (!mutex_enter_timeout_ms(&_mu, 100)) {
+        return newError("mutex timeout");
+    }
 
     if (!_file) {
         mutex_exit(&_mu);

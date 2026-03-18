@@ -81,7 +81,10 @@ uint32_t logData(void *param) {
     rec->logHours += elapsedHrs;
 
     // Write the record.
-    datalog.write(rec);
+    if (auto err = datalog.write(rec); err) {
+        LOGE("Error writing datalog: %s", err->Error());
+        return 1;
+    }
 
     const auto took = millis() - start;
     // TODO: log the stats.
