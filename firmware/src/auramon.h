@@ -25,7 +25,8 @@
 #include "task.h"
 #include "modbus.h"
 #include "api.h"
-#include "device.h"
+#include "device_registry.h"
+#include "metrics.h"
 #include "metrics.h"
 #include "version.h"
 
@@ -62,6 +63,8 @@ enum LEDColor { Red, Orange, Green };
 
 inline byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
 
+extern DeviceRegistry registry;
+
 extern time_t            startTime;
 extern Ticker            ledTimer;
 extern volatile LEDColor ledState;
@@ -79,16 +82,7 @@ extern ModbusRTUMaster modbus;
 
 extern WebServer server;
 
-#define MAX_DEVICES 15
-extern mutex_t             deviceDataMu;
-extern inputDeviceData *   deviceData[MAX_DEVICES];
-extern mutex_t             deviceActionMu;
-extern deviceActionRequest deviceActionControl;
-extern deviceActionRequest deviceActionData;
-extern mutex_t             deviceInfoMu;
-extern volatile bool       devicesChanged;
-extern inputDeviceInfo *   deviceInfos[MAX_DEVICES];
-extern inputDevice *       devices[MAX_DEVICES];
+#define MAX_DEVICES DeviceRegistry::MAX
 
 extern dataLog datalog;
 
@@ -103,7 +97,6 @@ uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
 void     initLogData();
 uint32_t logData(void *param);
-void     syncDeviceInfo();
 uint32_t syncDevices(void *param);
 uint32_t syncState(void *param);
 uint32_t deviceActionTask(void *param);

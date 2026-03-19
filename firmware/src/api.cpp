@@ -110,9 +110,9 @@ void handlePostConfig() {
         return;
     }
 
-    mutex_enter_blocking(&deviceInfoMu);
-    devicesChanged = true;
-    mutex_exit(&deviceInfoMu);
+    mutex_enter_blocking(&registry.infoMu);
+    registry.changed = true;
+    mutex_exit(&registry.infoMu);
 
     server.send(200, contentTypePlain, "");
 }
@@ -154,20 +154,20 @@ void handleDeviceAction() {
         return;
     }
 
-    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
-        returnInternalError("could not acquire deviceInfoMu");
+    if (!mutex_enter_block_until(&registry.actionMu, 100)) {
+        returnInternalError("could not acquire actionMu");
         return;
     }
 
-    if (deviceActionControl.type != deviceActionType::None) {
-        mutex_exit(&deviceActionMu);
+    if (registry.actionControl.type != deviceActionType::None) {
+        mutex_exit(&registry.actionMu);
         server.send(409, contentTypeJSON, F("{\"error\":\"Action already pending\"}"));
         return;
     }
 
-    deviceActionControl = {action, static_cast<uint8_t>(address)};
+    registry.actionControl = {action, static_cast<uint8_t>(address)};
 
-    mutex_exit(&deviceActionMu);
+    mutex_exit(&registry.actionMu);
 
     server.send(202, contentTypeJSON, F("{\"status\":\"queued\"}"));
 }
@@ -244,10 +244,10 @@ void handleStatus() {
 
     JsonArray devicesArr = doc["devices"].to<JsonArray>();
 
-    mutex_enter_blocking(&deviceDataMu);
+    mutex_enter_blocking(&registry.dataMu);
 
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        auto data = deviceData[i];
+        auto data = registry.data[i];
         if (!data || data->name.isEmpty()) {
             continue;
         }
@@ -259,7 +259,7 @@ void handleStatus() {
         deviceObj["pf"] = data->pf;
         deviceObj["hz"] = data->hz;
     }
-    mutex_exit(&deviceDataMu);
+    mutex_exit(&registry.dataMu);
 
     JsonObject datalogObj = doc["datalog"].to<JsonObject>();
     datalogObj["firstRev"] = datalog.firstRev();
@@ -316,15 +316,15 @@ void handleEnergy() {
 
     deviceColumn deviceColumns[MAX_DEVICES];
     size_t       deviceCount = 0;
-    mutex_enter_blocking(&deviceInfoMu);
+    mutex_enter_blocking(&registry.infoMu);
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        auto info = deviceInfos[i];
+        auto info = registry.infos[i];
         if (!info || !info->isEnabled() || info->name.isEmpty()) {
             continue;
         }
         deviceColumns[deviceCount++] = deviceColumn{i, info->name};
     }
-    mutex_exit(&deviceInfoMu);
+    mutex_exit(&registry.infoMu);
 
     LOGD("energy: collected devices: %u", deviceCount);
 

@@ -5,9 +5,9 @@
 // Helper to clean up device infos between tests
 inline void cleanupDeviceInfos() {
     for (int i = 0; i < MAX_DEVICES; i++) {
-        if (deviceInfos[i]) {
-            delete deviceInfos[i];
-            deviceInfos[i] = nullptr;
+        if (registry.infos[i]) {
+            delete registry.infos[i];
+            registry.infos[i] = nullptr;
         }
     }
 }
@@ -48,10 +48,10 @@ void test_config_valid() {
 
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL_STRING("test", netCfg.hostname.c_str());
-    TEST_ASSERT_NOT_NULL(deviceInfos[0]);
-    TEST_ASSERT_EQUAL(true, deviceInfos[0]->enabled);
-    TEST_ASSERT_EQUAL(1, deviceInfos[0]->addr);
-    TEST_ASSERT_EQUAL_STRING("Device1", deviceInfos[0]->name.c_str());
+    TEST_ASSERT_NOT_NULL(registry.infos[0]);
+    TEST_ASSERT_EQUAL(true, registry.infos[0]->enabled);
+    TEST_ASSERT_EQUAL(1, registry.infos[0]->addr);
+    TEST_ASSERT_EQUAL_STRING("Device1", registry.infos[0]->name.c_str());
 }
 
 void test_load_not_found() {
@@ -175,7 +175,7 @@ void test_config_device_calibration_defaults_to_one() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, deviceInfos[0]->calibration);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, registry.infos[0]->calibration);
 }
 
 void test_config_device_reversed_defaults_to_false() {
@@ -189,7 +189,7 @@ void test_config_device_reversed_defaults_to_false() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FALSE(deviceInfos[1]->reversed);
+    TEST_ASSERT_FALSE(registry.infos[1]->reversed);
 }
 
 void test_config_device_enabled_defaults_to_false() {
@@ -202,7 +202,7 @@ void test_config_device_enabled_defaults_to_false() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FALSE(deviceInfos[2]->enabled);
+    TEST_ASSERT_FALSE(registry.infos[2]->enabled);
 }
 
 // ============================================================================
@@ -253,10 +253,10 @@ void test_config_round_trip_device() {
     auto err = loadConfigJSON(saved);
     TEST_ASSERT_NULL(err);
 
-    TEST_ASSERT_NOT_NULL(deviceInfos[3]);
-    TEST_ASSERT_EQUAL_STRING("Meter4",  deviceInfos[3]->name.c_str());
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.05f, deviceInfos[3]->calibration);
-    TEST_ASSERT_TRUE(deviceInfos[3]->reversed);
+    TEST_ASSERT_NOT_NULL(registry.infos[3]);
+    TEST_ASSERT_EQUAL_STRING("Meter4",  registry.infos[3]->name.c_str());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.05f, registry.infos[3]->calibration);
+    TEST_ASSERT_TRUE(registry.infos[3]->reversed);
 }
 
 // ============================================================================
@@ -276,7 +276,7 @@ void test_config_device_with_address_zero_is_ignored() {
     TEST_ASSERT_NULL(err);
     // Nothing should have been created.
     for (int i = 0; i < MAX_DEVICES; i++) {
-        TEST_ASSERT_NULL(deviceInfos[i]);
+        TEST_ASSERT_NULL(registry.infos[i]);
     }
 }
 
@@ -292,7 +292,7 @@ void test_config_device_with_address_above_max_is_ignored() {
 
     TEST_ASSERT_NULL(err);
     for (int i = 0; i < MAX_DEVICES; i++) {
-        TEST_ASSERT_NULL(deviceInfos[i]);
+        TEST_ASSERT_NULL(registry.infos[i]);
     }
 }
 
@@ -309,9 +309,9 @@ void test_config_multiple_devices_loaded() {
     auto err = loadConfigJSON(doc);
 
     TEST_ASSERT_NULL(err);
-    TEST_ASSERT_NOT_NULL(deviceInfos[0]);
-    TEST_ASSERT_NOT_NULL(deviceInfos[1]);
-    TEST_ASSERT_NOT_NULL(deviceInfos[2]);
+    TEST_ASSERT_NOT_NULL(registry.infos[0]);
+    TEST_ASSERT_NOT_NULL(registry.infos[1]);
+    TEST_ASSERT_NOT_NULL(registry.infos[2]);
 }
 
 void setup() {

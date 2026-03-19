@@ -75,10 +75,10 @@ inputDeviceInfo *ensureDeviceInfo(uint8_t address) {
         return nullptr;
     }
     const size_t idx = address - 1;
-    if (!deviceInfos[idx]) {
-        deviceInfos[idx] = new inputDeviceInfo(address);
+    if (!registry.infos[idx]) {
+        registry.infos[idx] = new inputDeviceInfo(address);
     }
-    return deviceInfos[idx];
+    return registry.infos[idx];
 }
 
 void removeDevicesFromLocked(size_t startIdx) {
@@ -87,15 +87,15 @@ void removeDevicesFromLocked(size_t startIdx) {
     }
 
     for (size_t i = startIdx; i < MAX_DEVICES; i++) {
-        if (deviceInfos[i]) {
-            delete deviceInfos[i];
-            deviceInfos[i] = nullptr;
+        if (registry.infos[i]) {
+            delete registry.infos[i];
+            registry.infos[i] = nullptr;
         }
     }
 }
 
 void applyDevicesFromJson(JsonArrayConst devicesArr) {
-    mutex_enter_blocking(&deviceInfoMu);
+    mutex_enter_blocking(&registry.infoMu);
     removeDevicesFromLocked(devicesArr.size());
 
     for (JsonVariantConst entry: devicesArr) {
@@ -114,14 +114,14 @@ void applyDevicesFromJson(JsonArrayConst devicesArr) {
         info->name = entry["name"].is<const char *>() ? entry["name"].as<const char *>() : "";
     }
 
-    mutex_exit(&deviceInfoMu);
+    mutex_exit(&registry.infoMu);
 }
 
 void populateDevicesJson(JsonArray devicesArray) {
-    mutex_enter_blocking(&deviceInfoMu);
+    mutex_enter_blocking(&registry.infoMu);
 
     for (int i = 0; i < MAX_DEVICES; i++) {
-        inputDeviceInfo *info = deviceInfos[i];
+        inputDeviceInfo *info = registry.infos[i];
         if (!info || !info->enabled) {
             continue;
         }
@@ -133,7 +133,7 @@ void populateDevicesJson(JsonArray devicesArray) {
         device["reversed"] = info->reversed;
     }
 
-    mutex_exit(&deviceInfoMu);
+    mutex_exit(&registry.infoMu);
 }
 
 error *loadConfig() {

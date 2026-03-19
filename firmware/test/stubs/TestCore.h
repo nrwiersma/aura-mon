@@ -9,12 +9,13 @@
 #include "TestLWIP.h"
 #include "TestSdFat.h"
 #include "../../src/device.h"
+#include "../../src/device_registry.h"
 #include "../../src/ethernet.h"
 #include "../../src/metrics.h"
 #include <errors.h>
 
 // ---- constants that auramon.h normally provides ----------------------------
-#define MAX_DEVICES         15
+#define MAX_DEVICES         DeviceRegistry::MAX
 #define MS_PER_HOUR         3600000UL
 #define DATA_LOG_PATH       "aura-mon/data.log"
 #define CONFIG_LOG_PATH     "aura-mon/config.json"
@@ -26,19 +27,7 @@
 #define LOGE(...)
 
 // ---- globals ---------------------------------------------------------------
-inline mutex_t deviceInfoMu;
-inline volatile bool devicesChanged = false;
-inline inputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
-
-inline mutex_t deviceMu;
-inline inputDevice *devices[MAX_DEVICES] = {};
-
-inline mutex_t deviceDataMu;
-inline inputDeviceData *deviceData[MAX_DEVICES] = {};
-
-inline mutex_t deviceActionMu;
-inline deviceActionRequest deviceActionControl = {deviceActionType::None, 0};
-inline deviceActionRequest deviceActionData    = {deviceActionType::None, 0};
+inline DeviceRegistry registry;
 
 inline NetworkConfig netCfg;
 inline promMetrics   metrics;
@@ -56,4 +45,3 @@ inline bool mutex_enter_block_until(mutex_t *mtx, uint32_t /*timeout_ms*/) {
     (void) mtx;
     return true;
 }
-

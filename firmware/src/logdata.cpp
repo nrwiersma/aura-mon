@@ -53,7 +53,7 @@ uint32_t logData(void *param) {
     double         currHZHrs = 0;
     uint8_t        count = 0;
     for (int i = 0; i < MAX_DEVICES; i++) {
-        const auto dev = devices[i];
+        const auto dev = registry.devices[i];
         if (!dev || !dev->isEnabled()) {
             voltHrs[i] = 0;
             wattHrs[i] = 0;

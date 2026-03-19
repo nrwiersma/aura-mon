@@ -8,23 +8,21 @@ uint32_t deviceActionTask(void *param) {
     (void) param;
 
     deviceActionRequest action{deviceActionType::None, 0};
-    bool                hasAction = false;
 
-    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
-        LOGE("deviceActionTask: could not acquire deviceActionMu");
+    if (!mutex_enter_block_until(&registry.actionMu, 100)) {
+        LOGE("deviceActionTask: could not acquire actionMu");
         return 200;
     }
 
-    if (deviceActionData.type == deviceActionType::None) {
-        mutex_exit(&deviceActionMu);
+    if (registry.actionData.type == deviceActionType::None) {
+        mutex_exit(&registry.actionMu);
         return 1000;
     }
 
-    action = deviceActionData;
-    deviceActionData = {deviceActionType::None, 0};
-    hasAction = true;
+    action = registry.actionData;
+    registry.actionData = {deviceActionType::None, 0};
 
-    mutex_exit(&deviceActionMu);
+    mutex_exit(&registry.actionMu);
 
     switch (action.type) {
         case deviceActionType::Locate:

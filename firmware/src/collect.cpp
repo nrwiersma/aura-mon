@@ -18,7 +18,7 @@ void collect() {
     uint32_t            deviceCount = 0;
     uint64_t            deviceTimeMs = 0;
 
-    for (const auto dev : devices) {
+    for (const auto dev : registry.devices) {
         if (!dev || !dev->isEnabled()) {
             continue;
         }

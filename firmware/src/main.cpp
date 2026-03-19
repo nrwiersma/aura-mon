@@ -20,15 +20,8 @@ bool      rtcRunning = false;
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 NetworkConfig  netCfg;
 
-mutex_t             deviceDataMu;
-inputDeviceData *   deviceData[MAX_DEVICES] = {};
-mutex_t             deviceActionMu;
-deviceActionRequest deviceActionControl = {deviceActionType::None, 0};
-deviceActionRequest deviceActionData = {deviceActionType::None, 0};
-mutex_t             deviceInfoMu;
-volatile bool       devicesChanged;
-inputDeviceInfo *   deviceInfos[MAX_DEVICES] = {};
-inputDevice *       devices[MAX_DEVICES] = {};
+DeviceRegistry registry;
+
 dataLog             datalog;
 
 promMetrics metrics;
@@ -89,16 +82,12 @@ void setup() {
     }
     startTime = time(nullptr);
 
-    mutex_init(&deviceDataMu);
-    mutex_init(&deviceActionMu);
-    mutex_init(&deviceInfoMu);
-
     if (auto err = loadConfig(); err) {
         LOGI("Could not load config from SD Card: %s", err->Error());
     } else {
         LOGI("Config loaded from SD Card");
     }
-    syncDeviceInfo();
+    registry.syncInfo();
 
     eth.setSPISpeed(ETH_FREQ);
     eth.hostname(netCfg.hostname);
