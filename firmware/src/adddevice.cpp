@@ -54,9 +54,9 @@ uint32_t addDeviceFromButton(void *param) {
     info->enabled = true;
     char nameBuf[24];
     if (snprintf(nameBuf, sizeof(nameBuf), "Device %u", address) > 0) {
-        info->name = strdup(nameBuf);
+        info->name = nameBuf;
     } else {
-        info->name = strdup("Device");
+        info->name = "Device";
     }
     deviceInfos[idx] = info;
     devicesChanged = true;

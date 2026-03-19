@@ -248,12 +248,12 @@ void handleStatus() {
 
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
         auto data = deviceData[i];
-        if (!data || !data->name || !data->name[0]) {
+        if (!data || data->name.isEmpty()) {
             continue;
         }
 
         auto deviceObj = devicesArr.add<JsonObject>();
-        deviceObj["name"] = String(data->name);
+        deviceObj["name"] = data->name;
         deviceObj["volts"] = data->volts;
         deviceObj["amps"] = data->amps;
         deviceObj["pf"] = data->pf;
@@ -319,10 +319,10 @@ void handleEnergy() {
     mutex_enter_blocking(&deviceInfoMu);
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
         auto info = deviceInfos[i];
-        if (!info || !info->isEnabled() || !info->name || !info->name[0]) {
+        if (!info || !info->isEnabled() || info->name.isEmpty()) {
             continue;
         }
-        deviceColumns[deviceCount++] = deviceColumn{i, String(info->name)};
+        deviceColumns[deviceCount++] = deviceColumn{i, info->name};
     }
     mutex_exit(&deviceInfoMu);
 

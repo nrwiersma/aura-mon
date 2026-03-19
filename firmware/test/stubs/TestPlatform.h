@@ -80,8 +80,8 @@ inline unsigned long millis() {
     return time;
 }
 
-// Arduino String backed by std::string – exposes only the methods used by
-// production code (isEmpty, indexOf, remove, c_str).
+// Arduino String backed by std::string – exposes the methods used by
+// production code and tests.
 class String {
 public:
     std::string s;
@@ -89,18 +89,69 @@ public:
     String() = default;
     String(const char *str) : s(str ? str : "") {}
     String(const String &) = default;
+    String(String &&other) noexcept : s(std::move(other.s)) {}
+    explicit String(int num) : s(std::to_string(num)) {}
+    explicit String(unsigned int num) : s(std::to_string(num)) {}
+    explicit String(long num) : s(std::to_string(num)) {}
+    explicit String(unsigned long num) : s(std::to_string(num)) {}
+    explicit String(double num, int decimalPlaces = 2) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.*f", decimalPlaces, num);
+        s = buf;
+    }
     String &operator=(const char *str) { s = str ? str : ""; return *this; }
     String &operator=(const String &) = default;
+    String &operator=(String &&other) noexcept { s = std::move(other.s); return *this; }
 
-    bool        isEmpty()            const { return s.empty(); }
-    const char *c_str()              const { return s.c_str(); }
+    bool         isEmpty()  const { return s.empty(); }
+    unsigned int length()   const { return static_cast<unsigned int>(s.size()); }
+    const char  *c_str()    const { return s.c_str(); }
+
+    bool reserve(unsigned int) { return true; }
+
+    bool concat(const String &str) { s += str.s; return true; }
+    bool concat(const char *cstr)  { if (cstr) s += cstr; return true; }
+    bool concat(char c)            { s += c; return true; }
+
+    String &operator+=(const String &rhs) { s += rhs.s; return *this; }
+    String &operator+=(const char *cstr)  { if (cstr) s += cstr; return *this; }
+    String &operator+=(char c)            { s += c; return *this; }
+
+    friend String operator+(String lhs, const String &rhs) { lhs.s += rhs.s; return lhs; }
+    friend String operator+(String lhs, const char *rhs)   { if (rhs) lhs.s += rhs; return lhs; }
+    friend String operator+(const char *lhs, String rhs)   { rhs.s = std::string(lhs ? lhs : "") + rhs.s; return rhs; }
+    friend String operator+(String lhs, char rhs)          { lhs.s += rhs; return lhs; }
+    friend String operator+(char lhs, String rhs)          { rhs.s = std::string(1, lhs) + rhs.s; return rhs; }
+
+    friend bool operator==(const String &a, const String &b) { return a.s == b.s; }
+    friend bool operator==(const String &a, const char *b)   { return a.s == (b ? b : ""); }
+    friend bool operator==(const char *a, const String &b)   { return (a ? a : "") == b.s; }
+    friend bool operator!=(const String &a, const String &b) { return !(a == b); }
+    friend bool operator!=(const String &a, const char *b)   { return !(a == b); }
+    friend bool operator!=(const char *a, const String &b)   { return !(a == b); }
+
+    bool startsWith(const String &prefix) const { return s.rfind(prefix.s, 0) == 0; }
+    bool startsWith(const char *prefix)   const { return prefix && s.rfind(prefix, 0) == 0; }
+    bool endsWith(const String &suffix)   const {
+        return s.size() >= suffix.s.size() &&
+               s.compare(s.size() - suffix.s.size(), suffix.s.size(), suffix.s) == 0;
+    }
+    bool endsWith(const char *suffix) const { return suffix && endsWith(String(suffix)); }
 
     int indexOf(char c, int from = 0) const {
         auto pos = s.find(c, static_cast<size_t>(from));
         return pos == std::string::npos ? -1 : static_cast<int>(pos);
     }
+    int indexOf(const String &str, int from = 0) const {
+        auto pos = s.find(str.s, static_cast<size_t>(from));
+        return pos == std::string::npos ? -1 : static_cast<int>(pos);
+    }
 
     void remove(size_t index) { s.erase(index); }
+    void remove(size_t index, size_t count) { s.erase(index, count); }
+
+    long   toInt()    const { try { return std::stol(s); } catch (...) { return 0; } }
+    double toDouble() const { try { return std::stod(s); } catch (...) { return 0.0; } }
 };
 
 struct MockRP2040 {

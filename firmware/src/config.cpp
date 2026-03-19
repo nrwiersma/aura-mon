@@ -18,7 +18,7 @@ error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
     }
 
     if (netObj["hostname"].is<const char *>()) {
-        netCfg.hostname = strdup(netObj["hostname"].as<const char *>());
+        netCfg.hostname = netObj["hostname"].as<const char *>();
     }
     if (netObj["ip"].is<const char *>()) {
         auto ip = netObj["ip"].as<const char *>();
@@ -88,8 +88,6 @@ void removeDevicesFromLocked(size_t startIdx) {
 
     for (size_t i = startIdx; i < MAX_DEVICES; i++) {
         if (deviceInfos[i]) {
-            free(const_cast<char *>(deviceInfos[i]->name));
-            deviceInfos[i]->name = nullptr;
             delete deviceInfos[i];
             deviceInfos[i] = nullptr;
         }
@@ -113,8 +111,7 @@ void applyDevicesFromJson(JsonArrayConst devicesArr) {
         info->addr = addr;
         info->calibration = entry["calibration"].is<float>() ? entry["calibration"].as<float>() : 1.0f;
         info->reversed = entry["reversed"].is<bool>() ? entry["reversed"].as<bool>() : false;
-        free(const_cast<char *>(info->name));
-        info->name = entry["name"].is<const char *>() ? strdup(entry["name"].as<const char *>()) : nullptr;
+        info->name = entry["name"].is<const char *>() ? entry["name"].as<const char *>() : "";
     }
 
     mutex_exit(&deviceInfoMu);
@@ -131,7 +128,7 @@ void populateDevicesJson(JsonArray devicesArray) {
         JsonObject device = devicesArray.add<JsonObject>();
         device["enabled"] = info->enabled;
         device["address"] = info->addr;
-        device["name"] = info->name;
+        device["name"] = info->name.c_str();
         device["calibration"] = info->calibration;
         device["reversed"] = info->reversed;
     }

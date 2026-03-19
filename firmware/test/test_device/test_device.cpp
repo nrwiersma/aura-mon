@@ -167,11 +167,11 @@ void test_reset_clears_enabled() {
 
 void test_reset_frees_name() {
     inputDevice dev(1);
-    dev.name = strdup("My Device");
+    dev.name = "My Device";
 
     dev.reset();
 
-    TEST_ASSERT_NULL(dev.name);
+    TEST_ASSERT_TRUE(dev.name.isEmpty());
 }
 
 void test_reset_zeroes_calibration() {

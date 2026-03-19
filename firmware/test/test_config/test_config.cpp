@@ -6,8 +6,6 @@
 inline void cleanupDeviceInfos() {
     for (int i = 0; i < MAX_DEVICES; i++) {
         if (deviceInfos[i]) {
-            free(const_cast<char *>(deviceInfos[i]->name));
-            deviceInfos[i]->name = nullptr;
             delete deviceInfos[i];
             deviceInfos[i] = nullptr;
         }
@@ -53,7 +51,7 @@ void test_config_valid() {
     TEST_ASSERT_NOT_NULL(deviceInfos[0]);
     TEST_ASSERT_EQUAL(true, deviceInfos[0]->enabled);
     TEST_ASSERT_EQUAL(1, deviceInfos[0]->addr);
-    TEST_ASSERT_EQUAL_STRING("Device1", deviceInfos[0]->name);
+    TEST_ASSERT_EQUAL_STRING("Device1", deviceInfos[0]->name.c_str());
 }
 
 void test_load_not_found() {
@@ -256,7 +254,7 @@ void test_config_round_trip_device() {
     TEST_ASSERT_NULL(err);
 
     TEST_ASSERT_NOT_NULL(deviceInfos[3]);
-    TEST_ASSERT_EQUAL_STRING("Meter4",  deviceInfos[3]->name);
+    TEST_ASSERT_EQUAL_STRING("Meter4",  deviceInfos[3]->name.c_str());
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.05f, deviceInfos[3]->calibration);
     TEST_ASSERT_TRUE(deviceInfos[3]->reversed);
 }
