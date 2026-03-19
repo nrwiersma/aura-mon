@@ -34,7 +34,8 @@
 #define MS_PER_HOUR 3600000UL
 
 #define MESSAGE_LOG_PATH "aura-mon/log.txt"
-#define CONFIG_LOG_PATH "aura-mon/config.json"
+#define CONFIG_LOG_PATH     "aura-mon/config.json"
+#define CONFIG_LOG_TMP_PATH "aura-mon/config.json.tmp"
 #define DATA_LOG_PATH    "aura-mon/data.log"
 
 #define LED_RED 10

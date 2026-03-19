@@ -17,7 +17,6 @@ uint32_t addDeviceFromButton(void *param);
 static void cleanupDeviceInfos() {
     for (int i = 0; i < MAX_DEVICES; i++) {
         if (deviceInfos[i]) {
-            free(const_cast<char *>(deviceInfos[i]->name));
             delete deviceInfos[i];
             deviceInfos[i] = nullptr;
         }
@@ -88,8 +87,8 @@ void test_add_device_creates_info_at_first_slot() {
 void test_add_device_sets_default_name() {
     addDeviceFromButton(nullptr);
 
-    TEST_ASSERT_NOT_NULL(deviceInfos[0]->name);
-    TEST_ASSERT_EQUAL_STRING("Device 1", deviceInfos[0]->name);
+    TEST_ASSERT_FALSE(deviceInfos[0]->name.isEmpty());
+    TEST_ASSERT_EQUAL_STRING("Device 1", deviceInfos[0]->name.c_str());
 }
 
 void test_add_device_sets_devices_changed_flag() {
@@ -114,7 +113,7 @@ void test_add_device_uses_next_free_slot() {
 
     TEST_ASSERT_NOT_NULL(deviceInfos[1]);
     TEST_ASSERT_EQUAL(2, deviceInfos[1]->addr);
-    TEST_ASSERT_EQUAL_STRING("Device 2", deviceInfos[1]->name);
+    TEST_ASSERT_EQUAL_STRING("Device 2", deviceInfos[1]->name.c_str());
 }
 
 void test_add_device_returns_zero_when_full() {

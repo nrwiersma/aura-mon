@@ -11,8 +11,7 @@
 
 void inputDevice::reset() {
     enabled = false;
-    free(const_cast<char *>(name));
-    name = nullptr;
+    name = "";
     calibration = 0;
     reversed = false;
 }

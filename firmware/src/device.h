@@ -24,16 +24,15 @@ struct bucket {
 
 class inputDeviceInfo {
 public:
-    bool        enabled;
-    uint8_t     addr;
-    const char *name;
-    float       calibration;
-    bool        reversed;
+    bool    enabled;
+    uint8_t addr;
+    String  name;
+    float   calibration;
+    bool    reversed;
 
     inputDeviceInfo(uint8_t addr)
         : enabled(false),
           addr(addr),
-          name(nullptr),
           calibration(1.0f),
           reversed(false) {
     }
@@ -55,7 +54,7 @@ public:
 };
 
 struct inputDeviceData {
-    const char *name;
+    String name;
     double volts;
     double amps;
     double pf;

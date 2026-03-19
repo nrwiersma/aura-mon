@@ -14,10 +14,11 @@
 #include <errors.h>
 
 // ---- constants that auramon.h normally provides ----------------------------
-#define MAX_DEVICES      15
-#define MS_PER_HOUR      3600000UL
-#define DATA_LOG_PATH    "aura-mon/data.log"
-#define CONFIG_LOG_PATH  "aura-mon/config.json"
+#define MAX_DEVICES         15
+#define MS_PER_HOUR         3600000UL
+#define DATA_LOG_PATH       "aura-mon/data.log"
+#define CONFIG_LOG_PATH     "aura-mon/config.json"
+#define CONFIG_LOG_TMP_PATH "aura-mon/config.json.tmp"
 
 // ---- logging macros (silent during tests) ----------------------------------
 #define LOGD(...)
