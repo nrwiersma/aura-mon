@@ -226,7 +226,8 @@ Exposed metrics:
 - `auramon_modbus_errors_total` (counter)
 - `auramon_collect_time_seconds_total` (counter)
 - `auramon_collect_time_seconds_avg` (gauge)
-- `auramon_datalog_io` (counter)
+- `auramon_datalog_read_io` (counter)
+- `auramon_datalog_write_io` (counter)
 - `auramon_datalog_write_time_seconds_total` (counter)
 - `auramon_datalog_cache_hit` (counter)
 
