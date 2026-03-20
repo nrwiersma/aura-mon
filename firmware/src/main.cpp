@@ -1,3 +1,7 @@
+//
+// Created by Nicholas Wiersma on 2026/03/19.
+//
+
 #include "auramon.h"
 
 // Disable SysTick on core 1 to free up the timer for Ticker.

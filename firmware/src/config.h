@@ -1,3 +1,7 @@
+//
+// Created by Nicholas Wiersma on 2026/03/19.
+//
+
 #pragma once
 
 #include <ArduinoJson.h>

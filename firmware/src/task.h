@@ -2,8 +2,7 @@
 // Created by Nicholas Wiersma on 2025/10/20.
 //
 
-#ifndef FIRMWARE_TASK_H
-#define FIRMWARE_TASK_H
+#pragma once
 
 #include <cstdint>
 #include <functional>
@@ -36,6 +35,3 @@ public:
 private:
     std::priority_queue<task> _tasks;
 };
-
-
-#endif //FIRMWARE_TASK_H

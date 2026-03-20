@@ -2,8 +2,7 @@
 // Created by Nicholas Wiersma on 2025/10/10.
 //
 
-#ifndef FIRMWARE_LOGGER_H
-#define FIRMWARE_LOGGER_H
+#pragma once
 
 #include <Arduino.h>
 
@@ -28,5 +27,3 @@ protected:
 
     void write(LVL lvl, const char *buffer, size_t size);
 };
-
-#endif //FIRMWARE_LOGGER_H

@@ -2,8 +2,7 @@
 // Created by Nicholas Wiersma on 2025/09/26.
 //
 
-#ifndef FIRMWARE_CHANNEL_H
-#define FIRMWARE_CHANNEL_H
+#pragma once
 
 struct Bucket {
     double   volts;
@@ -67,5 +66,3 @@ struct DeviceActionRequest {
     DeviceActionType type;
     uint8_t          address;
 };
-
-#endif //FIRMWARE_CHANNEL_H

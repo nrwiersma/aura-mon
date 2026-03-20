@@ -2,8 +2,7 @@
 // Created by Nicholas Wiersma on 2025/09/05.
 //
 
-#ifndef FIRMWARE_AURAMON_H
-#define FIRMWARE_AURAMON_H
+#pragma once
 
 #include <Arduino.h>
 #include <pico/mutex.h>
@@ -110,5 +109,3 @@ uint32_t deviceActionTask(void *param);
 uint32_t addDeviceFromButton(void *param);
 
 void collect();
-
-#endif //FIRMWARE_AURAMON_H

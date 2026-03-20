@@ -2,10 +2,6 @@
 // Created by Nicholas Wiersma on 2025/11/04.
 //
 
-#ifndef FIRMWARE_API_H
-#define FIRMWARE_API_H
+#pragma once
 
 void setupAPI();
-
-
-#endif //FIRMWARE_API_H
