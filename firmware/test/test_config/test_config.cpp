@@ -5,9 +5,9 @@
 // Helper to clean up device infos between tests
 inline void cleanupDeviceInfos() {
     for (int i = 0; i < MAX_DEVICES; i++) {
-        if (deviceInfos[i]) {
-            delete deviceInfos[i];
-            deviceInfos[i] = nullptr;
+        if (registry.infos[i]) {
+            delete registry.infos[i];
+            registry.infos[i] = nullptr;
         }
     }
 }
@@ -44,23 +44,23 @@ void test_config_valid() {
     dev1["address"] = 1;
     dev1["name"] = "Device1";
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_TRUE(res.has_value());
     TEST_ASSERT_EQUAL_STRING("test", netCfg.hostname.c_str());
-    TEST_ASSERT_NOT_NULL(deviceInfos[0]);
-    TEST_ASSERT_EQUAL(true, deviceInfos[0]->enabled);
-    TEST_ASSERT_EQUAL(1, deviceInfos[0]->addr);
-    TEST_ASSERT_EQUAL_STRING("Device1", deviceInfos[0]->name.c_str());
+    TEST_ASSERT_NOT_NULL(registry.infos[0]);
+    TEST_ASSERT_EQUAL(true, registry.infos[0]->enabled);
+    TEST_ASSERT_EQUAL(1, registry.infos[0]->addr);
+    TEST_ASSERT_EQUAL_STRING("Device1", registry.infos[0]->name.c_str());
 }
 
 void test_load_not_found() {
     sd.fileExists = false;
 
-    auto err = loadConfig();
+    auto res = loadConfig();
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("could not decode config file", err->Error());
+    TEST_ASSERT_FALSE(res.has_value());
+    TEST_ASSERT_EQUAL_STRING("could not decode config file", res.error().c_str());
 }
 
 // ============================================================================
@@ -71,10 +71,10 @@ void test_config_format_mismatch_returns_error() {
     JsonDocument doc;
     doc["format"] = 99; // unknown version
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("config format mismatch", err->Error());
+    TEST_ASSERT_FALSE(res.has_value());
+    TEST_ASSERT_EQUAL_STRING("config format mismatch", res.error().c_str());
 }
 
 void test_config_missing_format_field_is_accepted() {
@@ -83,18 +83,18 @@ void test_config_missing_format_field_is_accepted() {
     auto net = doc["network"].to<JsonObject>();
     net["hostname"] = "myhost";
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_TRUE(res.has_value());
 }
 
 void test_config_empty_doc_returns_error() {
     JsonDocument doc;
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("config object is empty", err->Error());
+    TEST_ASSERT_FALSE(res.has_value());
+    TEST_ASSERT_EQUAL_STRING("config object is empty", res.error().c_str());
 }
 
 // ============================================================================
@@ -107,10 +107,10 @@ void test_config_invalid_ip_returns_error() {
     auto net = doc["network"].to<JsonObject>();
     net["ip"] = "not.an.ip";
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid ip address", err->Error());
+    TEST_ASSERT_FALSE(res.has_value());
+    TEST_ASSERT_EQUAL_STRING("invalid ip address", res.error().c_str());
 }
 
 void test_config_invalid_gateway_returns_error() {
@@ -119,10 +119,10 @@ void test_config_invalid_gateway_returns_error() {
     auto net = doc["network"].to<JsonObject>();
     net["gateway"] = "300.1.2.3";
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid gateway address", err->Error());
+    TEST_ASSERT_FALSE(res.has_value());
+    TEST_ASSERT_EQUAL_STRING("invalid gateway address", res.error().c_str());
 }
 
 void test_config_invalid_mask_returns_error() {
@@ -131,10 +131,10 @@ void test_config_invalid_mask_returns_error() {
     auto net = doc["network"].to<JsonObject>();
     net["mask"] = "bad";
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid ip mask", err->Error());
+    TEST_ASSERT_FALSE(res.has_value());
+    TEST_ASSERT_EQUAL_STRING("invalid ip mask", res.error().c_str());
 }
 
 void test_config_invalid_dns_returns_error() {
@@ -143,10 +143,10 @@ void test_config_invalid_dns_returns_error() {
     auto net = doc["network"].to<JsonObject>();
     net["dns"] = "1.2.3.999";
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid dns address", err->Error());
+    TEST_ASSERT_FALSE(res.has_value());
+    TEST_ASSERT_EQUAL_STRING("invalid dns address", res.error().c_str());
 }
 
 void test_config_empty_ip_string_is_accepted() {
@@ -155,9 +155,9 @@ void test_config_empty_ip_string_is_accepted() {
     auto net = doc["network"].to<JsonObject>();
     net["ip"] = ""; // empty string – DHCP mode, no validation needed
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_TRUE(res.has_value());
 }
 
 // ============================================================================
@@ -175,7 +175,7 @@ void test_config_device_calibration_defaults_to_one() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, deviceInfos[0]->calibration);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, registry.infos[0]->calibration);
 }
 
 void test_config_device_reversed_defaults_to_false() {
@@ -189,7 +189,7 @@ void test_config_device_reversed_defaults_to_false() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FALSE(deviceInfos[1]->reversed);
+    TEST_ASSERT_FALSE(registry.infos[1]->reversed);
 }
 
 void test_config_device_enabled_defaults_to_false() {
@@ -202,7 +202,7 @@ void test_config_device_enabled_defaults_to_false() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FALSE(deviceInfos[2]->enabled);
+    TEST_ASSERT_FALSE(registry.infos[2]->enabled);
 }
 
 // ============================================================================
@@ -224,9 +224,9 @@ void test_config_round_trip_network() {
     netCfg.hostname = "";
     netCfg.mask     = "";
 
-    auto err = loadConfigJSON(saved);
+    auto res = loadConfigJSON(saved);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_TRUE(res.has_value());
     TEST_ASSERT_EQUAL_STRING("roundtrip-host", netCfg.hostname.c_str());
     TEST_ASSERT_EQUAL_STRING("255.255.255.0",  netCfg.mask.c_str());
     TEST_ASSERT_EQUAL_STRING("8.8.8.8",        netCfg.dns.c_str());
@@ -250,13 +250,13 @@ void test_config_round_trip_device() {
 
     cleanupDeviceInfos();
 
-    auto err = loadConfigJSON(saved);
-    TEST_ASSERT_NULL(err);
+    auto res = loadConfigJSON(saved);
+    TEST_ASSERT_TRUE(res.has_value());
 
-    TEST_ASSERT_NOT_NULL(deviceInfos[3]);
-    TEST_ASSERT_EQUAL_STRING("Meter4",  deviceInfos[3]->name.c_str());
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.05f, deviceInfos[3]->calibration);
-    TEST_ASSERT_TRUE(deviceInfos[3]->reversed);
+    TEST_ASSERT_NOT_NULL(registry.infos[3]);
+    TEST_ASSERT_EQUAL_STRING("Meter4",  registry.infos[3]->name.c_str());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.05f, registry.infos[3]->calibration);
+    TEST_ASSERT_TRUE(registry.infos[3]->reversed);
 }
 
 // ============================================================================
@@ -271,12 +271,12 @@ void test_config_device_with_address_zero_is_ignored() {
     d["enabled"] = true;
     d["address"] = 0; // invalid address
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_TRUE(res.has_value());
     // Nothing should have been created.
     for (int i = 0; i < MAX_DEVICES; i++) {
-        TEST_ASSERT_NULL(deviceInfos[i]);
+        TEST_ASSERT_NULL(registry.infos[i]);
     }
 }
 
@@ -288,11 +288,11 @@ void test_config_device_with_address_above_max_is_ignored() {
     d["enabled"] = true;
     d["address"] = MAX_DEVICES + 1;
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_TRUE(res.has_value());
     for (int i = 0; i < MAX_DEVICES; i++) {
-        TEST_ASSERT_NULL(deviceInfos[i]);
+        TEST_ASSERT_NULL(registry.infos[i]);
     }
 }
 
@@ -306,12 +306,12 @@ void test_config_multiple_devices_loaded() {
         d["address"] = i;
     }
 
-    auto err = loadConfigJSON(doc);
+    auto res = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
-    TEST_ASSERT_NOT_NULL(deviceInfos[0]);
-    TEST_ASSERT_NOT_NULL(deviceInfos[1]);
-    TEST_ASSERT_NOT_NULL(deviceInfos[2]);
+    TEST_ASSERT_TRUE(res.has_value());
+    TEST_ASSERT_NOT_NULL(registry.infos[0]);
+    TEST_ASSERT_NOT_NULL(registry.infos[1]);
+    TEST_ASSERT_NOT_NULL(registry.infos[2]);
 }
 
 void setup() {

@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <hardware/watchdog.h>
 #include <hardware/structs/watchdog.h>
-#include "crashhandler.h"
+#include "crash_handler.h"
 #include "auramon.h"
 
 // Sentinel written to scratch[0] so the firmware can detect a crash reboot.

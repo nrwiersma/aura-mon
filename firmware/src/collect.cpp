@@ -10,15 +10,15 @@
 #include "modbus.h"
 #endif
 
-uint8_t readFrame(inputDevice *device);
-float   float_abcd(uint16_t hi, uint16_t lo);
+uint8_t readFrame(InputDevice *device);
+float   floatAbcd(uint16_t hi, uint16_t lo);
 
 void collect() {
     const unsigned long startTotal = millis();
     uint32_t            deviceCount = 0;
     uint64_t            deviceTimeMs = 0;
 
-    for (const auto dev : devices) {
+    for (const auto dev : registry.devices) {
         if (!dev || !dev->isEnabled()) {
             continue;
         }
@@ -36,7 +36,7 @@ void collect() {
         const unsigned long took = millis() - start;
         deviceTimeMs += took;
 
-        bucket curr = dev->current;
+        Bucket curr = dev->current;
         LOGD("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms", dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
 
         rp2040.wdt_reset();
@@ -50,16 +50,16 @@ void collect() {
     metrics.modbus_last_run_avg_ms.store(avgMs, std::memory_order_relaxed);
 }
 
-uint8_t readFrame(inputDevice *device) {
+uint8_t readFrame(InputDevice *device) {
     uint16_t data[10];
     if (const uint8_t err = modbus.readInputRegisters(device->addr, 0x4E20, data, 10)) {
         return err;
     }
 
-    float v = float_abcd(data[0], data[1]);
-    float a = float_abcd(data[2], data[3]);
-    float pf = float_abcd(data[6], data[7]);
-    float hz = float_abcd(data[8], data[9]);
+    float v = floatAbcd(data[0], data[1]);
+    float a = floatAbcd(data[2], data[3]);
+    float pf = floatAbcd(data[6], data[7]);
+    float hz = floatAbcd(data[8], data[9]);
 
     double volts = v * device->calibration;
     if (device->reversed) {
@@ -74,7 +74,7 @@ uint8_t readFrame(inputDevice *device) {
     return 0;
 }
 
-float float_abcd(uint16_t hi, uint16_t lo) {
+float floatAbcd(uint16_t hi, uint16_t lo) {
     float    f;
     uint32_t i;
 

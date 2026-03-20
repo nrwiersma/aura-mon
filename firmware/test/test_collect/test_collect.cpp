@@ -1,6 +1,6 @@
 //
 // Unit tests for collect.cpp:
-//   - float_abcd(): 32-bit float reconstruction from two Modbus registers.
+//   - floatAbcd(): 32-bit float reconstruction from two Modbus registers.
 //   - readFrame() physical-value derivation (volts, amps, VA, watts, calibration, reversed).
 //
 
@@ -11,12 +11,12 @@
 #include "../../src/device.h"
 
 // Forward declarations of the functions under test (defined in collect.cpp).
-float   float_abcd(uint16_t hi, uint16_t lo);
+float   floatAbcd(uint16_t hi, uint16_t lo);
 
 // readFrame is static in collect.cpp, so we exercise it indirectly via a
 // thin white-box helper that replicates its register-to-value logic.
 // This allows us to test the business rules without needing a Modbus stub.
-static void applyRegisters(inputDevice *dev,
+static void applyRegisters(InputDevice *dev,
                             float v, float a, float pf, float hz) {
     double volts = v * dev->calibration;
     if (dev->reversed) {
@@ -40,7 +40,7 @@ void tearDown() {
 }
 
 // ============================================================================
-// float_abcd – IEEE-754 big-endian reconstruction
+// floatAbcd – IEEE-754 big-endian reconstruction
 // ============================================================================
 
 // Helper: split a float into its two 16-bit Modbus register words (ABCD).
@@ -51,40 +51,40 @@ static void floatToRegisters(float f, uint16_t &hi, uint16_t &lo) {
     lo = static_cast<uint16_t>(raw & 0xFFFF);
 }
 
-void test_float_abcd_zero() {
+void test_floatAbcd_zero() {
     uint16_t hi, lo;
     floatToRegisters(0.0f, hi, lo);
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, float_abcd(hi, lo));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, floatAbcd(hi, lo));
 }
 
-void test_float_abcd_positive_integer() {
+void test_floatAbcd_positive_integer() {
     uint16_t hi, lo;
     floatToRegisters(230.0f, hi, lo);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 230.0f, float_abcd(hi, lo));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 230.0f, floatAbcd(hi, lo));
 }
 
-void test_float_abcd_negative_value() {
+void test_floatAbcd_negative_value() {
     uint16_t hi, lo;
     floatToRegisters(-50.5f, hi, lo);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, -50.5f, float_abcd(hi, lo));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, -50.5f, floatAbcd(hi, lo));
 }
 
-void test_float_abcd_fractional_value() {
+void test_floatAbcd_fractional_value() {
     uint16_t hi, lo;
     floatToRegisters(0.95f, hi, lo);
-    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.95f, float_abcd(hi, lo));
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.95f, floatAbcd(hi, lo));
 }
 
-void test_float_abcd_large_value() {
+void test_floatAbcd_large_value() {
     uint16_t hi, lo;
     floatToRegisters(99999.9f, hi, lo);
-    TEST_ASSERT_FLOAT_WITHIN(1.0f, 99999.9f, float_abcd(hi, lo));
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 99999.9f, floatAbcd(hi, lo));
 }
 
-void test_float_abcd_infinity_roundtrip() {
+void test_floatAbcd_infinity_roundtrip() {
     uint16_t hi, lo;
     floatToRegisters(INFINITY, hi, lo);
-    float result = float_abcd(hi, lo);
+    float result = floatAbcd(hi, lo);
     TEST_ASSERT_TRUE(std::isinf(result) && result > 0);
 }
 
@@ -93,7 +93,7 @@ void test_float_abcd_infinity_roundtrip() {
 // ============================================================================
 
 void test_normal_reading_no_calibration() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.enabled     = true;
     dev.calibration = 1.0f;
     dev.reversed    = false;
@@ -108,7 +108,7 @@ void test_normal_reading_no_calibration() {
 }
 
 void test_calibration_scales_voltage() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.enabled     = true;
     dev.calibration = 1.1f;
     dev.reversed    = false;
@@ -121,7 +121,7 @@ void test_calibration_scales_voltage() {
 }
 
 void test_reversed_negates_voltage_and_amps() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.enabled     = true;
     dev.calibration = 1.0f;
     dev.reversed    = true;
@@ -136,7 +136,7 @@ void test_reversed_negates_voltage_and_amps() {
 }
 
 void test_zero_voltage_gives_zero_va_and_watts() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.enabled     = true;
     dev.calibration = 1.0f;
     dev.reversed    = false;
@@ -149,7 +149,7 @@ void test_zero_voltage_gives_zero_va_and_watts() {
 }
 
 void test_zero_pf_gives_zero_watts() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.enabled     = true;
     dev.calibration = 1.0f;
     dev.reversed    = false;
@@ -168,13 +168,13 @@ void test_zero_pf_gives_zero_watts() {
 void setup() {
     UNITY_BEGIN();
 
-    // float_abcd
-    RUN_TEST(test_float_abcd_zero);
-    RUN_TEST(test_float_abcd_positive_integer);
-    RUN_TEST(test_float_abcd_negative_value);
-    RUN_TEST(test_float_abcd_fractional_value);
-    RUN_TEST(test_float_abcd_large_value);
-    RUN_TEST(test_float_abcd_infinity_roundtrip);
+    // floatAbcd
+    RUN_TEST(test_floatAbcd_zero);
+    RUN_TEST(test_floatAbcd_positive_integer);
+    RUN_TEST(test_floatAbcd_negative_value);
+    RUN_TEST(test_floatAbcd_fractional_value);
+    RUN_TEST(test_floatAbcd_large_value);
+    RUN_TEST(test_floatAbcd_infinity_roundtrip);
 
     // register-to-physical-value transform
     RUN_TEST(test_normal_reading_no_calibration);

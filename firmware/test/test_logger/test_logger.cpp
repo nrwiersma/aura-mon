@@ -9,7 +9,7 @@
 #include "../../src/logger.h"
 
 // Shared logger instance recreated for each test.
-logger *testLogger;
+Logger *testLogger;
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -38,7 +38,7 @@ void setUp() {
     // unless a test explicitly requests them.
     mockNow = 0;
 
-    testLogger = new logger();
+    testLogger = new Logger();
 }
 
 void tearDown() {

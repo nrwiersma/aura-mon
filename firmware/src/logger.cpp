@@ -11,11 +11,11 @@
 
 const char *lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
 
-logger::logger() : _restart(true) {
+Logger::Logger() : _restart(true) {
     Serial.begin(115200);
 }
 
-void logger::errorf(const char *format, ...) {
+void Logger::errorf(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
     char temp[64];
@@ -36,7 +36,7 @@ void logger::errorf(const char *format, ...) {
     }
 }
 
-void logger::infof(const char *format, ...) {
+void Logger::infof(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
     char temp[64];
@@ -60,7 +60,7 @@ void logger::infof(const char *format, ...) {
     }
 }
 
-void logger::debugf(const char *format, ...) {
+void Logger::debugf(const char *format, ...) {
     va_list arg;
     va_start(arg, format);
     char temp[64];
@@ -84,7 +84,7 @@ void logger::debugf(const char *format, ...) {
     }
 }
 
-void logger::write(const LVL lvl, const char *buffer, size_t size) {
+void Logger::write(const LVL lvl, const char *buffer, size_t size) {
     const size_t lvlLen = strlen(lvls[lvl]);
     // timestamp (20) + space (1) + level + space (1) + message + CRLF (2) + NUL (1)
     size_t bufSize = 20 + 1 + lvlLen + 1 + size + 2 + 1;
@@ -120,29 +120,27 @@ void logger::write(const LVL lvl, const char *buffer, size_t size) {
 
     Serial.write(buf, bufPos);
     if (lvl < INFO) {
-        // Do not write debug to file.
         delete[] buf;
         return;
     }
 
-    mutex_enter_blocking(&sdMu);
-    _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
     if (!_msgFile) {
-        String msgDir = MESSAGE_LOG_PATH;
-        msgDir.remove(msgDir.indexOf('/', 1));
-        sd.mkdir(msgDir.c_str());
         _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
-    }
-    if (_msgFile) {
-        if (_restart) {
+        if (!_msgFile) {
+            String msgDir = MESSAGE_LOG_PATH;
+            msgDir.remove(msgDir.indexOf('/', 1));
+            sd.mkdir(msgDir.c_str());
+            _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
+        }
+        if (_msgFile && _restart) {
             _msgFile.write(PSTR("\r\n**** RESTART ****\r\n"));
             _restart = false;
         }
-
-        _msgFile.write(buf, bufPos);
-        _msgFile.close();
     }
-    mutex_exit(&sdMu);
+    if (_msgFile) {
+        _msgFile.write(buf, bufPos);
+        _msgFile.flush();
+    }
 
     delete[] buf;
 }

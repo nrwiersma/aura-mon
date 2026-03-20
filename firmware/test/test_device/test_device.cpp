@@ -1,5 +1,5 @@
 //
-// Unit tests for inputDevice: accumulate(), setEnergy(), and reset().
+// Unit tests for InputDevice: accumulate(), setEnergy(), and reset().
 //
 
 #include <unity.h>
@@ -28,7 +28,7 @@ void tearDown() {
 
 void test_bucket_defaults_to_zero_energy() {
     setMillis(1000);
-    bucket b;
+    Bucket b;
     TEST_ASSERT_EQUAL_DOUBLE(0.0, b.volts);
     TEST_ASSERT_EQUAL_DOUBLE(0.0, b.watts);
     TEST_ASSERT_EQUAL_DOUBLE(0.0, b.va);
@@ -41,12 +41,12 @@ void test_bucket_defaults_to_zero_energy() {
 }
 
 // ============================================================================
-// inputDevice::accumulate()
+// InputDevice::accumulate()
 // ============================================================================
 
 void test_accumulate_no_op_when_now_equals_ts() {
     setMillis(5000);
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.current.volts = 230.0;
     dev.current.watts = 1000.0;
     dev.current.va    = 1100.0;
@@ -61,7 +61,7 @@ void test_accumulate_no_op_when_now_equals_ts() {
 
 void test_accumulate_no_op_when_now_before_ts() {
     setMillis(5000);
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.current.volts = 230.0;
     dev.current.ts    = 5000;
 
@@ -71,7 +71,7 @@ void test_accumulate_no_op_when_now_before_ts() {
 }
 
 void test_accumulate_integrates_one_hour() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.current.volts = 230.0;
     dev.current.watts = 1000.0;
     dev.current.va    = 1100.0;
@@ -89,7 +89,7 @@ void test_accumulate_integrates_one_hour() {
 }
 
 void test_accumulate_half_hour() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.current.volts = 230.0;
     dev.current.watts = 2000.0;
     dev.current.ts    = 0;
@@ -101,7 +101,7 @@ void test_accumulate_half_hour() {
 }
 
 void test_accumulate_updates_timestamp() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.current.ts = 1000;
 
     dev.accumulate(2000);
@@ -110,7 +110,7 @@ void test_accumulate_updates_timestamp() {
 }
 
 void test_accumulate_called_twice_is_additive() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.current.volts = 100.0;
     dev.current.ts    = 0;
 
@@ -121,12 +121,12 @@ void test_accumulate_called_twice_is_additive() {
 }
 
 // ============================================================================
-// inputDevice::setEnergy()
+// InputDevice::setEnergy()
 // ============================================================================
 
 void test_setEnergy_stores_readings() {
     setMillis(0);
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.current.ts = 0;
 
     setMillis(MS_PER_HOUR); // advance time by 1 hour before the call
@@ -141,7 +141,7 @@ void test_setEnergy_stores_readings() {
 void test_setEnergy_calls_accumulate() {
     // ts starts at 0 (bucket constructor uses millis() which we set to 0 here)
     setMillis(0);
-    inputDevice dev(1);
+    InputDevice dev(1);
     // bucket ts is whatever millis() returned at construction; set it explicitly.
     dev.current.ts = 0;
 
@@ -153,11 +153,11 @@ void test_setEnergy_calls_accumulate() {
 }
 
 // ============================================================================
-// inputDevice::reset()
+// InputDevice::reset()
 // ============================================================================
 
 void test_reset_clears_enabled() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.enabled = true;
 
     dev.reset();
@@ -166,7 +166,7 @@ void test_reset_clears_enabled() {
 }
 
 void test_reset_frees_name() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.name = "My Device";
 
     dev.reset();
@@ -175,7 +175,7 @@ void test_reset_frees_name() {
 }
 
 void test_reset_zeroes_calibration() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.calibration = 1.5f;
 
     dev.reset();
@@ -184,7 +184,7 @@ void test_reset_zeroes_calibration() {
 }
 
 void test_reset_clears_reversed() {
-    inputDevice dev(1);
+    InputDevice dev(1);
     dev.reversed = true;
 
     dev.reset();
@@ -193,11 +193,11 @@ void test_reset_clears_reversed() {
 }
 
 // ============================================================================
-// inputDeviceInfo helpers
+// InputDeviceInfo helpers
 // ============================================================================
 
 void test_isEnabled_returns_enabled_state() {
-    inputDeviceInfo info(1);
+    InputDeviceInfo info(1);
     TEST_ASSERT_FALSE(info.isEnabled());
     info.enabled = true;
     TEST_ASSERT_TRUE(info.isEnabled());

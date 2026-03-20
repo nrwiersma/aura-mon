@@ -1,9 +1,9 @@
 #pragma once
 
 #include <ArduinoJson.h>
-#include <errors.h>
+#include <expected>
 
-error* loadConfig();
-error* saveConfig();
-error* loadConfigJSON(const JsonDocument &doc);
+std::expected<void, String> loadConfig();
+std::expected<void, String> saveConfig();
+std::expected<void, String> loadConfigJSON(const JsonDocument &doc);
 void saveConfigJSON(JsonDocument &doc);

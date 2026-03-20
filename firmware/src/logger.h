@@ -7,17 +7,17 @@
 
 #include <Arduino.h>
 
-class logger {
+class Logger {
 public:
-    logger();
+    Logger();
 
     void errorf(const char *format, ...);
     void infof(const char *format, ...);
     void debugf(const char *format, ...);
 
 protected:
-    bool   _restart;
-    FsFile _msgFile;
+    bool       _restart;
+    SafeSdFile _msgFile;
 
     enum LVL {
         UNKNOWN,

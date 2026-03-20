@@ -14,7 +14,7 @@ uint32_t logData(void *param) {
     (void) param;
 
     static bool   running;
-    static auto * rec = new logRecord;
+    static auto * rec = new LogRecord;
     static double hzHrs = 0;
     static double voltHrs[15] = {};
     static double wattHrs[15] = {};
@@ -53,7 +53,7 @@ uint32_t logData(void *param) {
     double         currHZHrs = 0;
     uint8_t        count = 0;
     for (int i = 0; i < MAX_DEVICES; i++) {
-        const auto dev = devices[i];
+        const auto dev = registry.devices[i];
         if (!dev || !dev->isEnabled()) {
             voltHrs[i] = 0;
             wattHrs[i] = 0;
@@ -81,8 +81,8 @@ uint32_t logData(void *param) {
     rec->logHours += elapsedHrs;
 
     // Write the record.
-    if (auto err = datalog.write(rec); err) {
-        LOGE("Error writing datalog: %s", err->Error());
+    if (auto res = datalog.write(rec); !res) {
+        LOGE("Error writing datalog: %s", res.error().c_str());
         return 1;
     }
 

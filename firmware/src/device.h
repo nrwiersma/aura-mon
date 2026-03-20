@@ -5,7 +5,7 @@
 #ifndef FIRMWARE_CHANNEL_H
 #define FIRMWARE_CHANNEL_H
 
-struct bucket {
+struct Bucket {
     double   volts;
     double   watts;
     double   va;
@@ -16,13 +16,13 @@ struct bucket {
     double   hzHrs;
     uint32_t ts;
 
-    bucket() : volts(0), watts(0), va(0), hz(0),
+    Bucket() : volts(0), watts(0), va(0), hz(0),
                voltHrs(0), wattHrs(0), vaHrs(0), hzHrs(0),
                ts(millis()) {
     }
 };
 
-class inputDeviceInfo {
+class InputDeviceInfo {
 public:
     bool    enabled;
     uint8_t addr;
@@ -30,7 +30,7 @@ public:
     float   calibration;
     bool    reversed;
 
-    inputDeviceInfo(uint8_t addr)
+    InputDeviceInfo(uint8_t addr)
         : enabled(false),
           addr(addr),
           calibration(1.0f),
@@ -40,20 +40,20 @@ public:
     bool isEnabled() const { return enabled; }
 };
 
-class inputDevice : public inputDeviceInfo {
+class InputDevice : public InputDeviceInfo {
 public:
-    bucket current;
+    Bucket current;
 
-    inputDevice(uint8_t addr) : inputDeviceInfo(addr) {
+    InputDevice(uint8_t addr) : InputDeviceInfo(addr) {
     }
 
-    ~inputDevice() = default;
+    ~InputDevice() = default;
     void reset();
     void accumulate(uint32_t now);
     void setEnergy(double volts, double watts, double va, double hz);
 };
 
-struct inputDeviceData {
+struct InputDeviceData {
     String name;
     double volts;
     double amps;
@@ -61,10 +61,10 @@ struct inputDeviceData {
     double hz;
 };
 
-enum class deviceActionType : uint8_t { None = 0, Locate, Assign };
+enum class DeviceActionType : uint8_t { None = 0, Locate, Assign };
 
-struct deviceActionRequest {
-    deviceActionType type;
+struct DeviceActionRequest {
+    DeviceActionType type;
     uint8_t          address;
 };
 

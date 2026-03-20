@@ -1,3 +1,4 @@
+
 #include "auramon.h"
 
 // Disable SysTick on core 1 to free up the timer for Ticker.
@@ -9,10 +10,9 @@ time_t            startTime;
 Ticker            ledTimer;
 volatile LEDColor ledState;
 
-mutex_t sdMu;
-SdFs    sd;
+SafeSdFs sd;
 
-logger msgLog;
+Logger msgLog;
 
 PCF85063A rtc;
 bool      rtcRunning = false;
@@ -20,25 +20,18 @@ bool      rtcRunning = false;
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 NetworkConfig  netCfg;
 
-mutex_t             deviceDataMu;
-inputDeviceData *   deviceData[MAX_DEVICES] = {};
-mutex_t             deviceActionMu;
-deviceActionRequest deviceActionControl = {deviceActionType::None, 0};
-deviceActionRequest deviceActionData = {deviceActionType::None, 0};
-mutex_t             deviceInfoMu;
-volatile bool       devicesChanged;
-inputDeviceInfo *   deviceInfos[MAX_DEVICES] = {};
-inputDevice *       devices[MAX_DEVICES] = {};
-dataLog             datalog;
+DeviceRegistry registry;
 
-promMetrics metrics;
+DataLog             datalog;
+
+PromMetrics metrics;
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
 WebServer server(80);
 
-taskQueue c0Queue = {};
-taskQueue c1Queue = {};
+TaskQueue c0Queue = {};
+TaskQueue c1Queue = {};
 
 void blinkLED();
 void handleButtonPress();
@@ -56,7 +49,6 @@ void setup() {
 
     LOGD("Booting");
 
-    mutex_init(&sdMu);
     if (!sd.begin(SD_CONFIG)) {
         Serial.println("Could not initialize SD Card. Halting");
         sd.initErrorPrint(&Serial);
@@ -89,16 +81,12 @@ void setup() {
     }
     startTime = time(nullptr);
 
-    mutex_init(&deviceDataMu);
-    mutex_init(&deviceActionMu);
-    mutex_init(&deviceInfoMu);
-
-    if (auto err = loadConfig(); err) {
-        LOGI("Could not load config from SD Card: %s", err->Error());
+    if (auto res = loadConfig(); !res) {
+        LOGI("Could not load config from SD Card: %s", res.error().c_str());
     } else {
         LOGI("Config loaded from SD Card");
     }
-    syncDeviceInfo();
+    registry.syncInfo();
 
     eth.setSPISpeed(ETH_FREQ);
     eth.hostname(netCfg.hostname);

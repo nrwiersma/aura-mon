@@ -12,17 +12,17 @@
 uint8_t findAvailableAddressLocked() {
     bool used[MAX_DEVICES + 1] = {};
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        if (!deviceInfos[i]) {
+        if (!registry.infos[i]) {
             continue;
         }
-        uint8_t addr = deviceInfos[i]->addr;
+        uint8_t addr = registry.infos[i]->addr;
         if (addr >= 1 && addr <= MAX_DEVICES) {
             used[addr] = true;
         }
     }
 
     for (uint8_t addr = 1; addr <= MAX_DEVICES; addr++) {
-        if (!used[addr] && deviceInfos[addr - 1] == nullptr) {
+        if (!used[addr] && registry.infos[addr - 1] == nullptr) {
             return addr;
         }
     }
@@ -35,22 +35,22 @@ uint32_t addDeviceFromButton(void *param) {
 
     uint8_t address = 0;
 
-    mutex_enter_blocking(&deviceInfoMu);
+    mutex_enter_blocking(&registry.infoMu);
     address = findAvailableAddressLocked();
     if (address == 0) {
-        mutex_exit(&deviceInfoMu);
+        mutex_exit(&registry.infoMu);
         LOGI("No free device slots available");
         return 0;
     }
 
     size_t idx = static_cast<size_t>(address - 1);
-    if (deviceInfos[idx] != nullptr) {
-        mutex_exit(&deviceInfoMu);
+    if (registry.infos[idx] != nullptr) {
+        mutex_exit(&registry.infoMu);
         LOGI("Device slot already in use for address %u", address);
         return 0;
     }
 
-    auto info = new inputDeviceInfo(address);
+    auto info = new InputDeviceInfo(address);
     info->enabled = true;
     char nameBuf[24];
     if (snprintf(nameBuf, sizeof(nameBuf), "Device %u", address) > 0) {
@@ -58,22 +58,22 @@ uint32_t addDeviceFromButton(void *param) {
     } else {
         info->name = "Device";
     }
-    deviceInfos[idx] = info;
-    devicesChanged = true;
+    registry.infos[idx] = info;
+    registry.changed = true;
 
-    mutex_exit(&deviceInfoMu);
+    mutex_exit(&registry.infoMu);
 
-    if (auto err = saveConfig(); err) {
-        LOGE("Failed to save config after button add: %s", err->Error());
+    if (auto res = saveConfig(); !res) {
+        LOGE("Failed to save config after button add: %s", res.error().c_str());
     }
 
-    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
-        LOGE("Button add: could not acquire deviceActionMu");
+    if (!mutex_enter_block_until(&registry.actionMu, 100)) {
+        LOGE("Button add: could not acquire actionMu");
         return 0;
     }
 
-    deviceActionControl = {deviceActionType::Assign, address};
-    mutex_exit(&deviceActionMu);
+    registry.actionControl = {DeviceActionType::Assign, address};
+    mutex_exit(&registry.actionMu);
 
     return 0;
 }
