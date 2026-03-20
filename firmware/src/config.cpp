@@ -12,9 +12,9 @@
 
 constexpr uint32_t configFormat = 1;
 
-Error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
+std::expected<void, String> loadNetworkConfigFromJson(JsonVariantConst netObj) {
     if (netObj.isNull()) {
-        return nullptr;
+        return {};
     }
 
     if (netObj["hostname"].is<const char *>()) {
@@ -24,7 +24,7 @@ Error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
         auto ip = netObj["ip"].as<const char *>();
         if (strlen(ip) > 0) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
-                return makeError("invalid ip address");
+                return std::unexpected<String>("invalid ip address");
             }
             netCfg.ip = ip;
         }
@@ -33,7 +33,7 @@ Error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
         auto ip = netObj["gateway"].as<const char *>();
         if (strlen(ip) > 0) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
-                return makeError("invalid gateway address");
+                return std::unexpected<String>("invalid gateway address");
             }
             netCfg.gateway = ip;
         }
@@ -42,7 +42,7 @@ Error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
         auto ip = netObj["mask"].as<const char *>();
         if (strlen(ip) > 0) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
-                return makeError("invalid ip mask");
+                return std::unexpected<String>("invalid ip mask");
             }
             netCfg.mask = ip;
         }
@@ -51,12 +51,12 @@ Error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
         auto ip = netObj["dns"].as<const char *>();
         if (strlen(ip) > 0) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
-                return makeError("invalid dns address");
+                return std::unexpected<String>("invalid dns address");
             }
             netCfg.dns = ip;
         }
     }
-    return nullptr;
+    return {};
 }
 
 void writeNetworkConfigToJson(JsonObject obj) {
@@ -136,7 +136,7 @@ void populateDevicesJson(JsonArray devicesArray) {
     mutex_exit(&registry.infoMu);
 }
 
-Error *loadConfig() {
+std::expected<void, String> loadConfig() {
     mutex_enter_blocking(&sdMu);
     FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
     if (!file) {
@@ -144,7 +144,7 @@ Error *loadConfig() {
         file = sd.open(CONFIG_LOG_TMP_PATH, O_RDONLY);
         if (!file) {
             mutex_exit(&sdMu);
-            return makeError("could not open config file");
+            return std::unexpected<String>("could not open config file");
         }
     }
 
@@ -156,7 +156,7 @@ Error *loadConfig() {
     mutex_exit(&sdMu);
 
     if (err) {
-        return makeError("could not decode config file");
+        return std::unexpected<String>("could not decode config file");
     }
 
     return loadConfigJSON(doc);
@@ -178,7 +178,7 @@ void ensureConfigDirectoryLocked() {
     sd.mkdir(dir);
 }
 
-Error *saveConfig() {
+std::expected<void, String> saveConfig() {
     JsonDocument doc;
     saveConfigJSON(doc);
 
@@ -187,43 +187,43 @@ Error *saveConfig() {
     FsFile file = sd.open(CONFIG_LOG_TMP_PATH, O_RDWR | O_CREAT | O_TRUNC);
     if (!file) {
         mutex_exit(&sdMu);
-        return makeError("could not create config file");
+        return std::unexpected<String>("could not create config file");
     }
     if (serializeJson(doc, file) == 0) {
         file.close();
         mutex_exit(&sdMu);
-        return makeError("could not write config file");
+        return std::unexpected<String>("could not write config file");
     }
     file.flush();
     file.close();
     sd.remove(CONFIG_LOG_PATH);
     if (!sd.rename(CONFIG_LOG_TMP_PATH, CONFIG_LOG_PATH)) {
         mutex_exit(&sdMu);
-        return makeError("could not rename config file");
+        return std::unexpected<String>("could not rename config file");
     }
     mutex_exit(&sdMu);
-    return nullptr;
+    return {};
 }
 
-Error *loadConfigJSON(const JsonDocument &doc) {
+std::expected<void, String> loadConfigJSON(const JsonDocument &doc) {
     JsonVariantConst root = doc.as<JsonVariantConst>();
     if (root.isNull()) {
-        return makeError("config object is empty");
+        return std::unexpected<String>("config object is empty");
     }
 
     if (root["format"].is<uint32_t>() && root["format"].as<uint32_t>() != configFormat) {
-        return makeError("config format mismatch");
+        return std::unexpected<String>("config format mismatch");
     }
 
-    if (auto err = loadNetworkConfigFromJson(root["network"]); err) {
-        return err;
+    if (auto res = loadNetworkConfigFromJson(root["network"]); !res) {
+        return res;
     }
 
     if (root["devices"].is<JsonArrayConst>()) {
         applyDevicesFromJson(root["devices"].as<JsonArrayConst>());
     }
 
-    return nullptr;
+    return {};
 }
 
 void saveConfigJSON(JsonDocument &doc) {

@@ -83,8 +83,8 @@ void setup() {
     }
     startTime = time(nullptr);
 
-    if (auto err = loadConfig(); err) {
-        LOGI("Could not load config from SD Card: %s", err->what());
+    if (auto res = loadConfig(); !res) {
+        LOGI("Could not load config from SD Card: %s", res.error().c_str());
     } else {
         LOGI("Config loaded from SD Card");
     }

@@ -81,8 +81,8 @@ uint32_t logData(void *param) {
     rec->logHours += elapsedHrs;
 
     // Write the record.
-    if (auto err = datalog.write(rec); err) {
-        LOGE("Error writing datalog: %s", err->what());
+    if (auto res = datalog.write(rec); !res) {
+        LOGE("Error writing datalog: %s", res.error().c_str());
         return 1;
     }
 

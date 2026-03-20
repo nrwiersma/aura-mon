@@ -63,8 +63,8 @@ uint32_t addDeviceFromButton(void *param) {
 
     mutex_exit(&registry.infoMu);
 
-    if (auto err = saveConfig(); err) {
-        LOGE("Failed to save config after button add: %s", err->what());
+    if (auto res = saveConfig(); !res) {
+        LOGE("Failed to save config after button add: %s", res.error().c_str());
     }
 
     if (!mutex_enter_block_until(&registry.actionMu, 100)) {

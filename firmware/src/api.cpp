@@ -95,18 +95,17 @@ void handlePostConfig() {
         return;
     }
 
-    auto err = loadConfigJSON(doc);
-    if (err) {
+    auto cfgRes = loadConfigJSON(doc);
+    if (!cfgRes) {
         String msg = "{\"error\":\"Invalid configuration\",\"reason\":\"";
-        msg.concat(err->what());
+        msg.concat(cfgRes.error().c_str());
         msg.concat("\"}");
         server.send(400, contentTypeJSON, msg);
         return;
     }
 
-    err = saveConfig();
-    if (err) {
-        returnInternalError(err->what());
+    if (auto saveRes = saveConfig(); !saveRes) {
+        returnInternalError(saveRes.error().c_str());
         return;
     }
 
@@ -343,8 +342,8 @@ void handleEnergy() {
     }
 
     LogRecord prevRec;
-    if (auto err = datalog.read(start - interval, &prevRec); err) {
-        returnInternalError(err->what());
+    if (auto res = datalog.read(start - interval, &prevRec); !res) {
+        returnInternalError(res.error().c_str());
         return;
     }
 
@@ -369,7 +368,7 @@ void handleEnergy() {
 
     for (uint32_t ts = start; ts <= end; ts += interval) {
         LogRecord rec;
-        if (auto err = datalog.read(ts, &rec); err) {
+        if (auto res = datalog.read(ts, &rec); !res) {
             server.sendContent(F("#error reading datalog\n"));
             server.chunkedResponseFinalize();
             return;

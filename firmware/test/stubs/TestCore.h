@@ -12,7 +12,6 @@
 #include "../../src/device_registry.h"
 #include "../../src/ethernet.h"
 #include "../../src/metrics.h"
-#include <errors.h>
 
 // ---- constants that auramon.h normally provides ----------------------------
 #define MAX_DEVICES         DeviceRegistry::MAX

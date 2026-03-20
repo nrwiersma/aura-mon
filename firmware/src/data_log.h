@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <errors.h>
+#include <expected>
 
 // Total of 384 bytes.
 struct LogRecord {
@@ -53,8 +53,8 @@ public:
     uint32_t lastRev();
     uint32_t lastTS();
     uint32_t fileSize();
-    Error *  read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = 100);
-    Error *  write(LogRecord *rec);
+    std::expected<void, String> read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = 100);
+    std::expected<void, String> write(LogRecord *rec);
 
 private:
     struct LogRecordKey {

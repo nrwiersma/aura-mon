@@ -7,7 +7,6 @@
 
 #include <Arduino.h>
 #include <pico/mutex.h>
-#include <errors.h>
 #include <SdFat.h>
 #include <W5500lwIP.h>
 #include <ModbusRTUMaster.h>

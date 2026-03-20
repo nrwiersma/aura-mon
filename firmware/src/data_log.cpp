@@ -101,12 +101,12 @@ uint32_t DataLog::fileSize() {
     return s;
 }
 
-Error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
+std::expected<void, String> DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
     ts -= ts % _interval;
 
     if (timeoutMS > 0) {
         if (!mutex_enter_timeout_ms(&_mu, timeoutMS)) {
-            return makeError("mutex timeout");
+            return std::unexpected<String>("mutex timeout");
         }
     } else {
         mutex_enter_blocking(&_mu);
@@ -114,12 +114,12 @@ Error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
 
     if (!_file) {
         mutex_exit(&_mu);
-        return makeError("file not open");
+        return std::unexpected<String>("file not open");
     }
 
     if (_entries == 0) {
         mutex_exit(&_mu);
-        return makeError("no entries");
+        return std::unexpected<String>("no entries");
     }
     if (ts < _first.ts) {
         // Before the beginning of the file.
@@ -128,7 +128,7 @@ Error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         rec->ts = ts;
 
         mutex_exit(&_mu);
-        return nullptr;
+        return {};
     }
     if (ts >= _last.ts) {
         // Past the end of the file.
@@ -136,11 +136,11 @@ Error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         rec->ts = ts;
         if (ts == _last.ts) {
             mutex_exit(&_mu);
-            return nullptr;
+            return {};
         }
 
         mutex_exit(&_mu);
-        return nullptr;
+        return {};
     }
 
     // Check the last records cache if we are in the time range.
@@ -153,7 +153,7 @@ Error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
                 metrics.datalog_cache_hit.fetch_add(1, std::memory_order_relaxed);
 
                 mutex_exit(&_mu);
-                return nullptr;
+                return {};
             }
         }
     }
@@ -165,7 +165,7 @@ Error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         readRev(rev, rec);
         if (rec->ts == ts) {
             mutex_exit(&_mu);
-            return nullptr;
+            return {};
         }
     }
 
@@ -178,21 +178,21 @@ Error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
     rec->ts = ts;
 
     mutex_exit(&_mu);
-    return nullptr;
+    return {};
 }
 
-Error *DataLog::write(LogRecord *rec) {
+std::expected<void, String> DataLog::write(LogRecord *rec) {
     if (!mutex_enter_timeout_ms(&_mu, 100)) {
-        return makeError("mutex timeout");
+        return std::unexpected<String>("mutex timeout");
     }
 
     if (!_file) {
         mutex_exit(&_mu);
-        return makeError("file not open");
+        return std::unexpected<String>("file not open");
     }
     if (rec->ts <= _last.ts) {
         mutex_exit(&_mu);
-        return makeError("timestamp not increasing");
+        return std::unexpected<String>("timestamp not increasing");
     }
     rec->rev = ++_last.rev;
     _last.ts = rec->ts;
@@ -219,7 +219,7 @@ Error *DataLog::write(LogRecord *rec) {
         metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
 
         mutex_exit(&_mu);
-        return nullptr;
+        return {};
     }
 
     // No wrap, just write at the end of the file.
@@ -240,7 +240,7 @@ Error *DataLog::write(LogRecord *rec) {
     metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
 
     mutex_exit(&_mu);
-    return nullptr;
+    return {};
 }
 
 DataLog::LogRecordKey DataLog::readKey(uint32_t pos) {
