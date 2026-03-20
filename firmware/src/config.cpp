@@ -12,7 +12,7 @@
 
 constexpr uint32_t configFormat = 1;
 
-error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
+Error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
     if (netObj.isNull()) {
         return nullptr;
     }
@@ -24,7 +24,7 @@ error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
         auto ip = netObj["ip"].as<const char *>();
         if (strlen(ip) > 0) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
-                return newError("invalid ip address");
+                return makeError("invalid ip address");
             }
             netCfg.ip = ip;
         }
@@ -33,7 +33,7 @@ error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
         auto ip = netObj["gateway"].as<const char *>();
         if (strlen(ip) > 0) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
-                return newError("invalid gateway address");
+                return makeError("invalid gateway address");
             }
             netCfg.gateway = ip;
         }
@@ -42,7 +42,7 @@ error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
         auto ip = netObj["mask"].as<const char *>();
         if (strlen(ip) > 0) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
-                return newError("invalid ip mask");
+                return makeError("invalid ip mask");
             }
             netCfg.mask = ip;
         }
@@ -51,7 +51,7 @@ error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
         auto ip = netObj["dns"].as<const char *>();
         if (strlen(ip) > 0) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
-                return newError("invalid dns address");
+                return makeError("invalid dns address");
             }
             netCfg.dns = ip;
         }
@@ -70,13 +70,13 @@ void writeNetworkConfigToJson(JsonObject obj) {
     obj["dns"] = netCfg.dns.c_str();
 }
 
-inputDeviceInfo *ensureDeviceInfo(uint8_t address) {
+InputDeviceInfo *ensureDeviceInfo(uint8_t address) {
     if (address == 0 || address > MAX_DEVICES) {
         return nullptr;
     }
     const size_t idx = address - 1;
     if (!registry.infos[idx]) {
-        registry.infos[idx] = new inputDeviceInfo(address);
+        registry.infos[idx] = new InputDeviceInfo(address);
     }
     return registry.infos[idx];
 }
@@ -103,7 +103,7 @@ void applyDevicesFromJson(JsonArrayConst devicesArr) {
             continue;
         }
         uint8_t          addr = entry["address"].is<int>() ? entry["address"].as<uint8_t>() : 0;
-        inputDeviceInfo *info = ensureDeviceInfo(addr);
+        InputDeviceInfo *info = ensureDeviceInfo(addr);
         if (!info) {
             continue;
         }
@@ -121,7 +121,7 @@ void populateDevicesJson(JsonArray devicesArray) {
     mutex_enter_blocking(&registry.infoMu);
 
     for (int i = 0; i < MAX_DEVICES; i++) {
-        inputDeviceInfo *info = registry.infos[i];
+        InputDeviceInfo *info = registry.infos[i];
         if (!info || !info->enabled) {
             continue;
         }
@@ -136,7 +136,7 @@ void populateDevicesJson(JsonArray devicesArray) {
     mutex_exit(&registry.infoMu);
 }
 
-error *loadConfig() {
+Error *loadConfig() {
     mutex_enter_blocking(&sdMu);
     FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
     if (!file) {
@@ -144,7 +144,7 @@ error *loadConfig() {
         file = sd.open(CONFIG_LOG_TMP_PATH, O_RDONLY);
         if (!file) {
             mutex_exit(&sdMu);
-            return newError("could not open config file");
+            return makeError("could not open config file");
         }
     }
 
@@ -156,7 +156,7 @@ error *loadConfig() {
     mutex_exit(&sdMu);
 
     if (err) {
-        return newError("could not decode config file");
+        return makeError("could not decode config file");
     }
 
     return loadConfigJSON(doc);
@@ -178,7 +178,7 @@ void ensureConfigDirectoryLocked() {
     sd.mkdir(dir);
 }
 
-error *saveConfig() {
+Error *saveConfig() {
     JsonDocument doc;
     saveConfigJSON(doc);
 
@@ -187,32 +187,32 @@ error *saveConfig() {
     FsFile file = sd.open(CONFIG_LOG_TMP_PATH, O_RDWR | O_CREAT | O_TRUNC);
     if (!file) {
         mutex_exit(&sdMu);
-        return newError("could not create config file");
+        return makeError("could not create config file");
     }
     if (serializeJson(doc, file) == 0) {
         file.close();
         mutex_exit(&sdMu);
-        return newError("could not write config file");
+        return makeError("could not write config file");
     }
     file.flush();
     file.close();
     sd.remove(CONFIG_LOG_PATH);
     if (!sd.rename(CONFIG_LOG_TMP_PATH, CONFIG_LOG_PATH)) {
         mutex_exit(&sdMu);
-        return newError("could not rename config file");
+        return makeError("could not rename config file");
     }
     mutex_exit(&sdMu);
     return nullptr;
 }
 
-error *loadConfigJSON(const JsonDocument &doc) {
+Error *loadConfigJSON(const JsonDocument &doc) {
     JsonVariantConst root = doc.as<JsonVariantConst>();
     if (root.isNull()) {
-        return newError("config object is empty");
+        return makeError("config object is empty");
     }
 
     if (root["format"].is<uint32_t>() && root["format"].as<uint32_t>() != configFormat) {
-        return newError("config format mismatch");
+        return makeError("config format mismatch");
     }
 
     if (auto err = loadNetworkConfigFromJson(root["network"]); err) {

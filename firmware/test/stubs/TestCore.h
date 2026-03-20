@@ -30,7 +30,7 @@
 inline DeviceRegistry registry;
 
 inline NetworkConfig netCfg;
-inline promMetrics   metrics;
+inline PromMetrics   metrics;
 
 // ---- ModbusRTUMaster stub (used by collect.cpp) ----------------------------
 struct ModbusRTUMaster {

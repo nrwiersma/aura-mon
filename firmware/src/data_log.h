@@ -6,7 +6,7 @@
 #include <errors.h>
 
 // Total of 384 bytes.
-struct logRecord {
+struct LogRecord {
     uint32_t rev;
     uint32_t ts;       // Unix Timestamp
     double   logHours; // Total hours observed in this record.
@@ -15,7 +15,7 @@ struct logRecord {
     double   wattHrs[15];
     double   vaHrs[15];
 
-    logRecord() : rev(0),
+    LogRecord() : rev(0),
                   ts(0),
                   logHours(0),
                   hzHrs(0),
@@ -25,10 +25,10 @@ struct logRecord {
     };
 };
 
-class dataLog {
+class DataLog {
 public:
-    explicit dataLog(int interval = 5, double days = 180.0) : _interval(interval),
-                                                              _recordSize(sizeof(logRecord)),
+    explicit DataLog(int interval = 5, double days = 180.0) : _interval(interval),
+                                                              _recordSize(sizeof(LogRecord)),
                                                               _fileSize(0),
                                                               _maxFileSize(0),
                                                               _entries(0),
@@ -42,7 +42,7 @@ public:
         const uint32_t computedSize = static_cast<uint32_t>(days * recordsPerDay * _recordSize);
         _maxFileSize = max(static_cast<uint32_t>(_recordSize), computedSize);
         mutex_init(&_mu);
-        _lastCache = new logRecord[_lastCacheSize]{};
+        _lastCache = new LogRecord[_lastCacheSize]{};
     };
 
     bool     begin();
@@ -53,11 +53,11 @@ public:
     uint32_t lastRev();
     uint32_t lastTS();
     uint32_t fileSize();
-    error *  read(uint32_t ts, logRecord *rec, uint32_t timeoutMS = 100);
-    error *  write(logRecord *rec);
+    Error *  read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = 100);
+    Error *  write(LogRecord *rec);
 
 private:
-    struct logRecordKey {
+    struct LogRecordKey {
         uint32_t rev;
         uint32_t ts;
     };
@@ -71,20 +71,20 @@ private:
     uint32_t     _fileSize;
     uint32_t     _maxFileSize;
     uint32_t     _entries;
-    logRecordKey _first;
-    logRecordKey _last;
+    LogRecordKey _first;
+    LogRecordKey _last;
     uint32_t     _wrapPos;
 
     uint32_t _lastReadTS;
     uint32_t _lastReadRev;
 
-    uint32_t   _lastCacheSize;
-    uint32_t   _lastCachePos = 0;
-    logRecord *_lastCache; // The last 60s of records.
+    uint32_t    _lastCacheSize;
+    uint32_t    _lastCachePos = 0;
+    LogRecord * _lastCache; // The last 60s of records.
 
-    logRecordKey readKey(uint32_t pos);
-    uint8_t      readRev(uint32_t rev, logRecord *rec);
-    void         search(uint32_t ts, logRecord *  rec,
+    LogRecordKey readKey(uint32_t pos);
+    uint8_t      readRev(uint32_t rev, LogRecord *rec);
+    void         search(uint32_t ts, LogRecord *  rec,
                 uint32_t         lowTS, uint32_t  lowRev,
                 uint32_t         highTS, uint32_t highRev);
     uint32_t findWrapPos(uint32_t highPos, uint32_t highTS, uint32_t lowPos, uint32_t lowTS);

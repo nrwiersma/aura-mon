@@ -20,21 +20,21 @@ public:
     static constexpr uint8_t MAX = 15;
 
     // Control plane devices (Core 0 writes, Core 1 reads)
-    mutex_t          infoMu{};
-    inputDeviceInfo *infos[MAX] = {};
-    bool             changed = false;
+    mutex_t           infoMu{};
+    InputDeviceInfo * infos[MAX] = {};
+    bool              changed = false;
 
     // Device actions (Core 0 writes, Core 1 reads)
     mutex_t             actionMu{};
-    deviceActionRequest actionControl{deviceActionType::None, 0};
-    deviceActionRequest actionData{deviceActionType::None, 0};
+    DeviceActionRequest actionControl{DeviceActionType::None, 0};
+    DeviceActionRequest actionData{DeviceActionType::None, 0};
 
     // Sync device data (Core 0 reads, Core 1 writes)
-    mutex_t          dataMu{};
-    inputDeviceData *data[MAX] = {};
+    mutex_t           dataMu{};
+    InputDeviceData * data[MAX] = {};
 
     // Data plane devices (Core 1 only)
-    inputDevice *devices[MAX] = {};
+    InputDevice * devices[MAX] = {};
 
     DeviceRegistry() {
         mutex_init(&infoMu);

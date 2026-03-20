@@ -17,11 +17,11 @@
 #include <ArduinoJSON.h>
 #include <Ticker.h>
 
-#include "crashhandler.h"
+#include "crash_handler.h"
 #include "logger.h"
 #include "config.h"
 #include "ethernet.h"
-#include "datalog.h"
+#include "data_log.h"
 #include "task.h"
 #include "modbus.h"
 #include "api.h"
@@ -84,11 +84,11 @@ extern WebServer server;
 
 #define MAX_DEVICES DeviceRegistry::MAX
 
-extern dataLog datalog;
+extern DataLog datalog;
 
-extern promMetrics metrics;
+extern PromMetrics metrics;
 
-extern logger msgLog;
+extern Logger msgLog;
 #define LOGE(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
 #define LOGI(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
 #define LOGD(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);

@@ -6,10 +6,10 @@
 #include "auramon.h"
 #else
 #include "../test/stubs/TestCore.h"
-#include "datalog.h"
+#include "data_log.h"
 #endif
 
-bool dataLog::begin() {
+bool DataLog::begin() {
     if (_file) return true;
 
     mutex_enter_blocking(&sdMu);
@@ -37,9 +37,9 @@ bool dataLog::begin() {
     if (_first.ts > _last.ts) {
         _wrapPos = findWrapPos(0, _first.ts, _fileSize - _recordSize, _last.ts);
         _file.seek(_wrapPos);
-        _file.read(&_first, sizeof(logRecordKey));
+        _file.read(&_first, sizeof(LogRecordKey));
         _file.seek(_wrapPos - _recordSize);
-        _file.read(&_last, sizeof(logRecordKey));
+        _file.read(&_last, sizeof(LogRecordKey));
     }
 
     if (_fileSize && _last.rev - _first.rev + 1 != _entries) {
@@ -59,54 +59,54 @@ bool dataLog::begin() {
     return true;
 }
 
-uint32_t dataLog::entries() {
+uint32_t DataLog::entries() {
     mutex_enter_blocking(&_mu);
     auto e = _entries;
     mutex_exit(&_mu);
     return e;
 }
 
-uint32_t dataLog::firstRev() {
+uint32_t DataLog::firstRev() {
     mutex_enter_blocking(&_mu);
     auto r = _first.rev;
     mutex_exit(&_mu);
     return r;
 }
 
-uint32_t dataLog::firstTS() {
+uint32_t DataLog::firstTS() {
     mutex_enter_blocking(&_mu);
     auto t = _first.ts;
     mutex_exit(&_mu);
     return t;
 }
 
-uint32_t dataLog::lastRev() {
+uint32_t DataLog::lastRev() {
     mutex_enter_blocking(&_mu);
     auto r = _last.rev;
     mutex_exit(&_mu);
     return r;
 }
 
-uint32_t dataLog::lastTS() {
+uint32_t DataLog::lastTS() {
     mutex_enter_blocking(&_mu);
     auto t = _last.ts;
     mutex_exit(&_mu);
     return t;
 }
 
-uint32_t dataLog::fileSize() {
+uint32_t DataLog::fileSize() {
     mutex_enter_blocking(&_mu);
     auto s = _fileSize;
     mutex_exit(&_mu);
     return s;
 }
 
-error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
+Error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
     ts -= ts % _interval;
 
     if (timeoutMS > 0) {
         if (!mutex_enter_timeout_ms(&_mu, timeoutMS)) {
-            return newError("mutex timeout");
+            return makeError("mutex timeout");
         }
     } else {
         mutex_enter_blocking(&_mu);
@@ -114,12 +114,12 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
 
     if (!_file) {
         mutex_exit(&_mu);
-        return newError("file not open");
+        return makeError("file not open");
     }
 
     if (_entries == 0) {
         mutex_exit(&_mu);
-        return newError("no entries");
+        return makeError("no entries");
     }
     if (ts < _first.ts) {
         // Before the beginning of the file.
@@ -148,7 +148,7 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
         for (int i = 0; i < _lastCacheSize; i++) {
             uint32_t cacheTS = _lastCache[i].ts;
             if (cacheTS == ts) {
-                rp2040.memcpyDMA(rec, &_lastCache[i], sizeof(logRecord));
+                rp2040.memcpyDMA(rec, &_lastCache[i], sizeof(LogRecord));
 
                 metrics.datalog_cache_hit.fetch_add(1, std::memory_order_relaxed);
 
@@ -181,18 +181,18 @@ error *dataLog::read(uint32_t ts, logRecord *rec, uint32_t timeoutMS) {
     return nullptr;
 }
 
-error *dataLog::write(logRecord *rec) {
+Error *DataLog::write(LogRecord *rec) {
     if (!mutex_enter_timeout_ms(&_mu, 100)) {
-        return newError("mutex timeout");
+        return makeError("mutex timeout");
     }
 
     if (!_file) {
         mutex_exit(&_mu);
-        return newError("file not open");
+        return makeError("file not open");
     }
     if (rec->ts <= _last.ts) {
         mutex_exit(&_mu);
-        return newError("timestamp not increasing");
+        return makeError("timestamp not increasing");
     }
     rec->rev = ++_last.rev;
     _last.ts = rec->ts;
@@ -211,8 +211,8 @@ error *dataLog::write(logRecord *rec) {
         _file.seek(_wrapPos);
 
         // Read the new first key.
-        auto key = logRecordKey{};
-        _file.read(&key, sizeof(logRecordKey));
+        auto key = LogRecordKey{};
+        _file.read(&key, sizeof(LogRecordKey));
         _first = key;
         mutex_exit(&sdMu);
 
@@ -243,14 +243,14 @@ error *dataLog::write(logRecord *rec) {
     return nullptr;
 }
 
-dataLog::logRecordKey dataLog::readKey(uint32_t pos) {
-    auto key = logRecordKey{};
+DataLog::LogRecordKey DataLog::readKey(uint32_t pos) {
+    auto key = LogRecordKey{};
     _file.seek(pos);
-    _file.read(&key, sizeof(logRecordKey));
+    _file.read(&key, sizeof(LogRecordKey));
     return key;
 }
 
-uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
+uint8_t DataLog::readRev(uint32_t rev, LogRecord *rec) {
     if (rev < _first.rev || rev > _last.rev) {
         return 1;
     }
@@ -272,7 +272,7 @@ uint8_t dataLog::readRev(uint32_t rev, logRecord *rec) {
     return 0;
 }
 
-void dataLog::search(const uint32_t ts, logRecord *        rec,
+void DataLog::search(const uint32_t ts, LogRecord *        rec,
                      const uint32_t lowTS, const uint32_t  lowRev,
                      const uint32_t highTS, const uint32_t highRev) {
     if (highRev - lowRev <= 1) {
@@ -290,7 +290,7 @@ void dataLog::search(const uint32_t ts, logRecord *        rec,
     search(ts, rec, lowTS, lowRev, rec->ts, rec->rev);
 }
 
-uint32_t dataLog::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const uint32_t highPos,
+uint32_t DataLog::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const uint32_t highPos,
                               const uint32_t highTS) {
     if (highPos - lowPos == _recordSize) {
         return highPos;

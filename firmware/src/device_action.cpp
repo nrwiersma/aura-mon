@@ -7,28 +7,28 @@
 uint32_t deviceActionTask(void *param) {
     (void) param;
 
-    deviceActionRequest action{deviceActionType::None, 0};
+    DeviceActionRequest action{DeviceActionType::None, 0};
 
     if (!mutex_enter_block_until(&registry.actionMu, 100)) {
         LOGE("deviceActionTask: could not acquire actionMu");
         return 200;
     }
 
-    if (registry.actionData.type == deviceActionType::None) {
+    if (registry.actionData.type == DeviceActionType::None) {
         mutex_exit(&registry.actionMu);
         return 1000;
     }
 
     action = registry.actionData;
-    registry.actionData = {deviceActionType::None, 0};
+    registry.actionData = {DeviceActionType::None, 0};
 
     mutex_exit(&registry.actionMu);
 
     switch (action.type) {
-        case deviceActionType::Locate:
+        case DeviceActionType::Locate:
             locateModbusDevice(action.address);
             break;
-        case deviceActionType::Assign:
+        case DeviceActionType::Assign:
             assignModbusAddress(action.address);
             break;
         default:

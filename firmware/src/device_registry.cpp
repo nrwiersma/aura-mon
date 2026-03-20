@@ -25,7 +25,7 @@ void DeviceRegistry::syncInfo() {
         }
 
         if (devices[i] == nullptr) {
-            devices[i] = new inputDevice(infos[i]->addr);
+            devices[i] = new InputDevice(infos[i]->addr);
         }
         devices[i]->enabled     = infos[i]->enabled;
         devices[i]->name        = infos[i]->name;
@@ -37,11 +37,11 @@ void DeviceRegistry::syncInfo() {
 // syncAction synchronizes the device action from the control plane to the data plane.
 // actionMu must be held while calling this function.
 void DeviceRegistry::syncAction() {
-    if (actionControl.type == deviceActionType::None) {
+    if (actionControl.type == DeviceActionType::None) {
         return;
     }
     actionData    = actionControl;
-    actionControl = {deviceActionType::None, 0};
+    actionControl = {DeviceActionType::None, 0};
 }
 
 // syncData synchronizes device data from the data plane into the control plane.
@@ -57,7 +57,7 @@ void DeviceRegistry::syncData() {
         }
 
         if (data[i] == nullptr) {
-            data[i] = new inputDeviceData{};
+            data[i] = new InputDeviceData{};
         }
 
         data[i]->name  = devices[i]->name;

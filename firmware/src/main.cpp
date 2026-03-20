@@ -1,3 +1,4 @@
+
 #include "auramon.h"
 
 // Disable SysTick on core 1 to free up the timer for Ticker.
@@ -12,7 +13,7 @@ volatile LEDColor ledState;
 mutex_t sdMu;
 SdFs    sd;
 
-logger msgLog;
+Logger msgLog;
 
 PCF85063A rtc;
 bool      rtcRunning = false;
@@ -22,16 +23,16 @@ NetworkConfig  netCfg;
 
 DeviceRegistry registry;
 
-dataLog             datalog;
+DataLog             datalog;
 
-promMetrics metrics;
+PromMetrics metrics;
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
 WebServer server(80);
 
-taskQueue c0Queue = {};
-taskQueue c1Queue = {};
+TaskQueue c0Queue = {};
+TaskQueue c1Queue = {};
 
 void blinkLED();
 void handleButtonPress();
@@ -83,7 +84,7 @@ void setup() {
     startTime = time(nullptr);
 
     if (auto err = loadConfig(); err) {
-        LOGI("Could not load config from SD Card: %s", err->Error());
+        LOGI("Could not load config from SD Card: %s", err->what());
     } else {
         LOGI("Config loaded from SD Card");
     }

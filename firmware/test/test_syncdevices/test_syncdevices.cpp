@@ -26,8 +26,8 @@ static void cleanupRegistry() {
 void setUp() {
     cleanupRegistry();
     registry.changed = false;
-    registry.actionControl = {deviceActionType::None, 0};
-    registry.actionData = {deviceActionType::None, 0};
+    registry.actionControl = {DeviceActionType::None, 0};
+    registry.actionData = {DeviceActionType::None, 0};
 }
 
 void tearDown() {
@@ -39,7 +39,7 @@ void tearDown() {
 // ============================================================================
 
 void test_sync_info_creates_device_for_new_info() {
-    auto *info = new inputDeviceInfo(1);
+    auto *info = new InputDeviceInfo(1);
     info->enabled = true;
     info->name = "Sensor A";
     registry.infos[0] = info;
@@ -53,7 +53,7 @@ void test_sync_info_creates_device_for_new_info() {
 }
 
 void test_sync_info_copies_calibration_and_reversed() {
-    auto *info = new inputDeviceInfo(2);
+    auto *info = new InputDeviceInfo(2);
     info->enabled = true;
     info->calibration = 1.2f;
     info->reversed = true;
@@ -70,7 +70,7 @@ void test_sync_info_copies_calibration_and_reversed() {
 // ============================================================================
 
 void test_sync_info_updates_existing_device() {
-    auto *info = new inputDeviceInfo(1);
+    auto *info = new InputDeviceInfo(1);
     info->enabled = true;
     info->name = "Old";
     registry.infos[0] = info;
@@ -90,7 +90,7 @@ void test_sync_info_updates_existing_device() {
 // ============================================================================
 
 void test_sync_info_removes_device_when_info_null() {
-    registry.devices[0] = new inputDevice(1);
+    registry.devices[0] = new InputDevice(1);
     registry.devices[0]->name = "Ghost";
     // registry.infos[0] remains nullptr.
 
@@ -100,7 +100,7 @@ void test_sync_info_removes_device_when_info_null() {
 }
 
 void test_sync_info_empty_info_name_gives_empty_device_name() {
-    auto *info = new inputDeviceInfo(3);
+    auto *info = new InputDeviceInfo(3);
     info->enabled = true;
     info->name = "";
     registry.infos[2] = info;
@@ -115,30 +115,30 @@ void test_sync_info_empty_info_name_gives_empty_device_name() {
 // ============================================================================
 
 void test_sync_action_forwards_control_to_data() {
-    registry.actionControl = {deviceActionType::Locate, 5};
+    registry.actionControl = {DeviceActionType::Locate, 5};
 
     registry.syncAction();
 
-    TEST_ASSERT_EQUAL((uint8_t) deviceActionType::Locate, (uint8_t) registry.actionData.type);
+    TEST_ASSERT_EQUAL((uint8_t) DeviceActionType::Locate, (uint8_t) registry.actionData.type);
     TEST_ASSERT_EQUAL(5, registry.actionData.address);
 }
 
 void test_sync_action_clears_control_after_forward() {
-    registry.actionControl = {deviceActionType::Assign, 3};
+    registry.actionControl = {DeviceActionType::Assign, 3};
 
     registry.syncAction();
 
-    TEST_ASSERT_EQUAL((uint8_t) deviceActionType::None, (uint8_t) registry.actionControl.type);
+    TEST_ASSERT_EQUAL((uint8_t) DeviceActionType::None, (uint8_t) registry.actionControl.type);
     TEST_ASSERT_EQUAL(0, registry.actionControl.address);
 }
 
 void test_sync_action_no_op_when_none() {
-    registry.actionControl = {deviceActionType::None, 0};
-    registry.actionData = {deviceActionType::Assign, 7};
+    registry.actionControl = {DeviceActionType::None, 0};
+    registry.actionData = {DeviceActionType::Assign, 7};
 
     registry.syncAction();
 
-    TEST_ASSERT_EQUAL((uint8_t) deviceActionType::Assign, (uint8_t) registry.actionData.type);
+    TEST_ASSERT_EQUAL((uint8_t) DeviceActionType::Assign, (uint8_t) registry.actionData.type);
     TEST_ASSERT_EQUAL(7, registry.actionData.address);
 }
 
@@ -147,7 +147,7 @@ void test_sync_action_no_op_when_none() {
 // ============================================================================
 
 void test_sync_data_creates_data_entry_for_active_device() {
-    registry.devices[0] = new inputDevice(1);
+    registry.devices[0] = new InputDevice(1);
     registry.devices[0]->current.volts = 230.0;
     registry.devices[0]->current.va = 1150.0;
     registry.devices[0]->current.watts = 1035.0;
@@ -163,7 +163,7 @@ void test_sync_data_creates_data_entry_for_active_device() {
 }
 
 void test_sync_data_amps_derived_from_va_over_volts() {
-    registry.devices[0] = new inputDevice(1);
+    registry.devices[0] = new InputDevice(1);
     registry.devices[0]->current.volts = 230.0;
     registry.devices[0]->current.va = 1150.0;
 
@@ -173,7 +173,7 @@ void test_sync_data_amps_derived_from_va_over_volts() {
 }
 
 void test_sync_data_amps_zero_when_voltage_zero() {
-    registry.devices[0] = new inputDevice(1);
+    registry.devices[0] = new InputDevice(1);
     registry.devices[0]->current.volts = 0.0;
     registry.devices[0]->current.va = 1150.0;
 
@@ -183,7 +183,7 @@ void test_sync_data_amps_zero_when_voltage_zero() {
 }
 
 void test_sync_data_pf_derived_from_watts_over_va() {
-    registry.devices[0] = new inputDevice(1);
+    registry.devices[0] = new InputDevice(1);
     registry.devices[0]->current.volts = 230.0;
     registry.devices[0]->current.va = 1000.0;
     registry.devices[0]->current.watts = 900.0;
@@ -194,7 +194,7 @@ void test_sync_data_pf_derived_from_watts_over_va() {
 }
 
 void test_sync_data_pf_zero_when_va_zero() {
-    registry.devices[0] = new inputDevice(1);
+    registry.devices[0] = new InputDevice(1);
     registry.devices[0]->current.volts = 230.0;
     registry.devices[0]->current.va = 0.0;
     registry.devices[0]->current.watts = 0.0;
@@ -205,7 +205,7 @@ void test_sync_data_pf_zero_when_va_zero() {
 }
 
 void test_sync_data_removes_data_when_device_null() {
-    registry.data[0] = new inputDeviceData{};
+    registry.data[0] = new InputDeviceData{};
     registry.data[0]->name = "Gone";
     // registry.devices[0] is nullptr.
 
@@ -215,7 +215,7 @@ void test_sync_data_removes_data_when_device_null() {
 }
 
 void test_sync_data_empty_device_name_gives_empty_data_name() {
-    registry.devices[0] = new inputDevice(1);
+    registry.devices[0] = new InputDevice(1);
     registry.devices[0]->current.volts = 230.0;
     registry.devices[0]->name = "";
 
@@ -230,7 +230,7 @@ void test_sync_data_empty_device_name_gives_empty_data_name() {
 
 void test_sync_devices_clears_changed_flag() {
     registry.changed = true;
-    auto *info = new inputDeviceInfo(1);
+    auto *info = new InputDeviceInfo(1);
     info->enabled = true;
     info->name = "X";
     registry.infos[0] = info;

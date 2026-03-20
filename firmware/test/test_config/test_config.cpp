@@ -60,7 +60,7 @@ void test_load_not_found() {
     auto err = loadConfig();
 
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("could not decode config file", err->Error());
+    TEST_ASSERT_EQUAL_STRING("could not decode config file", err->what());
 }
 
 // ============================================================================
@@ -74,7 +74,7 @@ void test_config_format_mismatch_returns_error() {
     auto err = loadConfigJSON(doc);
 
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("config format mismatch", err->Error());
+    TEST_ASSERT_EQUAL_STRING("config format mismatch", err->what());
 }
 
 void test_config_missing_format_field_is_accepted() {
@@ -94,7 +94,7 @@ void test_config_empty_doc_returns_error() {
     auto err = loadConfigJSON(doc);
 
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("config object is empty", err->Error());
+    TEST_ASSERT_EQUAL_STRING("config object is empty", err->what());
 }
 
 // ============================================================================
@@ -110,7 +110,7 @@ void test_config_invalid_ip_returns_error() {
     auto err = loadConfigJSON(doc);
 
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid ip address", err->Error());
+    TEST_ASSERT_EQUAL_STRING("invalid ip address", err->what());
 }
 
 void test_config_invalid_gateway_returns_error() {
@@ -122,7 +122,7 @@ void test_config_invalid_gateway_returns_error() {
     auto err = loadConfigJSON(doc);
 
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid gateway address", err->Error());
+    TEST_ASSERT_EQUAL_STRING("invalid gateway address", err->what());
 }
 
 void test_config_invalid_mask_returns_error() {
@@ -134,7 +134,7 @@ void test_config_invalid_mask_returns_error() {
     auto err = loadConfigJSON(doc);
 
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid ip mask", err->Error());
+    TEST_ASSERT_EQUAL_STRING("invalid ip mask", err->what());
 }
 
 void test_config_invalid_dns_returns_error() {
@@ -146,7 +146,7 @@ void test_config_invalid_dns_returns_error() {
     auto err = loadConfigJSON(doc);
 
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid dns address", err->Error());
+    TEST_ASSERT_EQUAL_STRING("invalid dns address", err->what());
 }
 
 void test_config_empty_ip_string_is_accepted() {

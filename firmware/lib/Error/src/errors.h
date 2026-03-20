@@ -4,19 +4,19 @@
 #include <cstdlib>
 #include <cstring>
 
-class error {
+class Error {
 public:
-    virtual             ~error() = default;
-    virtual const char *Error() = 0;
+    virtual             ~Error() = default;
+    virtual const char *what() = 0;
 };
 
-class errorString : public error {
+class ErrorString : public Error {
 public:
-    explicit errorString(const char *msg)
+    explicit ErrorString(const char *msg)
         : s(msg) {
     }
 
-    const char *Error() override {
+    const char *what() override {
         return s;
     }
 
@@ -24,7 +24,6 @@ private:
     const char *s;
 };
 
-inline error *newError(const char *msg) {
-    return new errorString(msg);
+inline Error *makeError(const char *msg) {
+    return new ErrorString(msg);
 }
-

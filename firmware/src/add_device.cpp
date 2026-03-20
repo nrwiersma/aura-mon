@@ -50,7 +50,7 @@ uint32_t addDeviceFromButton(void *param) {
         return 0;
     }
 
-    auto info = new inputDeviceInfo(address);
+    auto info = new InputDeviceInfo(address);
     info->enabled = true;
     char nameBuf[24];
     if (snprintf(nameBuf, sizeof(nameBuf), "Device %u", address) > 0) {
@@ -64,7 +64,7 @@ uint32_t addDeviceFromButton(void *param) {
     mutex_exit(&registry.infoMu);
 
     if (auto err = saveConfig(); err) {
-        LOGE("Failed to save config after button add: %s", err->Error());
+        LOGE("Failed to save config after button add: %s", err->what());
     }
 
     if (!mutex_enter_block_until(&registry.actionMu, 100)) {
@@ -72,7 +72,7 @@ uint32_t addDeviceFromButton(void *param) {
         return 0;
     }
 
-    registry.actionControl = {deviceActionType::Assign, address};
+    registry.actionControl = {DeviceActionType::Assign, address};
     mutex_exit(&registry.actionMu);
 
     return 0;

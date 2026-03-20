@@ -7,9 +7,9 @@
 
 #include <Arduino.h>
 
-class logger {
+class Logger {
 public:
-    logger();
+    Logger();
 
     void errorf(const char *format, ...);
     void infof(const char *format, ...);

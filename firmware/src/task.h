@@ -9,15 +9,15 @@
 #include <functional>
 #include <queue>
 
-typedef std::function<uint32_t(void *param)> taskFunction;
+using TaskFn = std::function<uint32_t(void *param)>;
 
-struct task {
-    uint32_t     nextRun;
-    uint8_t      priority;
-    taskFunction func;
-    void *       param;
+struct Task {
+    uint32_t nextRun;
+    uint8_t  priority;
+    TaskFn   func;
+    void *   param;
 
-    bool operator<(const task &o) const {
+    bool operator<(const Task &o) const {
         if (nextRun > o.nextRun) {
             return true;
         }
@@ -28,13 +28,13 @@ struct task {
     }
 };
 
-class taskQueue {
+class TaskQueue {
 public:
-    void add(taskFunction func, uint8_t priority, void *param = nullptr);
+    void add(TaskFn func, uint8_t priority, void *param = nullptr);
     bool runNextTask();
 
 private:
-    std::priority_queue<task> _tasks;
+    std::priority_queue<Task> _tasks;
 };
 
 

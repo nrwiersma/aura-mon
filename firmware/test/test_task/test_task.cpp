@@ -1,5 +1,5 @@
 //
-// Unit tests for taskQueue: priority ordering, scheduling, re-scheduling,
+// Unit tests for TaskQueue: priority ordering, scheduling, re-scheduling,
 // one-shot tasks, and the not-ready guard.
 //
 
@@ -9,10 +9,10 @@
 
 // ---- fixtures --------------------------------------------------------------
 
-static taskQueue *q;
+static TaskQueue *q;
 
 void setUp() {
-    q = new taskQueue();
+    q = new TaskQueue();
     mockMillisManual = true;
     mockMillisValue  = 0;
 }
@@ -141,7 +141,7 @@ void test_earlier_nextRun_runs_before_higher_priority() {
 
     // Reset and add both tasks fresh with explicit scheduling
     delete q;
-    q = new taskQueue();
+    q = new TaskQueue();
     order.clear();
 
     // Task A: low priority, available now

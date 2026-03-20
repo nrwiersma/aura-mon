@@ -1,16 +1,16 @@
 //
-// Unit tests for dataLog class
+// Unit tests for DataLog class
 //
 
 #include <unity.h>
 #include "../stubs/TestCore.h"
-#include "../../src/datalog.h"
+#include "../../src/data_log.h"
 
 // Test fixtures
-dataLog* testLog;
+DataLog* testLog;
 
 void setUp() {
-    testLog = new dataLog(5, 1); // 5 sec interval, 1 day max
+    testLog = new DataLog(5, 1); // 5 sec interval, 1 day max
 
     sd.fileExists = false;
     if (sd.file) {
@@ -35,12 +35,12 @@ void test_datalog_initialization() {
 void test_datalog_write_single_record() {
     TEST_ASSERT_TRUE(testLog->begin());
 
-    logRecord rec;
+    LogRecord rec;
     rec.ts = 1000;
     rec.logHours = 1.0;
     rec.hzHrs = 50.0;
 
-    error *err = testLog->write(&rec);
+    Error *err = testLog->write(&rec);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(1, testLog->entries());
     TEST_ASSERT_EQUAL(1000, testLog->lastTS());
@@ -50,12 +50,12 @@ void test_datalog_write_multiple_records() {
     TEST_ASSERT_TRUE(testLog->begin());
 
     for (int i = 0; i < 10; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.001;
         rec.hzHrs = 50.0 + i * 0.1;
 
-        error *err = testLog->write(&rec);
+        Error *err = testLog->write(&rec);
         TEST_ASSERT_NULL(err);
     }
 
@@ -68,7 +68,7 @@ void test_datalog_read_exact_match() {
 
     // Write records
     for (int i = 0; i < 10; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.001;
         rec.hzHrs = 50.0 + i * 0.1;
@@ -76,8 +76,8 @@ void test_datalog_read_exact_match() {
     }
 
     // Read exact match
-    logRecord result;
-    error *err = testLog->read(1020, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(1020, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(1020, result.ts);
     TEST_ASSERT_DOUBLE_WITHIN(0.0001, 4 * 0.001, result.logHours);
@@ -86,13 +86,13 @@ void test_datalog_read_exact_match() {
 void test_datalog_read_before_first() {
     TEST_ASSERT_TRUE(testLog->begin());
 
-    logRecord rec;
+    LogRecord rec;
     rec.ts = 1000;
     rec.logHours = 1.0;
     testLog->write(&rec);
 
-    logRecord result;
-    error *err = testLog->read(500, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(500, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(500, result.ts); // TS adjusted to requested
 }
@@ -100,13 +100,13 @@ void test_datalog_read_before_first() {
 void test_datalog_read_after_last() {
     TEST_ASSERT_TRUE(testLog->begin());
 
-    logRecord rec;
+    LogRecord rec;
     rec.ts = 1000;
     rec.logHours = 1.0;
     testLog->write(&rec);
 
-    logRecord result;
-    error *err = testLog->read(2000, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(2000, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(2000, result.ts); // TS adjusted to requested
 }
@@ -114,10 +114,10 @@ void test_datalog_read_after_last() {
 void test_datalog_read_empty_log() {
     TEST_ASSERT_TRUE(testLog->begin());
 
-    logRecord result;
-    error *err = testLog->read(1000, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(1000, &result, 0);
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("no entries", err->Error());
+    TEST_ASSERT_EQUAL_STRING("no entries", err->what());
 }
 
 // ========== Binary Search Algorithm Tests ==========
@@ -128,15 +128,15 @@ void test_datalog_search_with_gaps() {
     // Write records with gaps
     int timestamps[] = {1000, 1005, 1010, 1020, 1030, 1035, 1050, 1100};
     for (int i = 0; i < 8; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = timestamps[i];
         rec.logHours = i * 0.1;
         testLog->write(&rec);
     }
 
     // Search for timestamp in gap (should return previous)
-    logRecord result;
-    error *err = testLog->read(1015, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(1015, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(1015, result.ts);
     // Should find the record at or before 1015 (which is 1010)
@@ -148,7 +148,7 @@ void test_datalog_search_large_dataset() {
 
     // Write 100 records
     for (int i = 0; i < 100; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.01;
         rec.hzHrs = 50.0;
@@ -156,8 +156,8 @@ void test_datalog_search_large_dataset() {
     }
 
     // Search for record in the middle
-    logRecord result;
-    error *err = testLog->read(1250, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(1250, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(1250, result.ts);
     TEST_ASSERT_DOUBLE_WITHIN(0.001, 50 * 0.01, result.logHours);
@@ -167,24 +167,24 @@ void test_datalog_search_with_large_gaps() {
     TEST_ASSERT_TRUE(testLog->begin());
 
     // Write records with very large gaps
-    logRecord rec1;
+    LogRecord rec1;
     rec1.ts = 1000;
     rec1.logHours = 1.0;
     testLog->write(&rec1);
 
-    logRecord rec2;
+    LogRecord rec2;
     rec2.ts = 10000; // 9000 second gap
     rec2.logHours = 10.0;
     testLog->write(&rec2);
 
-    logRecord rec3;
+    LogRecord rec3;
     rec3.ts = 10005;
     rec3.logHours = 10.1;
     testLog->write(&rec3);
 
     // Search in the middle of the gap
-    logRecord result;
-    error *err = testLog->read(5000, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(5000, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(5000, result.ts);
     // Should return the first record's data
@@ -196,13 +196,13 @@ void test_datalog_search_with_large_gaps() {
 void test_datalog_wrap_detection() {
     // Create a log with very small max size (enough for 5 records)
     delete testLog;
-    testLog = new dataLog(5, 1.0 / 17280.0); // ~5 records
+    testLog = new DataLog(5, 1.0 / 17280.0); // ~5 records
 
     TEST_ASSERT_TRUE(testLog->begin());
 
     // Write enough records to cause wrapping
     for (int i = 0; i < 10; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
         testLog->write(&rec);
@@ -218,7 +218,7 @@ void test_datalog_findWrapPos_algorithm() {
     // Create a scenario where file has wrapped
     // Write initial records
     for (int i = 0; i < 5; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
         testLog->write(&rec);
@@ -231,13 +231,13 @@ void test_datalog_findWrapPos_algorithm() {
 
 void test_datalog_read_after_wrap() {
     delete testLog;
-    testLog = new dataLog(5, 1.0 / 17280.0);
+    testLog = new DataLog(5, 1.0 / 17280.0);
 
     TEST_ASSERT_TRUE(testLog->begin());
 
     // Write records to cause wrap
     for (int i = 0; i < 10; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
         rec.hzHrs = 50.0;
@@ -245,8 +245,8 @@ void test_datalog_read_after_wrap() {
     }
 
     // Try to read a recent record
-    logRecord result;
-    error *err = testLog->read(1045, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(1045, &result, 0);
     TEST_ASSERT_NULL(err);
 }
 
@@ -257,7 +257,7 @@ void test_datalog_lastCache_hit() {
 
     // Write recent records (within last cache size)
     for (int i = 0; i < 15; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
         rec.hzHrs = 50.0 + i;
@@ -265,8 +265,8 @@ void test_datalog_lastCache_hit() {
     }
 
     // Read a recent record (should hit lastCache)
-    logRecord result;
-    error *err = testLog->read(1070, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(1070, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(1070, result.ts);
     TEST_ASSERT_DOUBLE_WITHIN(0.01, 14 * 0.1, result.logHours);
@@ -277,20 +277,20 @@ void test_datalog_readCache_population() {
 
     // Write many records
     for (int i = 0; i < 50; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
         testLog->write(&rec);
     }
 
     // Read several records to populate read cache
-    logRecord result;
+    LogRecord result;
     testLog->read(1050, &result, 0);
     testLog->read(1100, &result, 0);
     testLog->read(1150, &result, 0);
 
     // Read again (should potentially hit cache)
-    error *err = testLog->read(1100, &result, 0);
+    Error *err = testLog->read(1100, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(1100, result.ts);
 }
@@ -300,31 +300,31 @@ void test_datalog_readCache_population() {
 void test_datalog_write_out_of_order() {
     TEST_ASSERT_TRUE(testLog->begin());
 
-    logRecord rec1;
+    LogRecord rec1;
     rec1.ts = 1000;
     rec1.logHours = 1.0;
     testLog->write(&rec1);
 
-    logRecord rec2;
+    LogRecord rec2;
     rec2.ts = 995; // Earlier than last written
     rec2.logHours = 0.9;
 
-    error *err = testLog->write(&rec2);
+    Error *err = testLog->write(&rec2);
     TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("timestamp not increasing", err->Error());
+    TEST_ASSERT_EQUAL_STRING("timestamp not increasing", err->what());
 }
 
 void test_datalog_timestamp_alignment() {
     TEST_ASSERT_TRUE(testLog->begin());
 
-    logRecord rec;
+    LogRecord rec;
     rec.ts = 1003; // Not aligned to 5-second interval
     rec.logHours = 1.0;
     testLog->write(&rec);
 
     // Read with unaligned timestamp (should align to 1000)
-    logRecord result;
-    error *err = testLog->read(1003, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(1003, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_EQUAL(1000, result.ts); // Should be aligned
 }
@@ -339,7 +339,7 @@ void test_datalog_corrupted_file_detection() {
 
     // Write invalid record structure (mismatched rev count)
     // Create two records with non-sequential revs
-    logRecord rec1, rec2;
+    LogRecord rec1, rec2;
     rec1.rev = 1;
     rec1.ts = 1000;
     rec1.logHours = 1.0;
@@ -348,9 +348,9 @@ void test_datalog_corrupted_file_detection() {
     rec2.ts = 1005;
     rec2.logHours = 1.1;
 
-    file->data->resize(sizeof(logRecord) * 2);
-    std::memcpy(&(*file->data)[0], &rec1, sizeof(logRecord));
-    std::memcpy(&(*file->data)[sizeof(logRecord)], &rec2, sizeof(logRecord));
+    file->data->resize(sizeof(LogRecord) * 2);
+    std::memcpy(&(*file->data)[0], &rec1, sizeof(LogRecord));
+    std::memcpy(&(*file->data)[sizeof(LogRecord)], &rec2, sizeof(LogRecord));
 
     sd.file = file;
 
@@ -378,7 +378,7 @@ void test_datalog_accumulative_values() {
 
     // Write records with accumulating values
     for (int i = 0; i < 5; i++) {
-        logRecord rec;
+        LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = (i + 1) * 1.0; // Accumulating
         rec.hzHrs = (i + 1) * 50.0;
@@ -388,8 +388,8 @@ void test_datalog_accumulative_values() {
     }
 
     // Read a record
-    logRecord result;
-    error *err = testLog->read(1010, &result, 0);
+    LogRecord result;
+    Error *err = testLog->read(1010, &result, 0);
     TEST_ASSERT_NULL(err);
     TEST_ASSERT_DOUBLE_WITHIN(0.01, 3.0, result.logHours);
     TEST_ASSERT_DOUBLE_WITHIN(0.01, 150.0, result.hzHrs);

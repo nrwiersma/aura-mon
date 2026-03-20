@@ -25,7 +25,7 @@ static void cleanupInfos() {
 void setUp() {
     cleanupInfos();
     registry.changed       = false;
-    registry.actionControl = {deviceActionType::None, 0};
+    registry.actionControl = {DeviceActionType::None, 0};
 }
 
 void tearDown() {
@@ -41,28 +41,28 @@ void test_find_address_all_empty_returns_one() {
 }
 
 void test_find_address_first_slot_occupied_returns_two() {
-    registry.infos[0] = new inputDeviceInfo(1);
+    registry.infos[0] = new InputDeviceInfo(1);
 
     TEST_ASSERT_EQUAL(2, findAvailableAddressLocked());
 }
 
 void test_find_address_gap_in_middle_returns_lowest_free() {
-    registry.infos[0] = new inputDeviceInfo(1);
-    registry.infos[2] = new inputDeviceInfo(3);
+    registry.infos[0] = new InputDeviceInfo(1);
+    registry.infos[2] = new InputDeviceInfo(3);
 
     TEST_ASSERT_EQUAL(2, findAvailableAddressLocked());
 }
 
 void test_find_address_all_full_returns_zero() {
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        registry.infos[i] = new inputDeviceInfo(i + 1);
+        registry.infos[i] = new InputDeviceInfo(i + 1);
     }
     TEST_ASSERT_EQUAL(0, findAvailableAddressLocked());
 }
 
 void test_find_address_skips_already_used_addr() {
-    registry.infos[0] = new inputDeviceInfo(1);
-    registry.infos[1] = new inputDeviceInfo(2);
+    registry.infos[0] = new InputDeviceInfo(1);
+    registry.infos[1] = new InputDeviceInfo(2);
 
     TEST_ASSERT_EQUAL(3, findAvailableAddressLocked());
 }
@@ -94,13 +94,13 @@ void test_add_device_sets_devices_changed_flag() {
 void test_add_device_sets_assign_action() {
     addDeviceFromButton(nullptr);
 
-    TEST_ASSERT_EQUAL((uint8_t)deviceActionType::Assign,
+    TEST_ASSERT_EQUAL((uint8_t)DeviceActionType::Assign,
                       (uint8_t)registry.actionControl.type);
     TEST_ASSERT_EQUAL(1, registry.actionControl.address);
 }
 
 void test_add_device_uses_next_free_slot() {
-    registry.infos[0] = new inputDeviceInfo(1);
+    registry.infos[0] = new InputDeviceInfo(1);
 
     addDeviceFromButton(nullptr);
 
@@ -111,7 +111,7 @@ void test_add_device_uses_next_free_slot() {
 
 void test_add_device_returns_zero_when_full() {
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        registry.infos[i] = new inputDeviceInfo(i + 1);
+        registry.infos[i] = new InputDeviceInfo(i + 1);
     }
 
     uint32_t result = addDeviceFromButton(nullptr);
@@ -121,7 +121,7 @@ void test_add_device_returns_zero_when_full() {
 }
 
 void test_add_device_action_address_matches_created_device() {
-    registry.infos[0] = new inputDeviceInfo(1);
+    registry.infos[0] = new InputDeviceInfo(1);
 
     addDeviceFromButton(nullptr);
 

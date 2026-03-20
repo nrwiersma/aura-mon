@@ -98,7 +98,7 @@ void handlePostConfig() {
     auto err = loadConfigJSON(doc);
     if (err) {
         String msg = "{\"error\":\"Invalid configuration\",\"reason\":\"";
-        msg.concat(err->Error());
+        msg.concat(err->what());
         msg.concat("\"}");
         server.send(400, contentTypeJSON, msg);
         return;
@@ -106,7 +106,7 @@ void handlePostConfig() {
 
     err = saveConfig();
     if (err) {
-        returnInternalError(err->Error());
+        returnInternalError(err->what());
         return;
     }
 
@@ -138,12 +138,12 @@ void handleDeviceAction() {
 
     const char *     actionStr = doc["action"].as<const char *>();
     uint32_t         address = doc["address"].as<uint32_t>();
-    deviceActionType action = deviceActionType::None;
+    DeviceActionType action = DeviceActionType::None;
 
     if (strcmp(actionStr, "locate") == 0) {
-        action = deviceActionType::Locate;
+        action = DeviceActionType::Locate;
     } else if (strcmp(actionStr, "assign") == 0) {
-        action = deviceActionType::Assign;
+        action = DeviceActionType::Assign;
     } else {
         server.send(400, contentTypeJSON, F("{\"error\":\"Unknown action\"}"));
         return;
@@ -159,7 +159,7 @@ void handleDeviceAction() {
         return;
     }
 
-    if (registry.actionControl.type != deviceActionType::None) {
+    if (registry.actionControl.type != DeviceActionType::None) {
         mutex_exit(&registry.actionMu);
         server.send(409, contentTypeJSON, F("{\"error\":\"Action already pending\"}"));
         return;
@@ -342,9 +342,9 @@ void handleEnergy() {
         end = lastTs;
     }
 
-    logRecord prevRec;
+    LogRecord prevRec;
     if (auto err = datalog.read(start - interval, &prevRec); err) {
-        returnInternalError(err->Error());
+        returnInternalError(err->what());
         return;
     }
 
@@ -368,7 +368,7 @@ void handleEnergy() {
     server.sendContent(header);
 
     for (uint32_t ts = start; ts <= end; ts += interval) {
-        logRecord rec;
+        LogRecord rec;
         if (auto err = datalog.read(ts, &rec); err) {
             server.sendContent(F("#error reading datalog\n"));
             server.chunkedResponseFinalize();
