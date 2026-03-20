@@ -216,7 +216,7 @@ error *DataLog::write(LogRecord *rec) {
         _first = key;
         mutex_exit(&sdMu);
 
-        metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
+        metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
 
         mutex_exit(&_mu);
         return nullptr;
@@ -237,7 +237,7 @@ error *DataLog::write(LogRecord *rec) {
         _first.ts = rec->ts;
         _first.rev = rec->rev;
     }
-    metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
+    metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
 
     mutex_exit(&_mu);
     return nullptr;
@@ -247,6 +247,9 @@ DataLog::LogRecordKey DataLog::readKey(uint32_t pos) {
     auto key = LogRecordKey{};
     _file.seek(pos);
     _file.read(&key, sizeof(LogRecordKey));
+
+    metrics.datalog_read_io.fetch_add(1, std::memory_order_relaxed);
+
     return key;
 }
 
@@ -267,7 +270,7 @@ uint8_t DataLog::readRev(uint32_t rev, LogRecord *rec) {
     _lastReadTS = rec->ts;
     _lastReadRev = rec->rev;
 
-    metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
+    metrics.datalog_read_io.fetch_add(1, std::memory_order_relaxed);
 
     return 0;
 }

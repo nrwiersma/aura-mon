@@ -186,7 +186,8 @@ void handleMetrics() {
     const uint32_t errors = metrics.modbus_errors_total.load(std::memory_order_relaxed);
     const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
-    const uint32_t datalogIO = metrics.datalog_io.load(std::memory_order_relaxed);
+    const uint32_t datalogReadIO = metrics.datalog_read_io.load(std::memory_order_relaxed);
+    const uint32_t datalogWriteIO = metrics.datalog_write_io.load(std::memory_order_relaxed);
     const uint32_t datalogWriteMsTotal = metrics.datalog_write_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t datalogCacheHit = metrics.datalog_cache_hit.load(std::memory_order_relaxed);
 
@@ -209,10 +210,16 @@ void handleMetrics() {
     response += String(avgMs / 1000.0, 6);
     response += '\n';
     response += F(
-        "# HELP auramon_datalog_io Number of IO operations performed on the datalog.\n");
-    response += F("# TYPE auramon_datalog_io counter\n");
-    response += F("auramon_datalog_io ");
-    response += String(datalogIO);
+        "# HELP auramon_datalog_read_io Number of read IO operations performed on the datalog.\n");
+    response += F("# TYPE auramon_datalog_read_io counter\n");
+    response += F("auramon_datalog_read_io ");
+    response += String(datalogReadIO);
+    response += '\n';
+    response += F(
+        "# HELP auramon_datalog_write_io Number of write IO operations performed on the datalog.\n");
+    response += F("# TYPE auramon_datalog_write_io counter\n");
+    response += F("auramon_datalog_write_io ");
+    response += String(datalogWriteIO);
     response += '\n';
     response += F(
         "# HELP auramon_datalog_write_time_seconds_total Total time spent writing datalog records in seconds.\n");
