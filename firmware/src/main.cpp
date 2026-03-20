@@ -1,3 +1,6 @@
+//
+// Created by Nicholas Wiersma on 2026/03/19.
+//
 
 #include "auramon.h"
 

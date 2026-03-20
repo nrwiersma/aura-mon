@@ -1,6 +1,5 @@
 //
-// SafeSd.cpp — SafeSdFile method definitions.
-// Template methods (SafeSdFs::with, SafeSdFs::tryWith) remain in SafeSd.h.
+// Created by Nicholas Wiersma on 2026/03/19.
 //
 
 #include "SafeSd.h"

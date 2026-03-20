@@ -1,7 +1,5 @@
 //
-// DeviceRegistry method implementations.
-//
-// These methods are mutex-free; callers hold the appropriate lock.
+// Created by Nicholas Wiersma on 2026/03/19.
 //
 
 #ifndef UNIT_TEST

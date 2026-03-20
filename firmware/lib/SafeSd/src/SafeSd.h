@@ -1,5 +1,5 @@
 //
-// SafeSd.h — Thread-safe SdFat wrapper for dual-core RP2040.
+// Created by Nicholas Wiersma on 2026/03/19.
 //
 
 #pragma once

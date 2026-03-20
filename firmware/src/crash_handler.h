@@ -1,5 +1,5 @@
 //
-// crash_handler.h – public interface of crash_handler.cpp
+// Created by Nicholas Wiersma on 2026/03/19.
 //
 
 #pragma once
