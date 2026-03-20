@@ -12,51 +12,46 @@
 bool DataLog::begin() {
     if (_file) return true;
 
-    mutex_enter_blocking(&sdMu);
-    if (!sd.exists(DATA_LOG_PATH)) {
-        String msgDir = DATA_LOG_PATH;
-        msgDir.remove(msgDir.indexOf('/', 1));
-        sd.mkdir(msgDir.c_str());
-    }
-    _file = sd.open(DATA_LOG_PATH, O_RDWR | O_CREAT);
-    if (!_file) {
-        mutex_exit(&sdMu);
-        return false;
-    }
+    return sd.with([&](auto &fs) -> bool {
+        if (!fs.exists(DATA_LOG_PATH)) {
+            String msgDir = DATA_LOG_PATH;
+            msgDir.remove(msgDir.indexOf('/', 1));
+            fs.mkdir(msgDir.c_str());
+        }
+        _file = fs.open(DATA_LOG_PATH, O_RDWR | O_CREAT);
+        if (!_file) return false;
 
-    _fileSize = _file.size();
-    _maxFileSize = max(_fileSize, _maxFileSize);
-    if (_fileSize) {
-        _first = readKey(0);
-        _last = readKey(_fileSize - _recordSize);
-        _entries = _fileSize / _recordSize;
+        _fileSize = _file.size();
+        _maxFileSize = max(_fileSize, _maxFileSize);
+        if (_fileSize) {
+            _first = readKey(0);
+            _last = readKey(_fileSize - _recordSize);
+            _entries = _fileSize / _recordSize;
 
-        LOGD("Found %d entries in log file", _entries);
-    }
+            LOGD("Found %d entries in log file", _entries);
+        }
 
-    if (_first.ts > _last.ts) {
-        _wrapPos = findWrapPos(0, _first.ts, _fileSize - _recordSize, _last.ts);
-        _file.seek(_wrapPos);
-        _file.read(&_first, sizeof(LogRecordKey));
-        _file.seek(_wrapPos - _recordSize);
-        _file.read(&_last, sizeof(LogRecordKey));
-    }
+        if (_first.ts > _last.ts) {
+            _wrapPos = findWrapPos(0, _first.ts, _fileSize - _recordSize, _last.ts);
+            _file.seek(_wrapPos);
+            _file.read(&_first, sizeof(LogRecordKey));
+            _file.seek(_wrapPos - _recordSize);
+            _file.read(&_last, sizeof(LogRecordKey));
+        }
 
-    if (_fileSize && _last.rev - _first.rev + 1 != _entries) {
-        _file.close();
-        sd.remove(DATA_LOG_PATH);
-        mutex_exit(&sdMu);
+        if (_fileSize && _last.rev - _first.rev + 1 != _entries) {
+            _file.close();
+            fs.remove(DATA_LOG_PATH);
 
-        LOGE("log: File %s damaged.\r\n", DATA_LOG_PATH);
-        LOGE("log: Deleting %s and restarting.\r\n", DATA_LOG_PATH);
+            LOGE("log: File %s damaged.\r\n", DATA_LOG_PATH);
+            LOGE("log: Deleting %s and restarting.\r\n", DATA_LOG_PATH);
 
-        mutex_enter_blocking(&sdMu);
+            rp2040.reboot();
+            return false; // unreachable
+        }
 
-        rp2040.reboot();
-    }
-
-    mutex_exit(&sdMu);
-    return true;
+        return true;
+    });
 }
 
 uint32_t DataLog::entries() {
@@ -203,18 +198,18 @@ std::expected<void, String> DataLog::write(LogRecord *rec) {
 
     if (_wrapPos || _fileSize >= _maxFileSize) {
         // The file has/should wrap.
-        mutex_enter_blocking(&sdMu);
-        _file.seek(_wrapPos);
-        _wrapPos = (_wrapPos + _recordSize) % _fileSize;
-        _file.write(rec, _recordSize);
-        _file.flush();
-        _file.seek(_wrapPos);
+        sd.with([&](auto &) {
+            _file.seek(_wrapPos);
+            _wrapPos = (_wrapPos + _recordSize) % _fileSize;
+            _file.write(rec, _recordSize);
+            _file.flush();
+            _file.seek(_wrapPos);
 
-        // Read the new first key.
-        auto key = LogRecordKey{};
-        _file.read(&key, sizeof(LogRecordKey));
-        _first = key;
-        mutex_exit(&sdMu);
+            // Read the new first key.
+            auto key = LogRecordKey{};
+            _file.read(&key, sizeof(LogRecordKey));
+            _first = key;
+        });
 
         metrics.datalog_io.fetch_add(1, std::memory_order_relaxed);
 
@@ -223,11 +218,11 @@ std::expected<void, String> DataLog::write(LogRecord *rec) {
     }
 
     // No wrap, just write at the end of the file.
-    mutex_enter_blocking(&sdMu);
-    _file.seek(_fileSize);
-    _file.write(rec, _recordSize);
-    _file.flush();
-    mutex_exit(&sdMu);
+    sd.with([&](auto &) {
+        _file.seek(_fileSize);
+        _file.write(rec, _recordSize);
+        _file.flush();
+    });
 
     _fileSize += _recordSize;
     _entries++;
@@ -257,12 +252,11 @@ uint8_t DataLog::readRev(uint32_t rev, LogRecord *rec) {
 
     uint32_t pos = ((rev - _first.rev) * _recordSize + _wrapPos) % _fileSize;
 
-    if (!mutex_enter_timeout_ms(&sdMu, 200)) {
-        return 1;
-    }
-    _file.seek(pos);
-    _file.read(rec, _recordSize);
-    mutex_exit(&sdMu);
+    auto result = sd.tryWith(200, [&](auto &) {
+        _file.seek(pos);
+        _file.read(rec, _recordSize);
+    });
+    if (!result) return 1;
 
     _lastReadTS = rec->ts;
     _lastReadRev = rec->rev;

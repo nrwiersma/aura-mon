@@ -7,7 +7,7 @@
 
 #include <Arduino.h>
 #include <pico/mutex.h>
-#include <SdFat.h>
+#include <SafeSd.h>
 #include <W5500lwIP.h>
 #include <ModbusRTUMaster.h>
 #include <Wire.h>
@@ -74,8 +74,7 @@ extern NetworkConfig  netCfg;
 extern PCF85063A rtc;
 extern bool      rtcRunning;
 
-extern mutex_t sdMu;
-extern SdFs    sd;
+extern SafeSdFs sd;
 
 extern ModbusRTUMaster modbus;
 

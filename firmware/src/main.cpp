@@ -10,8 +10,7 @@ time_t            startTime;
 Ticker            ledTimer;
 volatile LEDColor ledState;
 
-mutex_t sdMu;
-SdFs    sd;
+SafeSdFs sd;
 
 Logger msgLog;
 
@@ -50,7 +49,6 @@ void setup() {
 
     LOGD("Booting");
 
-    mutex_init(&sdMu);
     if (!sd.begin(SD_CONFIG)) {
         Serial.println("Could not initialize SD Card. Halting");
         sd.initErrorPrint(&Serial);

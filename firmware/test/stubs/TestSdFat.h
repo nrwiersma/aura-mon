@@ -142,5 +142,129 @@ public:
     }
 };
 
-inline mutex_t sdMu;
-inline MockSD sd;
+
+// ============================================================
+// SafeSd test stubs
+//
+// These provide SafeSdFile and SafeSdFs backed by MockSD for the
+// native test environment. No real locking is performed — tests are
+// single-threaded, and recursive_mutex_t is already a no-op stub.
+//
+// SafeSdFs exposes reference members (file, fileExists, directories)
+// that alias the internal MockSD, so existing test setUp()/tearDown()
+// code that accesses sd.file, sd.fileExists, sd.directories compiles
+// unchanged once sd is declared as SafeSdFs.
+// ============================================================
+
+#include <expected>
+#include <type_traits>
+
+// Types used by the production SafeSd.h that are provided by SdFat on
+// hardware but must be stubbed for native builds.
+using oflag_t = int;
+struct SdioConfig {};
+struct SdCard {
+    uint8_t status()    { return 1; }
+    uint8_t errorCode() { return 0; }
+};
+
+// ---- Forward declaration ---------------------------------------------------
+class SafeSdFs;
+
+// ---- SafeSdFile ------------------------------------------------------------
+
+class SafeSdFile {
+public:
+    SafeSdFile() = default;
+
+    SafeSdFile(SafeSdFile &&other) noexcept
+        : _file(std::move(other._file)) {}
+
+    SafeSdFile &operator=(SafeSdFile &&other) noexcept {
+        _file = std::move(other._file);
+        return *this;
+    }
+
+    SafeSdFile(const SafeSdFile &)            = delete;
+    SafeSdFile &operator=(const SafeSdFile &) = delete;
+
+    bool     isOpen()   const { return _file.isOpen(); }
+    explicit operator bool() const { return isOpen(); }
+
+    uint32_t size()                       { return _file.size(); }
+    bool     seek(uint32_t pos)           { return _file.seek(pos); }
+    int      read()                       { return _file.read(); }
+    size_t   read(void *buf, size_t sz)   { return _file.read(buf, sz); }
+    size_t   write(const void *buf, size_t sz) { return _file.write(buf, sz); }
+    size_t   write(const char *str)       { return _file.write(str); }
+    bool     flush()                      { return _file.flush(); }
+    void     close()                      { _file.close(); }
+    bool     isDirectory()                { return false; }
+    void     truncate()                   { _file.truncate(); }
+
+private:
+    friend class SafeSdFs;
+    explicit SafeSdFile(FsFile f) : _file(std::move(f)) {}
+
+    FsFile _file;
+};
+
+// ---- SafeSdFs --------------------------------------------------------------
+
+class SafeSdFs {
+public:
+    MockSD mock;
+
+    // Reference members — let existing test code use sd.file,
+    // sd.fileExists, sd.directories without modification.
+    FsFile                  *&file;
+    bool                     &fileExists;
+    std::vector<std::string> &directories;
+
+    SafeSdFs()
+        : mock(),
+          file(mock.file),
+          fileExists(mock.fileExists),
+          directories(mock.directories) {}
+
+    // SafeSdFs is not copyable (has reference members).
+    SafeSdFs(const SafeSdFs &)            = delete;
+    SafeSdFs &operator=(const SafeSdFs &) = delete;
+
+    bool begin(SdioConfig) { return true; }
+    void lockForever() {}
+
+    bool       exists(const char *p)                { return mock.exists(p); }
+    bool       mkdir(const char *p)                 { return mock.mkdir(p); }
+    bool       remove(const char *p)                { return mock.remove(p); }
+    bool       rename(const char *a, const char *b) { return mock.rename(a, b); }
+    SafeSdFile open(const char *p, oflag_t m)       { return SafeSdFile(mock.open(p, static_cast<int>(m))); }
+    SdCard    *card()                               { return &_card; }
+
+    template<typename F>
+    auto with(F &&func) -> std::invoke_result_t<F, SafeSdFs &> {
+        if constexpr (std::is_void_v<std::invoke_result_t<F, SafeSdFs &>>) {
+            func(*this);
+        } else {
+            return func(*this);
+        }
+    }
+
+    template<typename F>
+    auto tryWith(uint32_t, F &&func)
+        -> std::expected<std::invoke_result_t<F, SafeSdFs &>, String> {
+        using Ret = std::invoke_result_t<F, SafeSdFs &>;
+        if constexpr (std::is_void_v<Ret>) {
+            func(*this);
+            return {};
+        } else {
+            return func(*this);
+        }
+    }
+
+private:
+    SdCard _card;
+};
+
+inline SafeSdFs sd;
+

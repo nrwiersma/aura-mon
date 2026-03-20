@@ -64,7 +64,7 @@ private:
 
     mutex_t _mu{};
 
-    FsFile   _file;
+    SafeSdFile _file;
     uint16_t _interval;
     uint16_t _recordSize;
 

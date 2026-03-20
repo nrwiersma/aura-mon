@@ -113,6 +113,10 @@ public:
     bool concat(const char *cstr)  { if (cstr) s += cstr; return true; }
     bool concat(char c)            { s += c; return true; }
 
+    // Required by ArduinoJSON's serializeJson(doc, String&)
+    size_t write(uint8_t c)                        { s += static_cast<char>(c); return 1; }
+    size_t write(const uint8_t *buf, size_t size)  { s.append(reinterpret_cast<const char *>(buf), size); return size; }
+
     String &operator+=(const String &rhs) { s += rhs.s; return *this; }
     String &operator+=(const char *cstr)  { if (cstr) s += cstr; return *this; }
     String &operator+=(char c)            { s += c; return *this; }
@@ -185,11 +189,24 @@ inline bool mutex_enter_timeout_ms(mutex_t *mtx, uint32_t timeout) {
     return true;
 }
 
+// Recursive mutex stubs — tests are single-threaded so all ops are no-ops.
+// The count field lets tests assert nesting depth if needed.
+typedef struct { int count; } recursive_mutex_t;
+
+inline void recursive_mutex_init(recursive_mutex_t *m)                       { m->count = 0; }
+inline void recursive_mutex_enter_blocking(recursive_mutex_t *m)             { m->count++; }
+inline void recursive_mutex_exit(recursive_mutex_t *m)                       { m->count--; }
+inline bool recursive_mutex_enter_timeout_ms(recursive_mutex_t *m, uint32_t) { m->count++; return true; }
+
 // Mock file operations flags
 #define O_RDONLY 0x01
-#define O_RDWR 0x02
-#define O_CREAT 0x0100
-#define O_TRUNC 0x0200
+#define O_RDWR   0x02
+#define O_WRONLY 0x04
+#define O_READ   O_RDONLY
+#define O_WRITE  O_WRONLY
+#define O_CREAT  0x0100
+#define O_TRUNC  0x0200
+#define O_APPEND 0x0400
 
 // Utility functions
 template<typename T>

@@ -7,10 +7,13 @@
 uint32_t syncState(void *param) {
     (void) param;
 
-    mutex_enter_blocking(&sdMu);
-    auto sdPresent = sd.card()->status() != 0 && sd.card()->errorCode() == 0;
-    auto sdError = sd.card()->errorCode();
-    mutex_exit(&sdMu);
+    bool    sdPresent = false;
+    uint8_t sdError   = 0;
+    sd.with([&](auto &fs) {
+        auto *c   = fs.card();
+        sdPresent = c->status() != 0 && c->errorCode() == 0;
+        sdError   = c->errorCode();
+    });
 
     if (!sdPresent) {
         ledState = LEDColor::Red;

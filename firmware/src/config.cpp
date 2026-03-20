@@ -137,23 +137,23 @@ void populateDevicesJson(JsonArray devicesArray) {
 }
 
 std::expected<void, String> loadConfig() {
-    mutex_enter_blocking(&sdMu);
-    FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
+    SafeSdFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
     if (!file) {
-        // Fall back to the last successful temp file.
         file = sd.open(CONFIG_LOG_TMP_PATH, O_RDONLY);
         if (!file) {
-            mutex_exit(&sdMu);
             return std::unexpected<String>("could not open config file");
         }
     }
 
-    JsonDocument doc;
-
-    auto err = deserializeJson(doc, file);
-
+    const uint32_t size = file.size();
+    auto          *buf  = new char[size + 1];
+    file.read(buf, size);
+    buf[size] = '\0';
     file.close();
-    mutex_exit(&sdMu);
+
+    JsonDocument doc;
+    auto err = deserializeJson(doc, buf, size);
+    delete[] buf;
 
     if (err) {
         return std::unexpected<String>("could not decode config file");
@@ -162,47 +162,41 @@ std::expected<void, String> loadConfig() {
     return loadConfigJSON(doc);
 }
 
-void ensureConfigDirectoryLocked() {
-    const char *path = CONFIG_LOG_PATH;
-    const char *slash = strrchr(path, '/');
-    if (!slash) {
-        return;
-    }
-    char dir[64];
-    auto len = static_cast<size_t>(slash - path);
-    if (len >= sizeof(dir)) {
-        len = sizeof(dir) - 1;
-    }
-    memcpy(dir, path, len);
-    dir[len] = '\0';
-    sd.mkdir(dir);
-}
-
 std::expected<void, String> saveConfig() {
     JsonDocument doc;
     saveConfigJSON(doc);
 
-    mutex_enter_blocking(&sdMu);
-    ensureConfigDirectoryLocked();
-    FsFile file = sd.open(CONFIG_LOG_TMP_PATH, O_RDWR | O_CREAT | O_TRUNC);
-    if (!file) {
-        mutex_exit(&sdMu);
-        return std::unexpected<String>("could not create config file");
-    }
-    if (serializeJson(doc, file) == 0) {
+    String json;
+    serializeJson(doc, json);
+
+    return sd.with([&](auto &fs) -> std::expected<void, String> {
+        const char *path = CONFIG_LOG_PATH;
+        const char *slash = strrchr(path, '/');
+        if (slash) {
+            char dir[64];
+            auto len = static_cast<size_t>(slash - path);
+            if (len >= sizeof(dir)) len = sizeof(dir) - 1;
+            memcpy(dir, path, len);
+            dir[len] = '\0';
+            fs.mkdir(dir);
+        }
+
+        SafeSdFile file = fs.open(CONFIG_LOG_TMP_PATH, O_RDWR | O_CREAT | O_TRUNC);
+        if (!file)
+            return std::unexpected<String>("could not create config file");
+        if (file.write(json.c_str(), json.length()) == 0) {
+            file.close();
+            return std::unexpected<String>("could not write config file");
+        }
+        file.flush();
         file.close();
-        mutex_exit(&sdMu);
-        return std::unexpected<String>("could not write config file");
-    }
-    file.flush();
-    file.close();
-    sd.remove(CONFIG_LOG_PATH);
-    if (!sd.rename(CONFIG_LOG_TMP_PATH, CONFIG_LOG_PATH)) {
-        mutex_exit(&sdMu);
-        return std::unexpected<String>("could not rename config file");
-    }
-    mutex_exit(&sdMu);
-    return {};
+
+        fs.remove(CONFIG_LOG_PATH);
+        if (!fs.rename(CONFIG_LOG_TMP_PATH, CONFIG_LOG_PATH))
+            return std::unexpected<String>("could not rename config file");
+
+        return {};
+    });
 }
 
 std::expected<void, String> loadConfigJSON(const JsonDocument &doc) {
