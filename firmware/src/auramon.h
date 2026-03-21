@@ -17,11 +17,11 @@
 #include <ArduinoJSON.h>
 #include <Ticker.h>
 
-#include "crashhandler.h"
+#include "crash_handler.h"
 #include "logger.h"
 #include "config.h"
 #include "ethernet.h"
-#include "datalog.h"
+#include "data_log.h"
 #include "task.h"
 #include "modbus.h"
 #include "api.h"
@@ -81,16 +81,16 @@ extern WebServer server;
 
 #define MAX_DEVICES 15
 extern mutex_t             deviceDataMu;
-extern inputDeviceData *   deviceData[MAX_DEVICES];
+extern InputDeviceData *   deviceData[MAX_DEVICES];
 extern mutex_t             deviceActionMu;
-extern deviceActionRequest deviceActionControl;
-extern deviceActionRequest deviceActionData;
+extern DeviceActionRequest deviceActionControl;
+extern DeviceActionRequest deviceActionData;
 extern mutex_t             deviceInfoMu;
 extern volatile bool       devicesChanged;
-extern inputDeviceInfo *   deviceInfos[MAX_DEVICES];
-extern inputDevice *       devices[MAX_DEVICES];
+extern InputDeviceInfo *   deviceInfos[MAX_DEVICES];
+extern InputDevice *       devices[MAX_DEVICES];
 
-extern dataLog datalog;
+extern DataLog datalog;
 
 extern promMetrics metrics;
 

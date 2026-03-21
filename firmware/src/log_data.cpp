@@ -14,7 +14,7 @@ uint32_t logData(void *param) {
     (void) param;
 
     static bool   running;
-    static auto * rec = new logRecord;
+    static auto * rec = new LogRecord;
     static double hzHrs = 0;
     static double voltHrs[15] = {};
     static double wattHrs[15] = {};

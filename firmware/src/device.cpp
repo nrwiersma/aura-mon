@@ -9,14 +9,14 @@
 #include "device.h"
 #endif
 
-void inputDevice::reset() {
+void InputDevice::reset() {
     enabled = false;
     name = "";
     calibration = 0;
     reversed = false;
 }
 
-void inputDevice::accumulate(uint32_t now) {
+void InputDevice::accumulate(uint32_t now) {
     if (now <= current.ts) {
         return;
     }
@@ -28,7 +28,7 @@ void inputDevice::accumulate(uint32_t now) {
     current.ts = now;
 }
 
-void inputDevice::setEnergy(double volts, double watts, double va, double hz) {
+void InputDevice::setEnergy(double volts, double watts, double va, double hz) {
     current.volts = volts;
     current.watts = watts;
     current.va = va;

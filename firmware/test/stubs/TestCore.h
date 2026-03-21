@@ -28,17 +28,17 @@
 // ---- globals ---------------------------------------------------------------
 inline mutex_t deviceInfoMu;
 inline volatile bool devicesChanged = false;
-inline inputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
+inline InputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
 
 inline mutex_t deviceMu;
-inline inputDevice *devices[MAX_DEVICES] = {};
+inline InputDevice *devices[MAX_DEVICES] = {};
 
 inline mutex_t deviceDataMu;
-inline inputDeviceData *deviceData[MAX_DEVICES] = {};
+inline InputDeviceData *deviceData[MAX_DEVICES] = {};
 
 inline mutex_t deviceActionMu;
-inline deviceActionRequest deviceActionControl = {deviceActionType::None, 0};
-inline deviceActionRequest deviceActionData    = {deviceActionType::None, 0};
+inline DeviceActionRequest deviceActionControl = {DeviceActionType::None, 0};
+inline DeviceActionRequest deviceActionData    = {DeviceActionType::None, 0};
 
 inline NetworkConfig netCfg;
 inline promMetrics   metrics;
@@ -56,4 +56,3 @@ inline bool mutex_enter_block_until(mutex_t *mtx, uint32_t /*timeout_ms*/) {
     (void) mtx;
     return true;
 }
-

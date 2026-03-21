@@ -7,7 +7,7 @@
 uint32_t deviceActionTask(void *param) {
     (void) param;
 
-    deviceActionRequest action{deviceActionType::None, 0};
+    DeviceActionRequest action{DeviceActionType::None, 0};
     bool                hasAction = false;
 
     if (!mutex_enter_block_until(&deviceActionMu, 100)) {
@@ -15,22 +15,22 @@ uint32_t deviceActionTask(void *param) {
         return 200;
     }
 
-    if (deviceActionData.type == deviceActionType::None) {
+    if (deviceActionData.type == DeviceActionType::None) {
         mutex_exit(&deviceActionMu);
         return 1000;
     }
 
     action = deviceActionData;
-    deviceActionData = {deviceActionType::None, 0};
+    deviceActionData = {DeviceActionType::None, 0};
     hasAction = true;
 
     mutex_exit(&deviceActionMu);
 
     switch (action.type) {
-        case deviceActionType::Locate:
+        case DeviceActionType::Locate:
             locateModbusDevice(action.address);
             break;
-        case deviceActionType::Assign:
+        case DeviceActionType::Assign:
             assignModbusAddress(action.address);
             break;
         default:

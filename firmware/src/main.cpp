@@ -21,15 +21,15 @@ Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
 NetworkConfig  netCfg;
 
 mutex_t             deviceDataMu;
-inputDeviceData *   deviceData[MAX_DEVICES] = {};
+InputDeviceData *   deviceData[MAX_DEVICES] = {};
 mutex_t             deviceActionMu;
-deviceActionRequest deviceActionControl = {deviceActionType::None, 0};
-deviceActionRequest deviceActionData = {deviceActionType::None, 0};
+DeviceActionRequest deviceActionControl = {DeviceActionType::None, 0};
+DeviceActionRequest deviceActionData = {DeviceActionType::None, 0};
 mutex_t             deviceInfoMu;
 volatile bool       devicesChanged;
-inputDeviceInfo *   deviceInfos[MAX_DEVICES] = {};
-inputDevice *       devices[MAX_DEVICES] = {};
-dataLog             datalog;
+InputDeviceInfo *   deviceInfos[MAX_DEVICES] = {};
+InputDevice *       devices[MAX_DEVICES] = {};
+DataLog             datalog;
 
 promMetrics metrics;
 

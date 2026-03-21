@@ -28,7 +28,7 @@ static void cleanupDeviceInfos() {
 void setUp() {
     cleanupDeviceInfos();
     devicesChanged = false;
-    deviceActionControl = {deviceActionType::None, 0};
+    deviceActionControl = {DeviceActionType::None, 0};
 }
 
 void tearDown() {
@@ -44,14 +44,14 @@ void test_find_address_all_empty_returns_one() {
 }
 
 void test_find_address_first_slot_occupied_returns_two() {
-    deviceInfos[0] = new inputDeviceInfo(1);
+    deviceInfos[0] = new InputDeviceInfo(1);
 
     TEST_ASSERT_EQUAL(2, findAvailableAddressLocked());
 }
 
 void test_find_address_gap_in_middle_returns_lowest_free() {
-    deviceInfos[0] = new inputDeviceInfo(1); // addr 1 used
-    deviceInfos[2] = new inputDeviceInfo(3); // addr 3 used (slot 1 free)
+    deviceInfos[0] = new InputDeviceInfo(1); // addr 1 used
+    deviceInfos[2] = new InputDeviceInfo(3); // addr 3 used (slot 1 free)
 
     // Slot 1 (index 1) is free, addr would be 2.
     TEST_ASSERT_EQUAL(2, findAvailableAddressLocked());
@@ -59,15 +59,15 @@ void test_find_address_gap_in_middle_returns_lowest_free() {
 
 void test_find_address_all_full_returns_zero() {
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        deviceInfos[i] = new inputDeviceInfo(i + 1);
+        deviceInfos[i] = new InputDeviceInfo(i + 1);
     }
     TEST_ASSERT_EQUAL(0, findAvailableAddressLocked());
 }
 
 void test_find_address_skips_already_used_addr() {
     // Populate addresses 1 and 2; expect 3.
-    deviceInfos[0] = new inputDeviceInfo(1);
-    deviceInfos[1] = new inputDeviceInfo(2);
+    deviceInfos[0] = new InputDeviceInfo(1);
+    deviceInfos[1] = new InputDeviceInfo(2);
 
     TEST_ASSERT_EQUAL(3, findAvailableAddressLocked());
 }
@@ -100,14 +100,14 @@ void test_add_device_sets_devices_changed_flag() {
 void test_add_device_sets_assign_action() {
     addDeviceFromButton(nullptr);
 
-    TEST_ASSERT_EQUAL((uint8_t)deviceActionType::Assign,
+    TEST_ASSERT_EQUAL((uint8_t)DeviceActionType::Assign,
                       (uint8_t)deviceActionControl.type);
     TEST_ASSERT_EQUAL(1, deviceActionControl.address);
 }
 
 void test_add_device_uses_next_free_slot() {
     // Pre-occupy slot 0.
-    deviceInfos[0] = new inputDeviceInfo(1);
+    deviceInfos[0] = new InputDeviceInfo(1);
 
     addDeviceFromButton(nullptr);
 
@@ -118,7 +118,7 @@ void test_add_device_uses_next_free_slot() {
 
 void test_add_device_returns_zero_when_full() {
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        deviceInfos[i] = new inputDeviceInfo(i + 1);
+        deviceInfos[i] = new InputDeviceInfo(i + 1);
     }
 
     uint32_t result = addDeviceFromButton(nullptr);
@@ -130,7 +130,7 @@ void test_add_device_returns_zero_when_full() {
 
 void test_add_device_action_address_matches_created_device() {
     // Pre-occupy slot 0 so the new device gets address 2.
-    deviceInfos[0] = new inputDeviceInfo(1);
+    deviceInfos[0] = new InputDeviceInfo(1);
 
     addDeviceFromButton(nullptr);
 

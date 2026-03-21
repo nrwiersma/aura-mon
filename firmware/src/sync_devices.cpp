@@ -23,7 +23,7 @@ void syncDeviceInfo() {
 
         if (deviceInfos[i] != nullptr) {
             if (devices[i] == nullptr) {
-                devices[i] = new inputDevice(deviceInfos[i]->addr);
+                devices[i] = new InputDevice(deviceInfos[i]->addr);
             }
             devices[i]->enabled = deviceInfos[i]->enabled;
             devices[i]->name = deviceInfos[i]->name;
@@ -34,12 +34,12 @@ void syncDeviceInfo() {
 }
 
 void syncDeviceAction() {
-    if (deviceActionControl.type == deviceActionType::None) {
+    if (deviceActionControl.type == DeviceActionType::None) {
         return;
     }
 
     deviceActionData = deviceActionControl;
-    deviceActionControl = {deviceActionType::None, 0};
+    deviceActionControl = {DeviceActionType::None, 0};
 }
 
 void syncDeviceData() {
@@ -53,7 +53,7 @@ void syncDeviceData() {
         }
 
         if (deviceData[i] == nullptr) {
-            deviceData[i] = new inputDeviceData{};
+            deviceData[i] = new InputDeviceData{};
         }
 
         deviceData[i]->name = devices[i]->name;

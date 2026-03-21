@@ -70,13 +70,13 @@ void writeNetworkConfigToJson(JsonObject obj) {
     obj["dns"] = netCfg.dns.c_str();
 }
 
-inputDeviceInfo *ensureDeviceInfo(uint8_t address) {
+InputDeviceInfo *ensureDeviceInfo(uint8_t address) {
     if (address == 0 || address > MAX_DEVICES) {
         return nullptr;
     }
     const size_t idx = address - 1;
     if (!deviceInfos[idx]) {
-        deviceInfos[idx] = new inputDeviceInfo(address);
+        deviceInfos[idx] = new InputDeviceInfo(address);
     }
     return deviceInfos[idx];
 }
@@ -103,7 +103,7 @@ void applyDevicesFromJson(JsonArrayConst devicesArr) {
             continue;
         }
         uint8_t          addr = entry["address"].is<int>() ? entry["address"].as<uint8_t>() : 0;
-        inputDeviceInfo *info = ensureDeviceInfo(addr);
+        InputDeviceInfo *info = ensureDeviceInfo(addr);
         if (!info) {
             continue;
         }
@@ -121,7 +121,7 @@ void populateDevicesJson(JsonArray devicesArray) {
     mutex_enter_blocking(&deviceInfoMu);
 
     for (int i = 0; i < MAX_DEVICES; i++) {
-        inputDeviceInfo *info = deviceInfos[i];
+        InputDeviceInfo *info = deviceInfos[i];
         if (!info || !info->enabled) {
             continue;
         }

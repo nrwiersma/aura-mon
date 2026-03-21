@@ -50,7 +50,7 @@ uint32_t addDeviceFromButton(void *param) {
         return 0;
     }
 
-    auto info = new inputDeviceInfo(address);
+    auto info = new InputDeviceInfo(address);
     info->enabled = true;
     char nameBuf[24];
     if (snprintf(nameBuf, sizeof(nameBuf), "Device %u", address) > 0) {
@@ -72,7 +72,7 @@ uint32_t addDeviceFromButton(void *param) {
         return 0;
     }
 
-    deviceActionControl = {deviceActionType::Assign, address};
+    deviceActionControl = {DeviceActionType::Assign, address};
     mutex_exit(&deviceActionMu);
 
     return 0;
