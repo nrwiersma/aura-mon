@@ -64,7 +64,7 @@ void restartReasonLog() {
 
 static inline bool is_code_addr(uint32_t val) {
     uint32_t cleared = val & ~1u; // Clear Thumb bit
-    return cleared >= XIP_BASE && cleared < FLASH_SCAN_END;
+    return cleared >= XIP_BASE && cleared < FLASH_SCAN_END && cleared < 0x80000000u;
 }
 
 // Check that the pointer falls within SRAM and that the basic exception frame
@@ -143,9 +143,14 @@ extern "C" __attribute__((naked,used)) void isr_hardfault() {
         "tst    r0, r1              \n"// test bit 2
         "beq    1f                  \n"// 0 -> MSP was active
         "mrs    r0, psp             \n"// 1 -> PSP was active
-        "b      hard_fault_handler_c\n"
+        "b      2f                  \n"
         "1:                         \n"
         "mrs    r0, msp             \n"
-        "b      hard_fault_handler_c\n"
-    );
+        "2:                         \n"
+        "ldr    r2, 3f              \n"
+        "bx     r2                  \n"
+        ".align 2                   \n"
+        "3: .word %c0               \n" // Literal pool: address of C handler
+        :
+        : "i"(hard_fault_handler_c));
 }
