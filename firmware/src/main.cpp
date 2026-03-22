@@ -187,7 +187,9 @@ void loop1() {
             delay(10);
         }
 
-        rp2040.wdt_reset();
+        if (!crashDetected()) {
+            rp2040.wdt_reset();
+        }
     }
 }
 

@@ -39,7 +39,9 @@ void collect() {
         Bucket curr = dev->current;
         LOGD("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms", dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
 
-        rp2040.wdt_reset();
+        if (!crashDetected()) {
+            rp2040.wdt_reset();
+        }
     }
 
     const unsigned long tookTotal = millis() - startTotal;

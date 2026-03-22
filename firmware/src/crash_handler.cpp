@@ -2,16 +2,11 @@
 // Created by Nicholas Wiersma on 2026/03/17.
 //
 
-#include <inttypes.h>
-#include <stdio.h>
-#include <stdint.h>
 #include <hardware/watchdog.h>
 #include <hardware/structs/watchdog.h>
 #include "crash_handler.h"
 #include "auramon.h"
 
-// Sentinel written to scratch[0] so the firmware can detect a crash reboot.
-static constexpr uint32_t CRASH_MAGIC = 0xDEADC0DEu;
 
 static constexpr uint32_t FLASH_SCAN_END = XIP_BASE + 0x400000; // 4MB
 

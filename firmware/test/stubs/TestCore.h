@@ -43,6 +43,8 @@ inline DeviceActionRequest deviceActionData    = {DeviceActionType::None, 0};
 inline NetworkConfig netCfg;
 inline promMetrics   metrics;
 
+inline bool crashDetected() { return false; }
+
 // ---- ModbusRTUMaster stub (used by collect.cpp) ----------------------------
 struct ModbusRTUMaster {
     uint8_t readInputRegisters(uint8_t /*id*/, uint16_t /*addr*/,
