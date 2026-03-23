@@ -16,7 +16,7 @@ volatile LEDColor ledState;
 mutex_t sdMu;
 SdFs    sd;
 
-logger msgLog;
+Logger msgLog;
 
 PCF85063A rtc;
 bool      rtcRunning = false;

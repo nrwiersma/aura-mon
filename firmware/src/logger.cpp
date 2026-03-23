@@ -11,39 +11,24 @@
 
 const char *lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
 
-logger::logger() : _restart(true) {
+Logger::Logger() : _restart(true) {
     Serial.begin(115200);
 }
 
-void logger::errorf(const char *format, ...) {
-    va_list arg;
-    va_start(arg, format);
-    char temp[64];
-    char* buffer = temp;
-    int n = vsnprintf(temp, sizeof(temp), format, arg);
-    va_end(arg);
-    if (n < 0) return;
-    size_t len = static_cast<size_t>(n);
-    if (len > sizeof(temp) - 1) {
-        buffer = new char[len + 1];
-        va_start(arg, format);
-        vsnprintf(buffer, len + 1, format, arg);
-        va_end(arg);
-    }
-    write(ERROR, buffer, len);
-    if (buffer != temp) {
-        delete[] buffer;
-    }
-}
+void Logger::printf(const LVL lvl, const char *format, ...) {
+    char    temp[64];
+    int     n;
 
-void logger::infof(const char *format, ...) {
     va_list arg;
+
     va_start(arg, format);
-    char temp[64];
-    char* buffer = temp;
-    int n = vsnprintf(temp, sizeof(temp), format, arg);
+    n = vsnprintf(temp, sizeof(temp), format, arg);
+
     va_end(arg);
+
     if (n < 0) return;
+
+    char*  buffer = temp;
     size_t len = static_cast<size_t>(n);
     if (len > sizeof(temp) - 1) {
         buffer = new char[len + 1];
@@ -52,39 +37,18 @@ void logger::infof(const char *format, ...) {
         }
         va_start(arg, format);
         vsnprintf(buffer, len + 1, format, arg);
+
         va_end(arg);
     }
-    write(INFO, buffer, len);
+
+    write(lvl, buffer, len);
+
     if (buffer != temp) {
         delete[] buffer;
     }
 }
 
-void logger::debugf(const char *format, ...) {
-    va_list arg;
-    va_start(arg, format);
-    char temp[64];
-    char* buffer = temp;
-    int n = vsnprintf(temp, sizeof(temp), format, arg);
-    va_end(arg);
-    if (n < 0) return;
-    size_t len = static_cast<size_t>(n);
-    if (len > sizeof(temp) - 1) {
-        buffer = new char[len + 1];
-        if (!buffer) {
-            return;
-        }
-        va_start(arg, format);
-        vsnprintf(buffer, len + 1, format, arg);
-        va_end(arg);
-    }
-    write(DEBUG, buffer, len);
-    if (buffer != temp) {
-        delete[] buffer;
-    }
-}
-
-void logger::write(const LVL lvl, const char *buffer, size_t size) {
+void Logger::write(const LVL lvl, const char *buffer, size_t size) {
     const size_t lvlLen = strlen(lvls[lvl]);
     // timestamp (20) + space (1) + level + space (1) + message + CRLF (2) + NUL (1)
     size_t bufSize = 20 + 1 + lvlLen + 1 + size + 2 + 1;
@@ -119,14 +83,14 @@ void logger::write(const LVL lvl, const char *buffer, size_t size) {
     buf[bufPos++] = '\n';
 
     Serial.write(buf, bufPos);
-    if (lvl < INFO) {
+    if (lvl < LOG_LEVEL_INFO) {
         // Do not write debug to file.
         delete[] buf;
         return;
     }
 
     mutex_enter_blocking(&sdMu);
-    _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
+    auto _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
     if (!_msgFile) {
         String msgDir = MESSAGE_LOG_PATH;
         msgDir.remove(msgDir.indexOf('/', 1));

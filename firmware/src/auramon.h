@@ -16,8 +16,8 @@
 #include <ArduinoJSON.h>
 #include <Ticker.h>
 
+#include "Logger.h"
 #include "crash_handler.h"
-#include "logger.h"
 #include "config.h"
 #include "ethernet.h"
 #include "data_log.h"
@@ -92,11 +92,6 @@ extern InputDevice *       devices[MAX_DEVICES];
 extern DataLog datalog;
 
 extern promMetrics metrics;
-
-extern logger msgLog;
-#define LOGE(format,...) msgLog.errorf(PSTR(format),##__VA_ARGS__);
-#define LOGI(format,...) msgLog.infof(PSTR(format),##__VA_ARGS__);
-#define LOGD(format,...) msgLog.debugf(PSTR(format),##__VA_ARGS__);
 
 uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
