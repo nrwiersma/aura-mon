@@ -67,7 +67,7 @@ uint32_t addDeviceFromButton(void *param) {
         LOGE("Failed to save config after button add: %s", err->Error());
     }
 
-    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
+    if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {
         LOGE("Button add: could not acquire deviceActionMu");
         return 0;
     }

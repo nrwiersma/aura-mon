@@ -10,7 +10,7 @@ uint32_t deviceActionTask(void *param) {
     DeviceActionRequest action{DeviceActionType::None, 0};
     bool                hasAction = false;
 
-    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
+    if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {
         LOGE("deviceActionTask: could not acquire deviceActionMu");
         return 200;
     }
