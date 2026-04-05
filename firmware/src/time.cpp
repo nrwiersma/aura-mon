@@ -118,7 +118,7 @@ uint32_t timeSync(void *param) {
         rtcRunning = true;
     }
 
-    LOGI("timeSync: RTC adjusted to Unix time %d", tv.tv_sec);
+    LOGI("timeSync: RTC adjusted to Unix time %" PRId64, (int64_t)tv.tv_sec);
 
     return 3600 * 1000;
 }
