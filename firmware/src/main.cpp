@@ -87,7 +87,7 @@ void setup() {
         tv.tv_usec = 0;
         settimeofday(&tv, nullptr);
         rtcRunning = true;
-        LOGI("RTC is running: Unix time %d", ts);
+        LOGI("RTC is running: Unix time %" PRId64, (int64_t)ts);
     } else {
         LOGI("RTC not running");
     }
