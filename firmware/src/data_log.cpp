@@ -123,21 +123,16 @@ error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
     }
     if (ts < _first.ts) {
         // Before the beginning of the file.
-
         readRev(_first.rev, rec);
         rec->ts = ts;
 
         mutex_exit(&_mu);
         return nullptr;
     }
-    if (ts >= _last.ts) {
+    if (ts > _last.ts) {
         // Past the end of the file.
         readRev(_last.rev, rec);
         rec->ts = ts;
-        if (ts == _last.ts) {
-            mutex_exit(&_mu);
-            return nullptr;
-        }
 
         mutex_exit(&_mu);
         return nullptr;
