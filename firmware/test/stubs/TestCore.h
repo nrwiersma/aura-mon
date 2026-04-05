@@ -50,9 +50,3 @@ struct ModbusRTUMaster {
     uint8_t getExceptionResponse() { return 0; }
 };
 inline ModbusRTUMaster modbus;
-
-// ---- additional mutex helper -----------------------------------------------
-inline bool mutex_enter_block_until(mutex_t *mtx, uint32_t /*timeout_ms*/) {
-    (void) mtx;
-    return true;
-}

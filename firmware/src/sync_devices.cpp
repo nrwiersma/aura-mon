@@ -69,7 +69,7 @@ void syncDeviceData() {
 uint32_t syncDevices(void *param) {
     (void) param;
 
-    if (!mutex_enter_block_until(&deviceInfoMu, 100)) {
+    if (!mutex_enter_timeout_ms(&deviceInfoMu, 100)) {
         LOGE("syncDevices: could not acquire deviceInfoMu");
         return 50;
     }
@@ -82,7 +82,7 @@ uint32_t syncDevices(void *param) {
 
     mutex_exit(&deviceInfoMu);
 
-    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
+    if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {
         LOGE("syncDevices: could not acquire deviceActionMu");
         return 50;
     }
@@ -91,7 +91,7 @@ uint32_t syncDevices(void *param) {
 
     mutex_exit(&deviceActionMu);
 
-    if (!mutex_enter_block_until(&deviceDataMu, 100)) {
+    if (!mutex_enter_timeout_ms(&deviceDataMu, 100)) {
         LOGE("syncDevices: could not acquire deviceDataMu");
         return 50;
     }

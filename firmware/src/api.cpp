@@ -154,7 +154,7 @@ void handleDeviceAction() {
         return;
     }
 
-    if (!mutex_enter_block_until(&deviceActionMu, 100)) {
+    if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {
         returnInternalError("could not acquire deviceInfoMu");
         return;
     }
@@ -448,7 +448,7 @@ void handleLogs() {
         }
     }
 
-    if (!mutex_enter_block_until(&sdMu, 100)) {
+    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
@@ -519,7 +519,7 @@ void handleLogsTrunc() {
     constexpr size_t restartMarkerLen = sizeof(restartMarker) - 1;
     constexpr char   tempPath[] = MESSAGE_LOG_PATH ".trunc";
 
-    if (!mutex_enter_block_until(&sdMu, 100)) {
+    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
@@ -778,7 +778,7 @@ void handlePublicUpload() {
 
         LOGI("Public upload: start %s", path.c_str());
 
-        if (!mutex_enter_block_until(&sdMu, 100)) {
+        if (!mutex_enter_timeout_ms(&sdMu, 100)) {
             publicUploadFailed = true;
             publicUploadStatus = 408;
             publicUploadError = F("Request Timeout");
@@ -844,7 +844,7 @@ void handleNotFound() {
         return;
     }
 
-    if (!mutex_enter_block_until(&sdMu, 100)) {
+    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
