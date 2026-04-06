@@ -59,6 +59,16 @@ bool DataLog::begin() {
     return true;
 }
 
+void DataLog::end() {
+    mutex_enter_blocking(&_mu);
+    if (_file) {
+        mutex_enter_blocking(&sdMu);
+        _file.close();
+        mutex_exit(&sdMu);
+    }
+    mutex_exit(&_mu);
+}
+
 uint32_t DataLog::entries() {
     mutex_enter_blocking(&_mu);
     auto e = _entries;
