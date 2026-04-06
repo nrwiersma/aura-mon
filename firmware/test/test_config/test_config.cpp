@@ -46,7 +46,7 @@ void test_config_valid() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL_STRING("test", netCfg.hostname.c_str());
     TEST_ASSERT_NOT_NULL(deviceInfos[0]);
     TEST_ASSERT_EQUAL(true, deviceInfos[0]->enabled);
@@ -59,8 +59,8 @@ void test_load_not_found() {
 
     auto err = loadConfig();
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("could not decode config file", err->Error());
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("could not decode config file", err.Error());
 }
 
 // ============================================================================
@@ -73,8 +73,8 @@ void test_config_format_mismatch_returns_error() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("config format mismatch", err->Error());
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("config format mismatch", err.Error());
 }
 
 void test_config_missing_format_field_is_accepted() {
@@ -85,7 +85,7 @@ void test_config_missing_format_field_is_accepted() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_FALSE(err);
 }
 
 void test_config_empty_doc_returns_error() {
@@ -93,8 +93,8 @@ void test_config_empty_doc_returns_error() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("config object is empty", err->Error());
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("config object is empty", err.Error());
 }
 
 // ============================================================================
@@ -109,8 +109,8 @@ void test_config_invalid_ip_returns_error() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid ip address", err->Error());
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("invalid ip address", err.Error());
 }
 
 void test_config_invalid_gateway_returns_error() {
@@ -121,8 +121,8 @@ void test_config_invalid_gateway_returns_error() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid gateway address", err->Error());
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("invalid gateway address", err.Error());
 }
 
 void test_config_invalid_mask_returns_error() {
@@ -133,8 +133,8 @@ void test_config_invalid_mask_returns_error() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid ip mask", err->Error());
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("invalid ip mask", err.Error());
 }
 
 void test_config_invalid_dns_returns_error() {
@@ -145,8 +145,8 @@ void test_config_invalid_dns_returns_error() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NOT_NULL(err);
-    TEST_ASSERT_EQUAL_STRING("invalid dns address", err->Error());
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("invalid dns address", err.Error());
 }
 
 void test_config_empty_ip_string_is_accepted() {
@@ -157,7 +157,7 @@ void test_config_empty_ip_string_is_accepted() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_FALSE(err);
 }
 
 // ============================================================================
@@ -226,7 +226,7 @@ void test_config_round_trip_network() {
 
     auto err = loadConfigJSON(saved);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL_STRING("roundtrip-host", netCfg.hostname.c_str());
     TEST_ASSERT_EQUAL_STRING("255.255.255.0",  netCfg.mask.c_str());
     TEST_ASSERT_EQUAL_STRING("8.8.8.8",        netCfg.dns.c_str());
@@ -251,7 +251,7 @@ void test_config_round_trip_device() {
     cleanupDeviceInfos();
 
     auto err = loadConfigJSON(saved);
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_FALSE(err);
 
     TEST_ASSERT_NOT_NULL(deviceInfos[3]);
     TEST_ASSERT_EQUAL_STRING("Meter4",  deviceInfos[3]->name.c_str());
@@ -273,7 +273,7 @@ void test_config_device_with_address_zero_is_ignored() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_FALSE(err);
     // Nothing should have been created.
     for (int i = 0; i < MAX_DEVICES; i++) {
         TEST_ASSERT_NULL(deviceInfos[i]);
@@ -290,7 +290,7 @@ void test_config_device_with_address_above_max_is_ignored() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_FALSE(err);
     for (int i = 0; i < MAX_DEVICES; i++) {
         TEST_ASSERT_NULL(deviceInfos[i]);
     }
@@ -308,7 +308,7 @@ void test_config_multiple_devices_loaded() {
 
     auto err = loadConfigJSON(doc);
 
-    TEST_ASSERT_NULL(err);
+    TEST_ASSERT_FALSE(err);
     TEST_ASSERT_NOT_NULL(deviceInfos[0]);
     TEST_ASSERT_NOT_NULL(deviceInfos[1]);
     TEST_ASSERT_NOT_NULL(deviceInfos[2]);

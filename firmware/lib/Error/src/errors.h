@@ -1,30 +1,19 @@
 #pragma once
 
-#include <cstdarg>
-#include <cstdlib>
-#include <cstring>
-
 class error {
 public:
-    virtual             ~error() = default;
-    virtual const char *Error() = 0;
-};
+    constexpr error() : s(nullptr) {}
+    constexpr explicit error(const char *msg) : s(msg) {}
 
-class errorString : public error {
-public:
-    explicit errorString(const char *msg)
-        : s(msg) {
-    }
+    explicit operator bool() const { return s != nullptr; }
 
-    const char *Error() override {
-        return s;
-    }
+    const char *Error() const { return s; }
 
 private:
     const char *s;
 };
 
-inline error *newError(const char *msg) {
-    return new errorString(msg);
+inline error newError(const char *msg) {
+    return error(msg);
 }
 

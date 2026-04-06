@@ -101,7 +101,7 @@ uint32_t DataLog::fileSize() {
     return s;
 }
 
-error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
+error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
     ts -= ts % _interval;
 
     if (timeoutMS > 0) {
@@ -127,7 +127,7 @@ error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         rec->ts = ts;
 
         mutex_exit(&_mu);
-        return nullptr;
+        return {};
     }
     if (ts > _last.ts) {
         // Past the end of the file.
@@ -135,7 +135,7 @@ error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         rec->ts = ts;
 
         mutex_exit(&_mu);
-        return nullptr;
+        return {};
     }
 
     // Check the last records cache if we are in the time range.
@@ -148,7 +148,7 @@ error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
                 metrics.datalog_cache_hit.fetch_add(1, std::memory_order_relaxed);
 
                 mutex_exit(&_mu);
-                return nullptr;
+                return {};
             }
         }
     }
@@ -160,7 +160,7 @@ error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         readRev(rev, rec);
         if (rec->ts == ts) {
             mutex_exit(&_mu);
-            return nullptr;
+            return {};
         }
     }
 
@@ -173,10 +173,10 @@ error *DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
     rec->ts = ts;
 
     mutex_exit(&_mu);
-    return nullptr;
+    return {};
 }
 
-error *DataLog::write(LogRecord *rec) {
+error DataLog::write(LogRecord *rec) {
     if (!mutex_enter_timeout_ms(&_mu, 100)) {
         return newError("mutex timeout");
     }
@@ -214,7 +214,7 @@ error *DataLog::write(LogRecord *rec) {
         metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
 
         mutex_exit(&_mu);
-        return nullptr;
+        return {};
     }
 
     // No wrap, just write at the end of the file.
@@ -235,7 +235,7 @@ error *DataLog::write(LogRecord *rec) {
     metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
 
     mutex_exit(&_mu);
-    return nullptr;
+    return {};
 }
 
 DataLog::LogRecordKey DataLog::readKey(uint32_t pos) {

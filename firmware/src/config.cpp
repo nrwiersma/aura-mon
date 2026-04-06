@@ -12,9 +12,9 @@
 
 constexpr uint32_t configFormat = 1;
 
-error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
+error loadNetworkConfigFromJson(JsonVariantConst netObj) {
     if (netObj.isNull()) {
-        return nullptr;
+        return {};
     }
 
     if (netObj["hostname"].is<const char *>()) {
@@ -56,7 +56,7 @@ error *loadNetworkConfigFromJson(JsonVariantConst netObj) {
             netCfg.dns = ip;
         }
     }
-    return nullptr;
+    return {};
 }
 
 void writeNetworkConfigToJson(JsonObject obj) {
@@ -136,7 +136,7 @@ void populateDevicesJson(JsonArray devicesArray) {
     mutex_exit(&deviceInfoMu);
 }
 
-error *loadConfig() {
+error loadConfig() {
     mutex_enter_blocking(&sdMu);
     FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
     if (!file) {
@@ -178,7 +178,7 @@ void ensureConfigDirectoryLocked() {
     sd.mkdir(dir);
 }
 
-error *saveConfig() {
+error saveConfig() {
     JsonDocument doc;
     saveConfigJSON(doc);
 
@@ -202,10 +202,10 @@ error *saveConfig() {
         return newError("could not rename config file");
     }
     mutex_exit(&sdMu);
-    return nullptr;
+    return {};
 }
 
-error *loadConfigJSON(const JsonDocument &doc) {
+error loadConfigJSON(const JsonDocument &doc) {
     JsonVariantConst root = doc.as<JsonVariantConst>();
     if (root.isNull()) {
         return newError("config object is empty");
@@ -223,7 +223,7 @@ error *loadConfigJSON(const JsonDocument &doc) {
         applyDevicesFromJson(root["devices"].as<JsonArrayConst>());
     }
 
-    return nullptr;
+    return {};
 }
 
 void saveConfigJSON(JsonDocument &doc) {

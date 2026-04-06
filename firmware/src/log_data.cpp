@@ -82,7 +82,7 @@ uint32_t logData(void *param) {
 
     // Write the record.
     if (auto err = datalog.write(rec); err) {
-        LOGE("Error writing datalog: %s", err->Error());
+        LOGE("Error writing datalog: %s", err.Error());
         return 1;
     }
 
