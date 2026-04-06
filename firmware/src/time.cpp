@@ -106,11 +106,16 @@ uint32_t timeSync(void *param) {
 
     timestamp_ntoh(&pkt.transmitTS);
     pkt.transmitTS.fraction /= 4294967UL; // Convert from fraction to ms.
-    uint32_t       dur = recvTS - sentTS;
-    struct timeval tv;
+    uint32_t dur = recvTS - sentTS;
+    timeval  prev = {};
+    gettimeofday(&prev, nullptr);
+
+    timeval tv;
     tv.tv_sec = (pkt.transmitTS.seconds + (pkt.transmitTS.fraction + dur / 2) / 1000) - 2208988800UL;
     tv.tv_usec = (pkt.transmitTS.fraction + dur / 2) % 1000;
     settimeofday(&tv, nullptr);
+
+    int64_t offset = tv.tv_sec - prev.tv_sec;
 
     rtc.adjust(tv.tv_sec);
     if (!rtcRunning) {
@@ -118,7 +123,11 @@ uint32_t timeSync(void *param) {
         rtcRunning = true;
     }
 
-    LOGI("timeSync: RTC adjusted to Unix time %" PRId64, (int64_t)tv.tv_sec);
+    if (llabs(offset) >= 1) {
+        LOGI("timeSync: RTC adjusted to Unix time %" PRId64 " (offset %" PRId64 "s)", (int64_t)tv.tv_sec, offset);
+    } else {
+        LOGD("timeSync: RTC adjusted to Unix time %" PRId64 " (offset %" PRId64 "s)", (int64_t)tv.tv_sec, offset);
+    }
 
     return 3600 * 1000;
 }
