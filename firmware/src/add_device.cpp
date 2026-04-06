@@ -64,7 +64,7 @@ uint32_t addDeviceFromButton(void *param) {
     mutex_exit(&deviceInfoMu);
 
     if (auto err = saveConfig(); err) {
-        LOGE("Failed to save config after button add: %s", err->Error());
+        LOGE("Failed to save config after button add: %s", err.Error());
     }
 
     if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {

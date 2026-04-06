@@ -98,7 +98,7 @@ void setup() {
     mutex_init(&deviceInfoMu);
 
     if (auto err = loadConfig(); err) {
-        LOGI("Could not load config from SD Card: %s", err->Error());
+        LOGI("Could not load config from SD Card: %s", err.Error());
     } else {
         LOGI("Config loaded from SD Card");
     }

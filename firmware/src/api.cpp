@@ -98,7 +98,7 @@ void handlePostConfig() {
     auto err = loadConfigJSON(doc);
     if (err) {
         String msg = "{\"error\":\"Invalid configuration\",\"reason\":\"";
-        msg.concat(err->Error());
+        msg.concat(err.Error());
         msg.concat("\"}");
         server.send(400, contentTypeJSON, msg);
         return;
@@ -106,7 +106,7 @@ void handlePostConfig() {
 
     err = saveConfig();
     if (err) {
-        returnInternalError(err->Error());
+        returnInternalError(err.Error());
         return;
     }
 
@@ -351,7 +351,7 @@ void handleEnergy() {
 
     LogRecord prevRec;
     if (auto err = datalog.read(start - interval, &prevRec); err) {
-        returnInternalError(err->Error());
+        returnInternalError(err.Error());
         return;
     }
 

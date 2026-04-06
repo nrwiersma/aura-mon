@@ -53,8 +53,8 @@ public:
     uint32_t lastRev();
     uint32_t lastTS();
     uint32_t fileSize();
-    error * read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = 100);
-    error * write(LogRecord *rec);
+    error read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = 100);
+    error write(LogRecord *rec);
 
 private:
     struct LogRecordKey {
