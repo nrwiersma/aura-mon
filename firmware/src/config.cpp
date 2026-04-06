@@ -12,13 +12,32 @@
 
 constexpr uint32_t configFormat = 1;
 
+// Copies a potentially-unaligned const char* (e.g. from an ArduinoJSON pool) into
+// a 4-byte-aligned stack buffer byte-by-byte, then assigns that buffer to dest.
+// This avoids the rp2350-memcpy.S crash that occurs when memcpy is given an
+// unaligned source pointer. Strings longer than 255 characters are truncated.
+static void assignFromJson(String &dest, const char *src) {
+    if (!src) {
+        dest = "";
+        return;
+    }
+    alignas(4) char buf[256];
+    size_t i = 0;
+    while (i < sizeof(buf) - 1 && src[i] != '\0') {
+        buf[i] = src[i];
+        i++;
+    }
+    buf[i] = '\0';
+    dest = buf;
+}
+
 error loadNetworkConfigFromJson(JsonVariantConst netObj) {
     if (netObj.isNull()) {
         return {};
     }
 
     if (netObj["hostname"].is<const char *>()) {
-        netCfg.hostname = netObj["hostname"].as<const char *>();
+        assignFromJson(netCfg.hostname, netObj["hostname"].as<const char *>());
     }
     if (netObj["ip"].is<const char *>()) {
         auto ip = netObj["ip"].as<const char *>();
@@ -26,7 +45,7 @@ error loadNetworkConfigFromJson(JsonVariantConst netObj) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
                 return newError("invalid ip address");
             }
-            netCfg.ip = ip;
+            assignFromJson(netCfg.ip, ip);
         }
     }
     if (netObj["gateway"].is<const char *>()) {
@@ -35,7 +54,7 @@ error loadNetworkConfigFromJson(JsonVariantConst netObj) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
                 return newError("invalid gateway address");
             }
-            netCfg.gateway = ip;
+            assignFromJson(netCfg.gateway, ip);
         }
     }
     if (netObj["mask"].is<const char *>()) {
@@ -44,7 +63,7 @@ error loadNetworkConfigFromJson(JsonVariantConst netObj) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
                 return newError("invalid ip mask");
             }
-            netCfg.mask = ip;
+            assignFromJson(netCfg.mask, ip);
         }
     }
     if (netObj["dns"].is<const char *>()) {
@@ -53,7 +72,7 @@ error loadNetworkConfigFromJson(JsonVariantConst netObj) {
             if (ipaddr_addr(ip) == IPADDR_NONE) {
                 return newError("invalid dns address");
             }
-            netCfg.dns = ip;
+            assignFromJson(netCfg.dns, ip);
         }
     }
     return {};
@@ -111,7 +130,7 @@ void applyDevicesFromJson(JsonArrayConst devicesArr) {
         info->addr = addr;
         info->calibration = entry["calibration"].is<float>() ? entry["calibration"].as<float>() : 1.0f;
         info->reversed = entry["reversed"].is<bool>() ? entry["reversed"].as<bool>() : false;
-        info->name = entry["name"].is<const char *>() ? entry["name"].as<const char *>() : "";
+        assignFromJson(info->name, entry["name"].is<const char *>() ? entry["name"].as<const char *>() : "");
     }
 
     mutex_exit(&deviceInfoMu);
