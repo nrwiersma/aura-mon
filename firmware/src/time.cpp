@@ -116,11 +116,11 @@ uint32_t timeSync(void *param) {
 
     timeval tv;
     tv.tv_sec = (pkt.transmitTS.seconds + (pkt.transmitTS.fraction + dur / 2) / 1000) - 2208988800UL;
-    tv.tv_usec = (pkt.transmitTS.fraction + dur / 2) % 1000;
+    tv.tv_usec = static_cast<suseconds_t>((pkt.transmitTS.fraction + dur / 2) % 1000 * 1000);
     settimeofday(&tv, nullptr);
 
-    const int64_t offset_ms = (int64_t)(tv.tv_sec - prev.tv_sec) * 1000
-                              + ((int64_t)tv.tv_usec - (int64_t)prev.tv_usec);
+    const int64_t offset_ms = (tv.tv_sec - prev.tv_sec) * 1000
+                              + (static_cast<int64_t>(tv.tv_usec) - static_cast<int64_t>(prev.tv_usec)) / 1000;
 
     rtc.adjust(tv.tv_sec);
     if (!rtcRunning) {
