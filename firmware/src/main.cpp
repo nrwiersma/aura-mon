@@ -191,6 +191,18 @@ void loop1() {
     }
 }
 
+void safeReboot() {
+    // Drain the data log.
+    datalog.end();
+
+    // Block any remaining SD operations and cleanly terminate the
+    // SDIO peripheral before resetting.
+    mutex_enter_blocking(&sdMu);
+    sd.end();
+
+    rp2040.reboot();
+}
+
 void blinkLED() {
     static bool on = false;
     switch (ledState) {

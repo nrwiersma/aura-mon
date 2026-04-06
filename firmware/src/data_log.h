@@ -46,6 +46,7 @@ public:
     };
 
     bool     begin();
+    void     end();
     uint32_t entries();
     int      interval() const { return _interval; }
     uint32_t firstRev();

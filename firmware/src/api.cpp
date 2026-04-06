@@ -177,9 +177,7 @@ void handleReboot() {
 
     server.send(204, contentTypePlain, "");
 
-    mutex_enter_blocking(&sdMu);
-    delay(100);
-    rp2040.reboot();
+    safeReboot();
 }
 
 void handleMetrics() {
@@ -734,9 +732,7 @@ void handleOtaFinish() {
         if (otaRestartNeeded) {
             LOGE("OTA: update failed with code %u. Rebooting", otaErrorCode);
 
-            mutex_enter_blocking(&sdMu);
-            delay(100);
-            rp2040.reboot();
+            safeReboot();
         }
 
         LOGE("OTA: update failed with code %u", otaErrorCode);
@@ -747,9 +743,7 @@ void handleOtaFinish() {
     LOGI("OTA: update finished, rebooting");
 
     server.send(204, contentTypePlain, "");
-    mutex_enter_blocking(&sdMu);
-    delay(100);
-    rp2040.reboot();
+    safeReboot();
 }
 
 void handleOtaUpload() {

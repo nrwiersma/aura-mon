@@ -104,3 +104,4 @@ uint32_t deviceActionTask(void *param);
 uint32_t addDeviceFromButton(void *param);
 
 void collect();
+void safeReboot();
