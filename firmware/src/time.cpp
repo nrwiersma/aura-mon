@@ -57,7 +57,7 @@ uint32_t timeSync(void *param) {
         // The millisecond monotonic clock will roll over every 49 days.
         // Restart every 42 days to be safe.
         LOGI("timeSync: Restarting to reset monotonic clock");
-        rp2040.reboot();
+        safeReboot();
     }
 
     if (!eth.isLinked() || !eth.connected()) {
@@ -83,7 +83,7 @@ uint32_t timeSync(void *param) {
     udp.endPacket();
 
     // Wait for the NTP reply.
-    while (!udp.parsePacket()) {
+    while (udp.parsePacket() < sizeof(ntpPacket)) {
         if (millis() - sentTS > (rtcRunning ? 3000 : 10000)) {
             udp.stop();
             metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);

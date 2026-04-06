@@ -24,12 +24,7 @@ uint32_t checkEthernet(void *param) {
         } else if (time(NULL) - lastDisconnect > 60 * 60) {
             LOGE("Ethernet disconnected for more than 60 minutes. Restarting");
 
-            // Grab the SD Card mutex to ensure we are not in a write
-            // when we reboot.
-            mutex_enter_blocking(&sdMu);
-
-            delay(500);
-            rp2040.reboot();
+            safeReboot();
         }
     }
 
