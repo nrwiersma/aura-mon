@@ -83,6 +83,9 @@ void Logger::write(const LVL lvl, const char *buffer, size_t size) {
     buf[bufPos++] = '\n';
 
     Serial.write(buf, bufPos);
+    if (lvl == LOG_LEVEL_ERROR) {
+        metrics.log_errors_total.fetch_add(1, std::memory_order_relaxed);
+    }
     if (lvl < LOG_LEVEL_INFO) {
         // Do not write debug to file.
         delete[] buf;

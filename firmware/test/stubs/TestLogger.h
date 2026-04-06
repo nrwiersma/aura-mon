@@ -21,4 +21,6 @@ inline time_t mockTime(time_t *t) {
 // logger.cpp includes auramon.h which pulls in everything; for logger-only
 // tests we instead provide only the symbols logger.cpp actually references.
 // The mutex and sd globals are already provided by TestSdFat.h / TestPlatform.h.
+#include "../../src/metrics.h"
+inline promMetrics metrics;
 

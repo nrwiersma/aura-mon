@@ -186,13 +186,22 @@ void handleMetrics() {
     const uint32_t errors = metrics.modbus_errors_total.load(std::memory_order_relaxed);
     const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
+    const uint32_t collectRuns = metrics.modbus_collect_runs_total.load(std::memory_order_relaxed);
     const uint32_t datalogReadIO = metrics.datalog_read_io.load(std::memory_order_relaxed);
     const uint32_t datalogWriteIO = metrics.datalog_write_io.load(std::memory_order_relaxed);
     const uint32_t datalogWriteMsTotal = metrics.datalog_write_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t datalogCacheHit = metrics.datalog_cache_hit.load(std::memory_order_relaxed);
+    const uint32_t datalogWriteErrors = metrics.datalog_write_errors_total.load(std::memory_order_relaxed);
+    const uint32_t ntpSyncs = metrics.ntp_syncs_total.load(std::memory_order_relaxed);
+    const uint32_t ntpFailures = metrics.ntp_failures_total.load(std::memory_order_relaxed);
+    const int32_t  ntpOffsetMs = metrics.ntp_last_offset_ms.load(std::memory_order_relaxed);
+    const uint32_t ethDisconnects = metrics.ethernet_disconnects_total.load(std::memory_order_relaxed);
+    const uint32_t logErrors = metrics.log_errors_total.load(std::memory_order_relaxed);
 
     String response;
-    response.reserve(320);
+    response.reserve(4096);
+
+    // Modbus metrics.
     response += F("# HELP auramon_modbus_errors_total Total modbus collection errors.\n");
     response += F("# TYPE auramon_modbus_errors_total counter\n");
     response += F("auramon_modbus_errors_total ");
@@ -203,35 +212,105 @@ void handleMetrics() {
     response += F("auramon_collect_time_seconds_total ");
     response += String(totalMs / 1000.0, 6);
     response += '\n';
-    response += F(
-        "# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
+    response += F("# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
     response += F("# TYPE auramon_collect_time_seconds_avg gauge\n");
     response += F("auramon_collect_time_seconds_avg ");
     response += String(avgMs / 1000.0, 6);
     response += '\n';
-    response += F(
-        "# HELP auramon_datalog_read_io Number of read IO operations performed on the datalog.\n");
+    response += F("# HELP auramon_modbus_collect_runs_total Total number of Modbus collection cycles run.\n");
+    response += F("# TYPE auramon_modbus_collect_runs_total counter\n");
+    response += F("auramon_modbus_collect_runs_total ");
+    response += String(collectRuns);
+    response += '\n';
+
+    // Per-device Modbus metrics.
+    response += F("# HELP auramon_modbus_device_errors_total Total errors per Modbus device.\n");
+    response += F("# TYPE auramon_modbus_device_errors_total counter\n");
+    mutex_enter_blocking(&deviceInfoMu);
+    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
+        const auto info = deviceInfos[i];
+        if (!info || !info->isEnabled()) continue;
+        const uint32_t devErrors = metrics.modbus_device_errors_total[i].load(std::memory_order_relaxed);
+        response += F("auramon_modbus_device_errors_total{device=\"");
+        response += info->name;
+        response += F("\",address=\"");
+        response += String(info->addr);
+        response += F("\"} ");
+        response += String(devErrors);
+        response += '\n';
+    }
+    response += F("# HELP auramon_modbus_device_collect_time_seconds Last successful collection time per Modbus device in seconds.\n");
+    response += F("# TYPE auramon_modbus_device_collect_time_seconds gauge\n");
+    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
+        const auto info = deviceInfos[i];
+        if (!info || !info->isEnabled()) continue;
+        const uint32_t devMs = metrics.modbus_device_last_collect_ms[i].load(std::memory_order_relaxed);
+        response += F("auramon_modbus_device_collect_time_seconds{device=\"");
+        response += info->name;
+        response += F("\",address=\"");
+        response += String(info->addr);
+        response += F("\"} ");
+        response += String(devMs / 1000.0, 6);
+        response += '\n';
+    }
+    mutex_exit(&deviceInfoMu);
+
+    // Datalog metrics.
+    response += F("# HELP auramon_datalog_read_io Number of read IO operations performed on the datalog.\n");
     response += F("# TYPE auramon_datalog_read_io counter\n");
     response += F("auramon_datalog_read_io ");
     response += String(datalogReadIO);
     response += '\n';
-    response += F(
-        "# HELP auramon_datalog_write_io Number of write IO operations performed on the datalog.\n");
+    response += F("# HELP auramon_datalog_write_io Number of write IO operations performed on the datalog.\n");
     response += F("# TYPE auramon_datalog_write_io counter\n");
     response += F("auramon_datalog_write_io ");
     response += String(datalogWriteIO);
     response += '\n';
-    response += F(
-        "# HELP auramon_datalog_write_time_seconds_total Total time spent writing datalog records in seconds.\n");
+    response += F("# HELP auramon_datalog_write_time_seconds_total Total time spent writing datalog records in seconds.\n");
     response += F("# TYPE auramon_datalog_write_time_seconds_total counter\n");
     response += F("auramon_datalog_write_time_seconds_total ");
     response += String(datalogWriteMsTotal / 1000.0, 6);
     response += '\n';
-    response += F(
-        "# HELP auramon_datalog_cache_hit Number of cache hits when reading records from the datalog.\n");
+    response += F("# HELP auramon_datalog_cache_hit Number of cache hits when reading records from the datalog.\n");
     response += F("# TYPE auramon_datalog_cache_hit counter\n");
     response += F("auramon_datalog_cache_hit ");
     response += String(datalogCacheHit);
+    response += '\n';
+    response += F("# HELP auramon_datalog_write_errors_total Total failed datalog write attempts.\n");
+    response += F("# TYPE auramon_datalog_write_errors_total counter\n");
+    response += F("auramon_datalog_write_errors_total ");
+    response += String(datalogWriteErrors);
+    response += '\n';
+
+    // NTP metrics.
+    response += F("# HELP auramon_ntp_syncs_total Total successful NTP synchronisations.\n");
+    response += F("# TYPE auramon_ntp_syncs_total counter\n");
+    response += F("auramon_ntp_syncs_total ");
+    response += String(ntpSyncs);
+    response += '\n';
+    response += F("# HELP auramon_ntp_failures_total Total failed NTP synchronisation attempts.\n");
+    response += F("# TYPE auramon_ntp_failures_total counter\n");
+    response += F("auramon_ntp_failures_total ");
+    response += String(ntpFailures);
+    response += '\n';
+    response += F("# HELP auramon_ntp_offset_ms Clock offset applied during the last NTP sync in milliseconds.\n");
+    response += F("# TYPE auramon_ntp_offset_ms gauge\n");
+    response += F("auramon_ntp_offset_ms ");
+    response += String((long)ntpOffsetMs);
+    response += '\n';
+
+    // Network metrics.
+    response += F("# HELP auramon_ethernet_disconnects_total Total number of Ethernet link-loss events.\n");
+    response += F("# TYPE auramon_ethernet_disconnects_total counter\n");
+    response += F("auramon_ethernet_disconnects_total ");
+    response += String(ethDisconnects);
+    response += '\n';
+
+    // Logging metrics.
+    response += F("# HELP auramon_log_errors_total Total number of error-level log messages emitted.\n");
+    response += F("# TYPE auramon_log_errors_total counter\n");
+    response += F("auramon_log_errors_total ");
+    response += String(logErrors);
     response += '\n';
 
     server.send(200, contentTypePlain, response);

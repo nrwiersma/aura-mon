@@ -68,6 +68,7 @@ uint32_t timeSync(void *param) {
     String    srv = ntpSrvs[srvIdx++ % sizeof(ntpSrvs)];
     IPAddress srvIP;
     if (!eth.hostByName(srv.c_str(), srvIP)) {
+        metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
         return rtcRunning ? 60 : 5;
     }
 
@@ -85,6 +86,7 @@ uint32_t timeSync(void *param) {
     while (!udp.parsePacket()) {
         if (millis() - sentTS > (rtcRunning ? 3000 : 10000)) {
             udp.stop();
+            metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
             return rtcRunning ? 60 : 5;
         }
     }
@@ -94,6 +96,7 @@ uint32_t timeSync(void *param) {
     udp.stop();
 
     if (pktSize < sizeof(ntpPacket)) {
+        metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
         return rtcRunning ? 60 : 5;
     }
     if (pkt.stratum == 0) {
@@ -101,6 +104,7 @@ uint32_t timeSync(void *param) {
              pkt.refClockIdent[0], pkt.refClockIdent[1], pkt.refClockIdent[2], pkt.refClockIdent[3],
              srvIP.toString().c_str()
         );
+        metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
         return rtcRunning ? 60 : 15;
     }
 
@@ -112,10 +116,11 @@ uint32_t timeSync(void *param) {
 
     timeval tv;
     tv.tv_sec = (pkt.transmitTS.seconds + (pkt.transmitTS.fraction + dur / 2) / 1000) - 2208988800UL;
-    tv.tv_usec = (pkt.transmitTS.fraction + dur / 2) % 1000;
+    tv.tv_usec = static_cast<suseconds_t>((pkt.transmitTS.fraction + dur / 2) % 1000 * 1000);
     settimeofday(&tv, nullptr);
 
-    int64_t offset = tv.tv_sec - prev.tv_sec;
+    const int64_t offset_ms = (tv.tv_sec - prev.tv_sec) * 1000
+                              + (static_cast<int64_t>(tv.tv_usec) - static_cast<int64_t>(prev.tv_usec)) / 1000;
 
     rtc.adjust(tv.tv_sec);
     if (!rtcRunning) {
@@ -123,10 +128,13 @@ uint32_t timeSync(void *param) {
         rtcRunning = true;
     }
 
-    if (llabs(offset) >= 1) {
-        LOGI("timeSync: RTC adjusted to Unix time %" PRId64 " (offset %" PRId64 "s)", (int64_t)tv.tv_sec, offset);
+    metrics.ntp_syncs_total.fetch_add(1, std::memory_order_relaxed);
+    metrics.ntp_last_offset_ms.store(static_cast<int32_t>(offset_ms), std::memory_order_relaxed);
+
+    if (llabs(offset_ms) >= 1000) {
+        LOGI("timeSync: RTC adjusted to Unix time %" PRId64 " (offset %" PRId64 "ms)", (int64_t)tv.tv_sec, offset_ms);
     } else {
-        LOGD("timeSync: RTC adjusted to Unix time %" PRId64 " (offset %" PRId64 "s)", (int64_t)tv.tv_sec, offset);
+        LOGD("timeSync: RTC adjusted to Unix time %" PRId64 " (offset %" PRId64 "ms)", (int64_t)tv.tv_sec, offset_ms);
     }
 
     return 3600 * 1000;

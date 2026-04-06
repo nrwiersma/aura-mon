@@ -18,6 +18,8 @@ void collect() {
     uint32_t            deviceCount = 0;
     uint64_t            deviceTimeMs = 0;
 
+    metrics.modbus_collect_runs_total.fetch_add(1, std::memory_order_relaxed);
+
     for (const auto dev : devices) {
         if (!dev || !dev->isEnabled()) {
             continue;
@@ -27,6 +29,7 @@ void collect() {
 
         if (const uint8_t err = readFrame(dev); err) {
             metrics.modbus_errors_total.fetch_add(1, std::memory_order_relaxed);
+            metrics.modbus_device_errors_total[dev->addr - 1].fetch_add(1, std::memory_order_relaxed);
             LOGE("Could not read data from device %d: %s", dev->addr, modbusError(err));
 
             continue;
@@ -35,6 +38,7 @@ void collect() {
         deviceCount++;
         const unsigned long took = millis() - start;
         deviceTimeMs += took;
+        metrics.modbus_device_last_collect_ms[dev->addr - 1].store(static_cast<uint32_t>(took), std::memory_order_relaxed);
 
         Bucket curr = dev->current;
         LOGD("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms", dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);

@@ -19,6 +19,7 @@ uint32_t checkEthernet(void *param) {
         if (lastConnect) {
             lastConnect = 0;
             lastDisconnect = time(NULL);
+            metrics.ethernet_disconnects_total.fetch_add(1, std::memory_order_relaxed);
             LOGI("Ethernet disconnected");
         } else if (time(NULL) - lastDisconnect > 60 * 60) {
             LOGE("Ethernet disconnected for more than 60 minutes. Restarting");

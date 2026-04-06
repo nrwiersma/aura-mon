@@ -82,6 +82,7 @@ uint32_t logData(void *param) {
 
     // Write the record.
     if (auto err = datalog.write(rec); err) {
+        metrics.datalog_write_errors_total.fetch_add(1, std::memory_order_relaxed);
         LOGE("Error writing datalog: %s", err.Error());
         return 1;
     }
