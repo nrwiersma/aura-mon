@@ -7,6 +7,7 @@
 #define ntpPort 2390
 
 const String ntpSrvs[] = {"time.google.com", "time.aws.com", "time.cloudflare.com"};
+const size_t numNTPSrvs = std::size(ntpSrvs);
 
 struct ntp_timestamp_t {
     uint32_t seconds;
@@ -65,7 +66,7 @@ uint32_t timeSync(void *param) {
         return rtcRunning ? 60 : 5;
     }
 
-    String    srv = ntpSrvs[srvIdx++ % sizeof(ntpSrvs)];
+    String    srv = ntpSrvs[srvIdx++ % numNTPSrvs];
     IPAddress srvIP;
     if (!eth.hostByName(srv.c_str(), srvIP)) {
         metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
