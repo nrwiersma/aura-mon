@@ -228,7 +228,10 @@ error DataLog::write(LogRecord *rec) {
     }
 
     // No wrap, just write at the end of the file.
-    mutex_enter_blocking(&sdMu);
+    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
+        mutex_exit(&_mu);
+        return newError("sd card mutex timeout");
+    }
     _file.seek(_fileSize);
     _file.write(rec, _recordSize);
     _file.flush();
