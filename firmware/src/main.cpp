@@ -173,7 +173,7 @@ void setup1() {
     // how long it took before the first log write.
     initLogData();
 
-    rp2040.wdt_begin(800);
+    rp2040.wdt_begin(1000);
 }
 
 void loop1() {
