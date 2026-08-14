@@ -187,7 +187,11 @@ void handleMetrics() {
     const uint32_t collectRuns = metrics.modbus_collect_runs_total.load(std::memory_order_relaxed);
     const uint32_t datalogReadIO = metrics.datalog_read_io.load(std::memory_order_relaxed);
     const uint32_t datalogWriteIO = metrics.datalog_write_io.load(std::memory_order_relaxed);
-    const uint32_t datalogWriteMsTotal = metrics.datalog_write_time_ms_total.load(std::memory_order_relaxed);
+    const uint64_t datalogWriteUsTotal = metrics.datalog_write_time_us_total.load(std::memory_order_relaxed);
+    const uint32_t datalogWriteUsMax = metrics.datalog_write_time_us_max.load(std::memory_order_relaxed);
+    const uint32_t sdQueueDepth = metrics.sd_queue_depth.load(std::memory_order_relaxed);
+    const uint32_t sdQueueHighWater = metrics.sd_queue_high_water.load(std::memory_order_relaxed);
+    const uint32_t sdQueueDropped = metrics.sd_queue_dropped_total.load(std::memory_order_relaxed);
     const uint32_t datalogCacheHit = metrics.datalog_cache_hit.load(std::memory_order_relaxed);
     const uint32_t datalogWriteErrors = metrics.datalog_write_errors_total.load(std::memory_order_relaxed);
     const uint32_t ntpSyncs = metrics.ntp_syncs_total.load(std::memory_order_relaxed);
@@ -267,7 +271,27 @@ void handleMetrics() {
     response += F("# HELP auramon_datalog_write_time_seconds_total Total time spent writing datalog records in seconds.\n");
     response += F("# TYPE auramon_datalog_write_time_seconds_total counter\n");
     response += F("auramon_datalog_write_time_seconds_total ");
-    response += String(datalogWriteMsTotal / 1000.0, 6);
+    response += String(datalogWriteUsTotal / 1000000.0, 6);
+    response += '\n';
+    response += F("# HELP auramon_datalog_write_time_seconds_max Slowest single datalog write in seconds since boot.\n");
+    response += F("# TYPE auramon_datalog_write_time_seconds_max gauge\n");
+    response += F("auramon_datalog_write_time_seconds_max ");
+    response += String(datalogWriteUsMax / 1000000.0, 6);
+    response += '\n';
+    response += F("# HELP auramon_sd_queue_depth Number of jobs currently waiting in the SD write queue.\n");
+    response += F("# TYPE auramon_sd_queue_depth gauge\n");
+    response += F("auramon_sd_queue_depth ");
+    response += String(sdQueueDepth);
+    response += '\n';
+    response += F("# HELP auramon_sd_queue_high_water Deepest the SD write queue has been since boot.\n");
+    response += F("# TYPE auramon_sd_queue_high_water gauge\n");
+    response += F("auramon_sd_queue_high_water ");
+    response += String(sdQueueHighWater);
+    response += '\n';
+    response += F("# HELP auramon_sd_queue_dropped_total Total jobs dropped because the SD write queue was full.\n");
+    response += F("# TYPE auramon_sd_queue_dropped_total counter\n");
+    response += F("auramon_sd_queue_dropped_total ");
+    response += String(sdQueueDropped);
     response += '\n';
     response += F("# HELP auramon_datalog_cache_hit Number of cache hits when reading records from the datalog.\n");
     response += F("# TYPE auramon_datalog_cache_hit counter\n");
@@ -525,7 +549,7 @@ void handleLogs() {
         }
     }
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
+    if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
@@ -596,7 +620,7 @@ void handleLogsTrunc() {
     constexpr size_t restartMarkerLen = sizeof(restartMarker) - 1;
     constexpr char   tempPath[] = MESSAGE_LOG_PATH ".trunc";
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
+    if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
@@ -851,7 +875,7 @@ void handlePublicUpload() {
 
         LOGI("Public upload: start %s", path.c_str());
 
-        if (!mutex_enter_timeout_ms(&sdMu, 100)) {
+        if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
             publicUploadFailed = true;
             publicUploadStatus = 408;
             publicUploadError = F("Request Timeout");
@@ -917,7 +941,7 @@ void handleNotFound() {
         return;
     }
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
+    if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
     }

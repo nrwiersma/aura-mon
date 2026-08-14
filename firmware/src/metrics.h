@@ -18,9 +18,15 @@ struct promMetrics {
     // Datalog
     std::atomic<uint32_t> datalog_read_io{0};
     std::atomic<uint32_t> datalog_write_io{0};
-    std::atomic<uint32_t> datalog_write_time_ms_total{0};
+    std::atomic<uint64_t> datalog_write_time_us_total{0};
+    std::atomic<uint32_t> datalog_write_time_us_max{0};
     std::atomic<uint32_t> datalog_cache_hit{0};
     std::atomic<uint32_t> datalog_write_errors_total{0};
+
+    // SD write queue
+    std::atomic<uint32_t> sd_queue_depth{0};
+    std::atomic<uint32_t> sd_queue_high_water{0};
+    std::atomic<uint32_t> sd_queue_dropped_total{0};
 
     // NTP
     std::atomic<uint32_t> ntp_syncs_total{0};

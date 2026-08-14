@@ -61,6 +61,7 @@ void setup() {
     LOGD("Booting");
 
     mutex_init(&sdMu);
+    initSDWriter();
     if (!sd.begin(SD_CONFIG)) {
         Serial.println("Could not initialize SD Card. Halting");
         sd.initErrorPrint(&Serial);
@@ -144,6 +145,9 @@ void setup() {
     c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);
     c0Queue.add(syncState, 4);
+    // The SD writer must stay on core 0: core 1 runs a 1s watchdog and a card
+    // stall can exceed it.
+    c0Queue.add(sdWriterTask, 6);
 
     c1Queue.add(logData, 7);
     c1Queue.add(syncDevices, 6);
@@ -192,7 +196,8 @@ void loop1() {
 }
 
 void safeReboot() {
-    // Drain the data log.
+    // Flush anything still queued, then drain the data log.
+    drainSDWriter();
     datalog.end();
 
     // Block any remaining SD operations and cleanly terminate the

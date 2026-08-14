@@ -7,6 +7,7 @@
 #else
 #include "../test/stubs/TestLogger.h"
 #include "logger.h"
+#include "sd_writer.h"
 #endif
 
 const char *lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
@@ -92,24 +93,14 @@ void Logger::write(const LVL lvl, const char *buffer, size_t size) {
         return;
     }
 
-    mutex_enter_blocking(&sdMu);
-    auto _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
-    if (!_msgFile) {
-        String msgDir = MESSAGE_LOG_PATH;
-        msgDir.remove(msgDir.indexOf('/', 1));
-        sd.mkdir(msgDir.c_str());
-        _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
+    if (_restart) {
+        // Queue the restart marker ahead of the first persisted line.
+        static const char marker[] = "\r\n**** RESTART ****\r\n";
+        queueMessage(marker, sizeof(marker) - 1);
+        _restart = false;
     }
-    if (_msgFile) {
-        if (_restart) {
-            _msgFile.write(PSTR("\r\n**** RESTART ****\r\n"));
-            _restart = false;
-        }
 
-        _msgFile.write(buf, bufPos);
-        _msgFile.close();
-    }
-    mutex_exit(&sdMu);
+    queueMessage(buf, bufPos);
 
     delete[] buf;
 }

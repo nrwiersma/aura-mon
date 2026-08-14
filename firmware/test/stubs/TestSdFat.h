@@ -22,6 +22,9 @@ public:
 
     FsFile() : data(std::make_shared<std::vector<uint8_t>>()), position(0), open(false) {}
 
+    // Test hook: makes every buffered write fail, simulating a card error.
+    static inline bool failWrites = false;
+
     bool isOpen() const { return open; }
 
     operator bool() const { return isOpen(); }
@@ -60,7 +63,7 @@ public:
     }
 
     size_t write(const void* buf, size_t sz) {
-        if (!open) return 0;
+        if (!open || failWrites) return 0;
         if (position + sz > data->size()) {
             data->resize(position + sz);
         }

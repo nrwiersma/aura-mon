@@ -5,6 +5,11 @@
 
 #include <errors.h>
 
+// SdFat allows the card up to SD_WRITE_TIMEOUT (600ms) of busy time during a
+// write, so any lock guarding card access must wait at least that long or it
+// will spuriously fail during a normal card garbage-collection stall.
+#define SD_LOCK_TIMEOUT_MS 750
+
 // Total of 384 bytes.
 struct LogRecord {
     uint32_t rev;
@@ -42,6 +47,7 @@ public:
         const uint32_t computedSize = static_cast<uint32_t>(days * recordsPerDay * _recordSize);
         _maxFileSize = max(static_cast<uint32_t>(_recordSize), computedSize);
         mutex_init(&_mu);
+        mutex_init(&_writeMu);
         _lastCache = new LogRecord[_lastCacheSize]{};
     };
 
@@ -54,7 +60,7 @@ public:
     uint32_t lastRev();
     uint32_t lastTS();
     uint32_t fileSize();
-    error read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = 100);
+    error read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = SD_LOCK_TIMEOUT_MS);
     error write(LogRecord *rec);
 
 private:
@@ -64,6 +70,7 @@ private:
     };
 
     mutex_t _mu{};
+    mutex_t _writeMu{};
 
     FsFile   _file;
     uint16_t _interval;

@@ -80,16 +80,14 @@ uint32_t logData(void *param) {
     lastMS = nowMS;
     rec->logHours += elapsedHrs;
 
-    // Write the record.
-    if (auto err = datalog.write(rec); err) {
-        metrics.datalog_write_errors_total.fetch_add(1, std::memory_order_relaxed);
-        LOGE("Error writing datalog: %s", err.Error());
+    // Queue the record to be written.
+    if (!queueLogRecord(rec)) {
+        LOGE("SD write queue full, retrying");
         return 1;
     }
 
     const auto took = millis() - start;
-    metrics.datalog_write_time_ms_total.fetch_add(took, std::memory_order_relaxed);
-    LOGD("Wrote record %d to log took %dms", rec->ts, took);
+    LOGD("Queued record %d for writing", rec->ts);
 
     rec->ts += datalog.interval();
     if (rec->ts < time(nullptr)) {

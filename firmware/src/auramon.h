@@ -21,6 +21,7 @@
 #include "config.h"
 #include "ethernet.h"
 #include "data_log.h"
+#include "sd_writer.h"
 #include "task.h"
 #include "modbus.h"
 #include "api.h"

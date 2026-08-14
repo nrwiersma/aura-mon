@@ -13,6 +13,7 @@ void setUp() {
     testLog = new DataLog(5, 1); // 5 sec interval, 1 day max
 
     sd.fileExists = false;
+    FsFile::failWrites = false;
     if (sd.file) {
         delete sd.file;
         sd.file = nullptr;
@@ -314,8 +315,47 @@ void test_datalog_write_out_of_order() {
     TEST_ASSERT_EQUAL_STRING("timestamp not increasing", err.Error());
 }
 
-void test_datalog_timestamp_alignment() {
+// A failed card write must leave the log exactly as it was, so that the next
+// write reuses the same slot and revision rather than leaving a hole.
+void test_datalog_write_failure_rolls_back() {
     TEST_ASSERT_TRUE(testLog->begin());
+
+    LogRecord rec1;
+    rec1.ts = 1000;
+    rec1.logHours = 1.0;
+    TEST_ASSERT_FALSE(testLog->write(&rec1));
+
+    const uint32_t entries = testLog->entries();
+    const uint32_t size = testLog->fileSize();
+    const uint32_t lastTS = testLog->lastTS();
+    const uint32_t lastRev = testLog->lastRev();
+
+    FsFile::failWrites = true;
+    LogRecord rec2;
+    rec2.ts = 1005;
+    rec2.logHours = 2.0;
+    auto err = testLog->write(&rec2);
+    FsFile::failWrites = false;
+
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("sd card write failed", err.Error());
+    TEST_ASSERT_EQUAL(entries, testLog->entries());
+    TEST_ASSERT_EQUAL(size, testLog->fileSize());
+    TEST_ASSERT_EQUAL(lastTS, testLog->lastTS());
+    TEST_ASSERT_EQUAL(lastRev, testLog->lastRev());
+
+    // The rolled back record must not be served from the cache.
+    LogRecord result;
+    TEST_ASSERT_FALSE(testLog->read(1005, &result, 0));
+    TEST_ASSERT_DOUBLE_WITHIN(0.01, 1.0, result.logHours);
+
+    // A subsequent write at the same timestamp must succeed.
+    TEST_ASSERT_FALSE(testLog->write(&rec2));
+    TEST_ASSERT_EQUAL(entries + 1, testLog->entries());
+    TEST_ASSERT_EQUAL(lastRev + 1, testLog->lastRev());
+}
+
+void test_datalog_timestamp_alignment() {    TEST_ASSERT_TRUE(testLog->begin());
 
     LogRecord rec;
     rec.ts = 1003; // Not aligned to 5-second interval
@@ -425,6 +465,7 @@ void setup() {
 
     // Edge cases
     RUN_TEST(test_datalog_write_out_of_order);
+    RUN_TEST(test_datalog_write_failure_rolls_back);
     // RUN_TEST(test_datalog_timestamp_alignment); // TEMP: Alignment behavior needs review
     RUN_TEST(test_datalog_corrupted_file_detection);
     RUN_TEST(test_datalog_empty_initialization);

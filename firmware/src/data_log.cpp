@@ -187,67 +187,97 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
 }
 
 error DataLog::write(LogRecord *rec) {
-    if (!mutex_enter_timeout_ms(&_mu, 100)) {
+    // Only one write may be in flight at a time, but _mu must not be held
+    // across the card I/O or a card stall blocks cache-hit reads too.
+    if (!mutex_enter_timeout_ms(&_writeMu, SD_LOCK_TIMEOUT_MS)) {
+        return newError("write mutex timeout");
+    }
+
+    // --- Reserve -----------------------------------------------------------
+    if (!mutex_enter_timeout_ms(&_mu, SD_LOCK_TIMEOUT_MS)) {
+        mutex_exit(&_writeMu);
         return newError("mutex timeout");
     }
 
     if (!_file) {
         mutex_exit(&_mu);
+        mutex_exit(&_writeMu);
         return newError("file not open");
     }
     if (rec->ts <= _last.ts) {
         mutex_exit(&_mu);
+        mutex_exit(&_writeMu);
         return newError("timestamp not increasing");
     }
+
+    // The file has/should wrap.
+    const bool     wrapping = _wrapPos || _fileSize >= _maxFileSize;
+    const uint32_t writePos = wrapping ? _wrapPos : _fileSize;
+
+    // Snapshot for rollback should the card write fail.
+    const LogRecordKey prevLast = _last;
+    const uint32_t     prevWrapPos = _wrapPos;
+    const uint32_t     prevFileSize = _fileSize;
+    const uint32_t     prevEntries = _entries;
+
     rec->rev = ++_last.rev;
     _last.ts = rec->ts;
 
     // Add it to the last records cache.
+    const uint32_t cachePos = _lastCachePos;
     _lastCache[_lastCachePos++] = *rec;
     _lastCachePos %= _lastCacheSize;
 
-    if (_wrapPos || _fileSize >= _maxFileSize) {
-        // The file has/should wrap.
-        mutex_enter_blocking(&sdMu);
-        _file.seek(_wrapPos);
+    if (wrapping) {
         _wrapPos = (_wrapPos + _recordSize) % _fileSize;
-        _file.write(rec, _recordSize);
+    } else {
+        _fileSize += _recordSize;
+        _entries++;
+
+        // If this is the first record, set the first timestamp and rev.
+        if (_entries == 1) {
+            _first.ts = rec->ts;
+            _first.rev = rec->rev;
+        }
+    }
+    const uint32_t nextWrapPos = _wrapPos;
+    mutex_exit(&_mu);
+
+    // --- Card I/O, holding only sdMu ---------------------------------------
+    bool         ok = false;
+    LogRecordKey newFirst{};
+    if (mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
+        ok = _file.seek(writePos) && _file.write(rec, _recordSize) == _recordSize;
         _file.flush();
-        _file.seek(_wrapPos);
 
-        // Read the new first key.
-        auto key = LogRecordKey{};
-        _file.read(&key, sizeof(LogRecordKey));
-        _first = key;
+        if (ok && wrapping) {
+            // Read the new first key.
+            _file.seek(nextWrapPos);
+            _file.read(&newFirst, sizeof(LogRecordKey));
+        }
         mutex_exit(&sdMu);
+    }
 
-        metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
-
+    // --- Publish or roll back ----------------------------------------------
+    mutex_enter_blocking(&_mu);
+    if (!ok) {
+        _last = prevLast;
+        _wrapPos = prevWrapPos;
+        _fileSize = prevFileSize;
+        _entries = prevEntries;
+        _lastCache[cachePos] = LogRecord{}; // Invalidate the speculative entry.
         mutex_exit(&_mu);
-        return {};
+        mutex_exit(&_writeMu);
+        return newError("sd card write failed");
     }
-
-    // No wrap, just write at the end of the file.
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        mutex_exit(&_mu);
-        return newError("sd card mutex timeout");
+    if (wrapping) {
+        _first = newFirst;
     }
-    _file.seek(_fileSize);
-    _file.write(rec, _recordSize);
-    _file.flush();
-    mutex_exit(&sdMu);
+    mutex_exit(&_mu);
 
-    _fileSize += _recordSize;
-    _entries++;
-
-    // If this is the first record, set the first timestamp and rev.
-    if (_entries == 1) {
-        _first.ts = rec->ts;
-        _first.rev = rec->rev;
-    }
     metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
 
-    mutex_exit(&_mu);
+    mutex_exit(&_writeMu);
     return {};
 }
 
@@ -268,7 +298,7 @@ uint8_t DataLog::readRev(uint32_t rev, LogRecord *rec) {
 
     uint32_t pos = ((rev - _first.rev) * _recordSize + _wrapPos) % _fileSize;
 
-    if (!mutex_enter_timeout_ms(&sdMu, 200)) {
+    if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
         return 1;
     }
     _file.seek(pos);
