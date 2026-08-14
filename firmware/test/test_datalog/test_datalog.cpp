@@ -4,6 +4,7 @@
 
 #include <unity.h>
 #include "../stubs/TestCore.h"
+#include "../../src/storage.h"
 #include "../../src/data_log.h"
 
 // Test fixtures
@@ -19,6 +20,9 @@ void setUp() {
         sd.file = nullptr;
     }
     sd.directories.clear();
+
+    // Release any handle the storage layer cached onto the stub we just reset.
+    storage::init();
 }
 
 void tearDown() {
@@ -41,7 +45,7 @@ void test_datalog_write_single_record() {
     rec.logHours = 1.0;
     rec.hzHrs = 50.0;
 
-    auto err = testLog->write(&rec);
+    auto err = testLog->queueWrite(&rec);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(1, testLog->entries());
     TEST_ASSERT_EQUAL(1000, testLog->lastTS());
@@ -56,7 +60,7 @@ void test_datalog_write_multiple_records() {
         rec.logHours = i * 0.001;
         rec.hzHrs = 50.0 + i * 0.1;
 
-        auto err = testLog->write(&rec);
+        auto err = testLog->queueWrite(&rec);
         TEST_ASSERT_FALSE(err);
     }
 
@@ -73,7 +77,7 @@ void test_datalog_read_exact_match() {
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.001;
         rec.hzHrs = 50.0 + i * 0.1;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Read exact match
@@ -90,7 +94,7 @@ void test_datalog_read_before_first() {
     LogRecord rec;
     rec.ts = 1000;
     rec.logHours = 1.0;
-    testLog->write(&rec);
+    testLog->queueWrite(&rec);
 
     LogRecord result;
     auto err = testLog->read(500, &result, 0);
@@ -104,7 +108,7 @@ void test_datalog_read_after_last() {
     LogRecord rec;
     rec.ts = 1000;
     rec.logHours = 1.0;
-    testLog->write(&rec);
+    testLog->queueWrite(&rec);
 
     LogRecord result;
     auto err = testLog->read(2000, &result, 0);
@@ -132,7 +136,7 @@ void test_datalog_search_with_gaps() {
         LogRecord rec;
         rec.ts = timestamps[i];
         rec.logHours = i * 0.1;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Search for timestamp in gap (should return previous)
@@ -153,7 +157,7 @@ void test_datalog_search_large_dataset() {
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.01;
         rec.hzHrs = 50.0;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Search for record in the middle
@@ -171,17 +175,17 @@ void test_datalog_search_with_large_gaps() {
     LogRecord rec1;
     rec1.ts = 1000;
     rec1.logHours = 1.0;
-    testLog->write(&rec1);
+    testLog->queueWrite(&rec1);
 
     LogRecord rec2;
     rec2.ts = 10000; // 9000 second gap
     rec2.logHours = 10.0;
-    testLog->write(&rec2);
+    testLog->queueWrite(&rec2);
 
     LogRecord rec3;
     rec3.ts = 10005;
     rec3.logHours = 10.1;
-    testLog->write(&rec3);
+    testLog->queueWrite(&rec3);
 
     // Search in the middle of the gap
     LogRecord result;
@@ -206,7 +210,7 @@ void test_datalog_wrap_detection() {
         LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Should have wrapped, so entries should be capped
@@ -222,7 +226,7 @@ void test_datalog_findWrapPos_algorithm() {
         LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Manually simulate a wrap by writing older timestamps
@@ -242,7 +246,7 @@ void test_datalog_read_after_wrap() {
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
         rec.hzHrs = 50.0;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Try to read a recent record
@@ -262,7 +266,7 @@ void test_datalog_lastCache_hit() {
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
         rec.hzHrs = 50.0 + i;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Read a recent record (should hit lastCache)
@@ -281,7 +285,7 @@ void test_datalog_readCache_population() {
         LogRecord rec;
         rec.ts = 1000 + i * 5;
         rec.logHours = i * 0.1;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Read several records to populate read cache
@@ -304,13 +308,13 @@ void test_datalog_write_out_of_order() {
     LogRecord rec1;
     rec1.ts = 1000;
     rec1.logHours = 1.0;
-    testLog->write(&rec1);
+    testLog->queueWrite(&rec1);
 
     LogRecord rec2;
     rec2.ts = 995; // Earlier than last written
     rec2.logHours = 0.9;
 
-    auto err = testLog->write(&rec2);
+    auto err = testLog->queueWrite(&rec2);
     TEST_ASSERT_TRUE(err);
     TEST_ASSERT_EQUAL_STRING("timestamp not increasing", err.Error());
 }
@@ -323,7 +327,7 @@ void test_datalog_write_failure_rolls_back() {
     LogRecord rec1;
     rec1.ts = 1000;
     rec1.logHours = 1.0;
-    TEST_ASSERT_FALSE(testLog->write(&rec1));
+    TEST_ASSERT_FALSE(testLog->queueWrite(&rec1));
 
     const uint32_t entries = testLog->entries();
     const uint32_t size = testLog->fileSize();
@@ -334,11 +338,11 @@ void test_datalog_write_failure_rolls_back() {
     LogRecord rec2;
     rec2.ts = 1005;
     rec2.logHours = 2.0;
-    auto err = testLog->write(&rec2);
+    auto err = testLog->queueWrite(&rec2);
     FsFile::failWrites = false;
 
     TEST_ASSERT_TRUE(err);
-    TEST_ASSERT_EQUAL_STRING("sd card write failed", err.Error());
+    TEST_ASSERT_EQUAL_STRING("short write", err.Error());
     TEST_ASSERT_EQUAL(entries, testLog->entries());
     TEST_ASSERT_EQUAL(size, testLog->fileSize());
     TEST_ASSERT_EQUAL(lastTS, testLog->lastTS());
@@ -350,7 +354,7 @@ void test_datalog_write_failure_rolls_back() {
     TEST_ASSERT_DOUBLE_WITHIN(0.01, 1.0, result.logHours);
 
     // A subsequent write at the same timestamp must succeed.
-    TEST_ASSERT_FALSE(testLog->write(&rec2));
+    TEST_ASSERT_FALSE(testLog->queueWrite(&rec2));
     TEST_ASSERT_EQUAL(entries + 1, testLog->entries());
     TEST_ASSERT_EQUAL(lastRev + 1, testLog->lastRev());
 }
@@ -360,7 +364,7 @@ void test_datalog_timestamp_alignment() {    TEST_ASSERT_TRUE(testLog->begin());
     LogRecord rec;
     rec.ts = 1003; // Not aligned to 5-second interval
     rec.logHours = 1.0;
-    testLog->write(&rec);
+    testLog->queueWrite(&rec);
 
     // Read with unaligned timestamp (should align to 1000)
     LogRecord result;
@@ -393,6 +397,7 @@ void test_datalog_corrupted_file_detection() {
     std::memcpy(&(*file->data)[sizeof(LogRecord)], &rec2, sizeof(LogRecord));
 
     sd.file = file;
+    storage::init();
 
     // Begin should detect corruption and call reboot
     testLog->begin();
@@ -424,7 +429,7 @@ void test_datalog_accumulative_values() {
         rec.hzHrs = (i + 1) * 50.0;
         rec.voltHrs[0] = (i + 1) * 230.0;
         rec.wattHrs[0] = (i + 1) * 1000.0;
-        testLog->write(&rec);
+        testLog->queueWrite(&rec);
     }
 
     // Read a record

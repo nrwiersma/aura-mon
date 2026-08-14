@@ -5,10 +5,7 @@
 
 #include <errors.h>
 
-// SdFat allows the card up to SD_WRITE_TIMEOUT (600ms) of busy time during a
-// write, so any lock guarding card access must wait at least that long or it
-// will spuriously fail during a normal card garbage-collection stall.
-#define SD_LOCK_TIMEOUT_MS 750
+#include "storage.h"
 
 // Total of 384 bytes.
 struct LogRecord {
@@ -32,7 +29,8 @@ struct LogRecord {
 
 class DataLog {
 public:
-    explicit DataLog(int interval = 5, double days = 180.0) : _interval(interval),
+    explicit DataLog(int interval = 5, double days = 180.0) : _open(false),
+                                                              _interval(interval),
                                                               _recordSize(sizeof(LogRecord)),
                                                               _fileSize(0),
                                                               _maxFileSize(0),
@@ -47,7 +45,6 @@ public:
         const uint32_t computedSize = static_cast<uint32_t>(days * recordsPerDay * _recordSize);
         _maxFileSize = max(static_cast<uint32_t>(_recordSize), computedSize);
         mutex_init(&_mu);
-        mutex_init(&_writeMu);
         _lastCache = new LogRecord[_lastCacheSize]{};
     };
 
@@ -61,7 +58,10 @@ public:
     uint32_t lastTS();
     uint32_t fileSize();
     error read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = SD_LOCK_TIMEOUT_MS);
-    error write(LogRecord *rec);
+
+    // Queues rec to be written by the storage drain task. The record is copied,
+    // so the caller may reuse it immediately.
+    error queueWrite(const LogRecord *rec);
 
 private:
     struct LogRecordKey {
@@ -70,9 +70,8 @@ private:
     };
 
     mutex_t _mu{};
-    mutex_t _writeMu{};
 
-    FsFile   _file;
+    bool     _open;
     uint16_t _interval;
     uint16_t _recordSize;
 
@@ -90,10 +89,17 @@ private:
     uint32_t    _lastCachePos = 0;
     LogRecord * _lastCache; // The last 60s of records.
 
-    LogRecordKey readKey(uint32_t pos);
-    uint8_t      readRev(uint32_t rev, LogRecord *rec);
-    void         search(uint32_t ts, LogRecord *  rec,
-                uint32_t         lowTS, uint32_t  lowRev,
-                uint32_t         highTS, uint32_t highRev);
-    uint32_t findWrapPos(uint32_t highPos, uint32_t highTS, uint32_t lowPos, uint32_t lowTS);
+    // Writes rec, then publishes the new metadata, rolling both back if the
+    // card fails. Runs as one transaction because the wrapping read depends on
+    // the write having landed. Transactions are serialised, so concurrent
+    // writers cannot interleave.
+    error write(storage::sdAccess &sd, LogRecord *rec);
+
+    LogRecordKey readKey(storage::sdAccess &sd, uint32_t pos);
+    uint8_t      readRev(storage::sdAccess &sd, uint32_t rev, LogRecord *rec);
+    uint8_t      search(storage::sdAccess &sd, uint32_t ts, LogRecord *rec,
+                        uint32_t           lowTS, uint32_t   lowRev,
+                        uint32_t           highTS, uint32_t  highRev);
+    uint32_t findWrapPos(storage::sdAccess &sd, uint32_t lowPos, uint32_t lowTS,
+                         uint32_t           highPos, uint32_t highTS);
 };

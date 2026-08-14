@@ -45,7 +45,14 @@ public:
         }
         uint8_t b = (*data)[position];
         position += 1;
-        return 1;
+        return b;
+    }
+
+    int available() {
+        if (!open || position >= data->size()) {
+            return 0;
+        }
+        return static_cast<int>(data->size() - position);
     }
 
     size_t read(void* buf, size_t sz) {
@@ -89,6 +96,8 @@ public:
     }
 
     bool flush() { return true; }
+
+    bool isDirectory() const { return false; }
 
     void close() {
         open = false;

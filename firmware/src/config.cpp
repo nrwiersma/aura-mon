@@ -7,6 +7,7 @@
 #include <lwip/inet.h>
 #else
 #include "../test/stubs/TestCore.h"
+#include "storage.h"
 #include "config.h"
 #endif
 
@@ -156,72 +157,33 @@ void populateDevicesJson(JsonArray devicesArray) {
 }
 
 error loadConfig() {
-    mutex_enter_blocking(&sdMu);
-    FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
-    if (!file) {
-        // Fall back to the last successful temp file.
-        file = sd.open(CONFIG_LOG_TMP_PATH, O_RDONLY);
-        if (!file) {
-            mutex_exit(&sdMu);
-            return newError("could not open config file");
-        }
-    }
-
     JsonDocument doc;
 
-    auto err = deserializeJson(doc, file);
-
-    file.close();
-    mutex_exit(&sdMu);
-
+    auto err = storage::run([&](storage::sdAccess &sd) -> error {
+        if (auto e = sd.readJSON(CONFIG_LOG_PATH, doc); !e) {
+            return {};
+        }
+        // Fall back to the temp file, which a save interrupted between writing
+        // and renaming will have left behind.
+        if (auto e = sd.readJSON(CONFIG_LOG_TMP_PATH, doc); e) {
+            return newError("could not decode config file");
+        }
+        return {};
+    });
     if (err) {
-        return newError("could not decode config file");
+        return err;
     }
 
     return loadConfigJSON(doc);
-}
-
-void ensureConfigDirectoryLocked() {
-    const char *path = CONFIG_LOG_PATH;
-    const char *slash = strrchr(path, '/');
-    if (!slash) {
-        return;
-    }
-    char dir[64];
-    auto len = static_cast<size_t>(slash - path);
-    if (len >= sizeof(dir)) {
-        len = sizeof(dir) - 1;
-    }
-    memcpy(dir, path, len);
-    dir[len] = '\0';
-    sd.mkdir(dir);
 }
 
 error saveConfig() {
     JsonDocument doc;
     saveConfigJSON(doc);
 
-    mutex_enter_blocking(&sdMu);
-    ensureConfigDirectoryLocked();
-    FsFile file = sd.open(CONFIG_LOG_TMP_PATH, O_RDWR | O_CREAT | O_TRUNC);
-    if (!file) {
-        mutex_exit(&sdMu);
-        return newError("could not create config file");
-    }
-    if (serializeJson(doc, file) == 0) {
-        file.close();
-        mutex_exit(&sdMu);
-        return newError("could not write config file");
-    }
-    file.flush();
-    file.close();
-    sd.remove(CONFIG_LOG_PATH);
-    if (!sd.rename(CONFIG_LOG_TMP_PATH, CONFIG_LOG_PATH)) {
-        mutex_exit(&sdMu);
-        return newError("could not rename config file");
-    }
-    mutex_exit(&sdMu);
-    return {};
+    return storage::run([&](storage::sdAccess &sd) {
+        return sd.writeJSON(CONFIG_LOG_PATH, CONFIG_LOG_TMP_PATH, doc);
+    });
 }
 
 error loadConfigJSON(const JsonDocument &doc) {

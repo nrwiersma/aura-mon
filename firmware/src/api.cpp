@@ -59,6 +59,41 @@ void returnInternalError(const char *reason) {
     server.send(500, contentTypeJSON, msg);
 }
 
+// Releasing a pin must not be skipped on a busy card: there are only a handful
+// of slots and a leaked one is never reclaimed, so this waits longer than a
+// normal transaction would.
+void unpinPath(const char *path) {
+    if (auto err = storage::run([&](storage::sdAccess &sd) {
+        sd.unpin(path);
+        return error{};
+    }, SD_LOCK_TIMEOUT_MS * 4); err) {
+        LOGE("Could not release %s: %s", path, err.Error());
+    }
+}
+
+// Streams len bytes of path from pos as chunked content. The card lock is taken
+// per chunk and released while the chunk is sent, so a slow client cannot hold
+// the card, and queued work is drained between chunks.
+void sendFileChunked(const char *path, uint32_t pos, uint32_t len) {
+    uint8_t buffer[1024];
+
+    while (len > 0) {
+        const auto want = static_cast<uint32_t>(min(static_cast<size_t>(len), sizeof(buffer)));
+
+        if (auto err = storage::run([&](storage::sdAccess &sd) {
+            return sd.readAt(path, pos, buffer, want);
+        }); err) {
+            break;
+        }
+
+        server.sendContent(reinterpret_cast<char *>(buffer), want);
+        pos += want;
+        len -= want;
+
+        storage::pump();
+    }
+}
+
 struct deviceColumn {
     uint8_t index;
     String  name;
@@ -192,6 +227,8 @@ void handleMetrics() {
     const uint32_t sdQueueDepth = metrics.sd_queue_depth.load(std::memory_order_relaxed);
     const uint32_t sdQueueHighWater = metrics.sd_queue_high_water.load(std::memory_order_relaxed);
     const uint32_t sdQueueDropped = metrics.sd_queue_dropped_total.load(std::memory_order_relaxed);
+    const uint32_t sdQueueLatencyUsMax = metrics.sd_queue_latency_us_max.load(std::memory_order_relaxed);
+    const uint32_t sdJobErrors = metrics.sd_job_errors_total.load(std::memory_order_relaxed);
     const uint32_t datalogCacheHit = metrics.datalog_cache_hit.load(std::memory_order_relaxed);
     const uint32_t datalogWriteErrors = metrics.datalog_write_errors_total.load(std::memory_order_relaxed);
     const uint32_t ntpSyncs = metrics.ntp_syncs_total.load(std::memory_order_relaxed);
@@ -292,6 +329,16 @@ void handleMetrics() {
     response += F("# TYPE auramon_sd_queue_dropped_total counter\n");
     response += F("auramon_sd_queue_dropped_total ");
     response += String(sdQueueDropped);
+    response += '\n';
+    response += F("# HELP auramon_sd_queue_latency_seconds_max Longest a job has waited in the SD queue before running.\n");
+    response += F("# TYPE auramon_sd_queue_latency_seconds_max gauge\n");
+    response += F("auramon_sd_queue_latency_seconds_max ");
+    response += String(static_cast<double>(sdQueueLatencyUsMax) / 1000000.0, 6);
+    response += '\n';
+    response += F("# HELP auramon_sd_job_errors_total Total queued SD jobs that returned an error.\n");
+    response += F("# TYPE auramon_sd_job_errors_total counter\n");
+    response += F("auramon_sd_job_errors_total ");
+    response += String(sdJobErrors);
     response += '\n';
     response += F("# HELP auramon_datalog_cache_hit Number of cache hits when reading records from the datalog.\n");
     response += F("# TYPE auramon_datalog_cache_hit counter\n");
@@ -549,93 +596,63 @@ void handleLogs() {
         }
     }
 
-    if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
+    bool     found = false;
+    uint32_t fileSize = 0;
+
+    auto err = storage::run([&](storage::sdAccess &sd) -> error {
+        if (!sd.exists(MESSAGE_LOG_PATH)) {
+            return {};
+        }
+        found = true;
+        fileSize = sd.size(MESSAGE_LOG_PATH);
+
+        // Held open for the duration of the transfer so each chunk does not
+        // reopen the file. The card lock is still released between chunks.
+        sd.pin(MESSAGE_LOG_PATH);
+        return {};
+    });
+    if (err) {
         server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
-
-    if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
+    if (!found) {
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
 
-    if (auto f = sd.open(MESSAGE_LOG_PATH, O_READ); f) {
-        const size_t fileSize = f.size();
-        if (startOffset >= fileSize) {
-            server.send(204, contentTypePlain, "");
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-        if (startOffset > 0 && !f.seek(startOffset)) {
-            returnInternalError("could not seek log");
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-
-        size_t remaining = fileSize - startOffset;
-        if (limitBytes > 0 && limitBytes < remaining) {
-            remaining = limitBytes;
-        }
-        if (remaining == 0) {
-            server.send(204, contentTypePlain, "");
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-
-        if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
-            server.send(505, contentTypePlain, F("HTTP1.1 required"));
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-
-        uint8_t buffer[1024];
-        while (remaining > 0) {
-            const int readLen = f.read(buffer, min(remaining, sizeof(buffer)));
-            if (readLen <= 0) {
-                break;
-            }
-            server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
-            remaining -= static_cast<size_t>(readLen);
-        }
-        server.chunkedResponseFinalize();
-        f.close();
-
-        mutex_exit(&sdMu);
+    uint32_t remaining = startOffset >= fileSize ? 0 : fileSize - startOffset;
+    if (limitBytes > 0 && limitBytes < remaining) {
+        remaining = limitBytes;
+    }
+    if (remaining == 0) {
+        unpinPath(MESSAGE_LOG_PATH);
+        server.send(204, contentTypePlain, "");
         return;
     }
-    mutex_exit(&sdMu);
 
-    server.send(404, contentTypeJSON, "Not Found");
+    if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
+        unpinPath(MESSAGE_LOG_PATH);
+        server.send(505, contentTypePlain, F("HTTP1.1 required"));
+        return;
+    }
+
+    sendFileChunked(MESSAGE_LOG_PATH, startOffset, remaining);
+
+    server.chunkedResponseFinalize();
+    unpinPath(MESSAGE_LOG_PATH);
 }
 
-void handleLogsTrunc() {
-    LOGI("Log truncation requested");
+constexpr char   restartMarker[] = "**** RESTART ****";
+constexpr size_t restartMarkerLen = sizeof(restartMarker) - 1;
+constexpr char   messageLogTmpPath[] = MESSAGE_LOG_PATH ".trunc";
 
-    constexpr char   restartMarker[] = "**** RESTART ****";
-    constexpr size_t restartMarkerLen = sizeof(restartMarker) - 1;
-    constexpr char   tempPath[] = MESSAGE_LOG_PATH ".trunc";
-
-    if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
-    if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
-        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
-        return;
-    }
-
-    auto src = sd.open(MESSAGE_LOG_PATH, O_READ);
-    if (!src) {
-        mutex_exit(&sdMu);
-        returnInternalError("could not open log");
-        return;
+// Rewrites the message log to contain only what follows the last restart
+// marker, reporting the offset it was cut at.
+error truncateLog(storage::sdAccess &sd, uint32_t &startOffset) {
+    const uint32_t fileSize = sd.size(MESSAGE_LOG_PATH);
+    if (fileSize == 0) {
+        startOffset = 0;
+        return {};
     }
 
     constexpr size_t chunkSize = 1024;
@@ -645,23 +662,12 @@ void handleLogsTrunc() {
     uint32_t         lastMarkerOffset = 0;
     bool             markerFound = false;
 
-    for (uint32_t chunkEnd = src.size(); chunkEnd > 0 && !markerFound;) {
+    for (uint32_t chunkEnd = fileSize; chunkEnd > 0 && !markerFound;) {
         const uint32_t chunkStart = (chunkEnd > chunkSize) ? (chunkEnd - chunkSize) : 0;
         const size_t   chunkLen = chunkEnd - chunkStart;
 
-        if (!src.seek(chunkStart)) {
-            src.close();
-            mutex_exit(&sdMu);
-            returnInternalError("could not seek log");
-            return;
-        }
-
-        const int readLen = src.read(window, chunkLen);
-        if (readLen < 0 || static_cast<size_t>(readLen) != chunkLen) {
-            src.close();
-            mutex_exit(&sdMu);
-            returnInternalError("could not read log");
-            return;
+        if (auto e = sd.readAt(MESSAGE_LOG_PATH, chunkStart, window, chunkLen); e) {
+            return e;
         }
         if (overlapLen > 0) {
             // Copy the overlap to the end of the window.
@@ -690,57 +696,85 @@ void handleLogsTrunc() {
         chunkEnd = chunkStart;
     }
 
-    const uint32_t startOffset = markerFound ? lastMarkerOffset : 0;
-    if (!src.seek(startOffset)) {
-        src.close();
-        mutex_exit(&sdMu);
-        returnInternalError("could not seek log");
+    startOffset = markerFound ? lastMarkerOffset : 0;
+    if (startOffset == 0) {
+        // Nothing to trim, so leave the log alone rather than rewriting it.
+        return {};
+    }
+
+    // Removed before pinning: remove() drops the pin, so pinning first would
+    // reopen the file on every chunk of the copy.
+    sd.remove(messageLogTmpPath);
+    sd.pin(messageLogTmpPath);
+
+    uint8_t  buffer[chunkSize];
+    uint32_t pos = startOffset;
+    while (pos < fileSize) {
+        const auto want = static_cast<uint32_t>(min(static_cast<size_t>(fileSize - pos), sizeof(buffer)));
+
+        if (auto e = sd.readAt(MESSAGE_LOG_PATH, pos, buffer, want); e) {
+            sd.unpin(messageLogTmpPath);
+            sd.remove(messageLogTmpPath);
+            return e;
+        }
+        if (auto e = sd.append(messageLogTmpPath, buffer, want); e) {
+            sd.unpin(messageLogTmpPath);
+            sd.remove(messageLogTmpPath);
+            return e;
+        }
+        pos += want;
+    }
+
+    sd.unpin(messageLogTmpPath);
+
+    if (auto e = sd.remove(MESSAGE_LOG_PATH); e) {
+        sd.remove(messageLogTmpPath);
+        return e;
+    }
+    // From here the temp file is the only copy of the log, so a failure must
+    // leave it in place rather than remove it.
+    return sd.rename(messageLogTmpPath, MESSAGE_LOG_PATH);
+}
+
+void handleLogsTrunc() {
+    LOGI("Log truncation requested");
+
+    bool     found = false;
+    uint32_t startOffset = 0;
+
+    // Unlike the log download, this runs as a single transaction: there is no
+    // network I/O in the copy, so it is bounded by card throughput rather than
+    // by the client, and draining mid-copy would append lines to the source
+    // after the point the replacement was taken from.
+    auto err = storage::run([&](storage::sdAccess &sd) -> error {
+        if (!sd.exists(MESSAGE_LOG_PATH)) {
+            return {};
+        }
+        found = true;
+
+        sd.pin(MESSAGE_LOG_PATH);
+
+        auto e = truncateLog(sd, startOffset);
+
+        sd.unpin(MESSAGE_LOG_PATH);
+        return e;
+    });
+
+    if (!found) {
+        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
-
-    auto tmp = sd.open(tempPath, O_WRITE | O_CREAT | O_TRUNC);
-    if (!tmp) {
-        src.close();
-        mutex_exit(&sdMu);
-        returnInternalError("could not open temp log");
-        return;
-    }
-
-    uint8_t buffer[1024];
-    while (true) {
-        const int readLen = src.read(buffer, sizeof(buffer));
-        if (readLen <= 0) {
-            break;
-        }
-
-        if (tmp.write(buffer, static_cast<size_t>(readLen)) != static_cast<size_t>(readLen)) {
-            tmp.close();
-            src.close();
-            sd.remove(tempPath);
-            mutex_exit(&sdMu);
-            returnInternalError("could not write temp log");
-            return;
-        }
-    }
-
-    tmp.flush();
-    tmp.close();
-    src.close();
-
-    sd.remove(MESSAGE_LOG_PATH);
-    if (!sd.rename(tempPath, MESSAGE_LOG_PATH)) {
-        sd.remove(tempPath);
-        mutex_exit(&sdMu);
-        returnInternalError("could not replace log");
+    if (err) {
+        returnInternalError(err.Error());
         return;
     }
 
     LOGD("Log truncated at offset %u", startOffset);
 
-    mutex_exit(&sdMu);
-
     server.send(204, contentTypePlain, "");
 }
+
+
 
 static bool    otaRestartNeeded = false;
 static bool    otaUploadFailed = false;
@@ -827,11 +861,13 @@ void handleOtaUpload() {
     }
 }
 
+constexpr char uploadSuffix[] = ".upload";
+
 static bool   publicUploadFailed = false;
 static int    publicUploadStatus = 200;
 static String publicUploadError;
-static bool   publicUploadMutexHeld = false;
-static FsFile publicUploadFile;
+static String publicUploadPath;
+static String publicUploadTmpPath;
 
 void handlePublicUploadFinish() {
     if (publicUploadFailed) {
@@ -845,6 +881,27 @@ void handlePublicUploadFinish() {
     server.send(204, contentTypePlain, "");
 }
 
+void failPublicUpload(const int status, const __FlashStringHelper *reason) {
+    publicUploadFailed = true;
+    publicUploadStatus = status;
+    publicUploadError = reason;
+
+    if (publicUploadTmpPath.length() > 0) {
+        const String tmp = publicUploadTmpPath;
+        if (auto err = storage::run([&](storage::sdAccess &sd) {
+            sd.unpin(tmp.c_str());
+            sd.remove(tmp.c_str());
+            return error{};
+        }, SD_LOCK_TIMEOUT_MS * 4); err) {
+            LOGE("Could not discard %s: %s", tmp.c_str(), err.Error());
+        }
+        publicUploadTmpPath = "";
+    }
+}
+
+// Uploads land in a temp file, one transaction per chunk, and are renamed into
+// place only once complete. The card is therefore never held across the client's
+// transfer, and an interrupted upload cannot leave a partial file served.
 void handlePublicUpload() {
     HTTPUpload &upload = server.upload();
 
@@ -852,83 +909,83 @@ void handlePublicUpload() {
         publicUploadFailed = false;
         publicUploadStatus = 200;
         publicUploadError = "";
+        publicUploadPath = "";
+        publicUploadTmpPath = "";
 
         if (upload.name != "file") {
-            publicUploadFailed = true;
-            publicUploadStatus = 400;
-            publicUploadError = F("Unexpected form field name");
+            failPublicUpload(400, F("Unexpected form field name"));
             LOGE("Public upload: unexpected form field name: %s", upload.name.c_str());
             return;
         }
 
         if (upload.filename.length() == 0 || upload.filename.indexOf('/') >= 0 ||
             upload.filename.indexOf('\\') >= 0) {
-            publicUploadFailed = true;
-            publicUploadStatus = 400;
-            publicUploadError = F("Invalid filename");
+            failPublicUpload(400, F("Invalid filename"));
             LOGE("Public upload: invalid filename: %s", upload.filename.c_str());
             return;
         }
 
-        String path = "public/";
-        path.concat(upload.filename);
+        publicUploadPath = "public/";
+        publicUploadPath.concat(upload.filename);
+        publicUploadTmpPath = publicUploadPath + uploadSuffix;
 
-        LOGI("Public upload: start %s", path.c_str());
+        LOGI("Public upload: start %s", publicUploadPath.c_str());
 
-        if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
-            publicUploadFailed = true;
-            publicUploadStatus = 408;
-            publicUploadError = F("Request Timeout");
-            LOGE("Public upload: failed to acquire sdMu");
+        if (auto err = storage::run([&](storage::sdAccess &sd) -> error {
+            if (auto e = sd.mkdirFor(publicUploadTmpPath.c_str()); e) {
+                return e;
+            }
+            sd.remove(publicUploadTmpPath.c_str());
+
+            // Held open for the transfer so each chunk does not reopen the file.
+            sd.pin(publicUploadTmpPath.c_str());
+            return {};
+        }); err) {
+            const String tmp = publicUploadTmpPath;
+            publicUploadTmpPath = "";
+            failPublicUpload(500, F("Failed to open file"));
+            LOGE("Public upload: failed to open %s: %s", tmp.c_str(), err.Error());
+        }
+        return;
+    }
+
+    if (publicUploadFailed) {
+        return;
+    }
+
+    if (upload.status == UPLOAD_FILE_WRITE) {
+        if (auto err = storage::run([&](storage::sdAccess &sd) {
+            return sd.append(publicUploadTmpPath.c_str(), upload.buf, upload.currentSize);
+        }); err) {
+            LOGE("Public upload: write failed at %u bytes: %s", upload.totalSize, err.Error());
+            failPublicUpload(500, F("Write failed"));
             return;
         }
-        publicUploadMutexHeld = true;
 
-        publicUploadFile = sd.open(path.c_str(), O_WRITE | O_CREAT | O_TRUNC);
-        if (!publicUploadFile) {
-            publicUploadFailed = true;
-            publicUploadStatus = 500;
-            publicUploadError = F("Failed to open file");
-            mutex_exit(&sdMu);
-            LOGE("Public upload: failed to open %s", path.c_str());
-            publicUploadMutexHeld = false;
-        }
-    } else if (upload.status == UPLOAD_FILE_WRITE && !publicUploadFailed) {
-        if (publicUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
-            publicUploadFailed = true;
-            publicUploadStatus = 500;
-            publicUploadError = F("Write failed");
-            Serial.printf("Public upload: write failed at %u bytes", upload.totalSize);
-            publicUploadFile.close();
-            if (publicUploadMutexHeld) {
-                mutex_exit(&sdMu);
-                publicUploadMutexHeld = false;
-            }
-        }
-    } else if (upload.status == UPLOAD_FILE_END && !publicUploadFailed) {
-        publicUploadFile.flush();
-        publicUploadFile.close();
+        // Let queued work land between chunks rather than waiting out the
+        // whole transfer.
+        storage::pump();
+        return;
+    }
 
-        if (publicUploadMutexHeld) {
-            mutex_exit(&sdMu);
-            publicUploadMutexHeld = false;
+    if (upload.status == UPLOAD_FILE_END) {
+        if (auto err = storage::run([&](storage::sdAccess &sd) -> error {
+            sd.unpin(publicUploadTmpPath.c_str());
+            sd.remove(publicUploadPath.c_str());
+            return sd.rename(publicUploadTmpPath.c_str(), publicUploadPath.c_str());
+        }); err) {
+            LOGE("Public upload: could not publish %s: %s", publicUploadPath.c_str(), err.Error());
+            failPublicUpload(500, F("Write failed"));
+            return;
         }
 
+        publicUploadTmpPath = "";
         LOGI("Public upload: complete (%u bytes)", upload.totalSize);
-    } else if (upload.status == UPLOAD_FILE_ABORTED) {
-        publicUploadFailed = true;
-        publicUploadStatus = 500;
-        publicUploadError = F("Upload aborted");
+        return;
+    }
 
-        if (publicUploadFile) {
-            publicUploadFile.close();
-        }
-
-        if (publicUploadMutexHeld) {
-            mutex_exit(&sdMu);
-            publicUploadMutexHeld = false;
-        }
-
+    if (upload.status == UPLOAD_FILE_ABORTED) {
+        failPublicUpload(500, F("Upload aborted"));
         LOGE("Public upload: aborted");
     }
 }
@@ -941,76 +998,89 @@ void handleNotFound() {
         return;
     }
 
-    if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
     String path = server.uri();
     if (!path.startsWith("/")) path = '/' + path;
     if (path == "/") path = "/index.html";
-    path = "public" + path;
-    auto gzPath = path + ".gz";
-
-    if (sd.exists(gzPath.c_str())) {
-        server.sendHeader("Content-Encoding", "gzip");
-        path = gzPath;
-    } else if (!sd.exists(path.c_str())) {
-        mutex_exit(&sdMu);
+    if (path.endsWith(uploadSuffix)) {
+        // An upload left behind by an interrupted transfer is not content.
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
+    path = "public" + path;
+    auto gzPath = path + ".gz";
 
-    if (auto f = sd.open(path.c_str(), O_READ); f) {
-        if (f.isDirectory()) {
-            f.close();
-            mutex_exit(&sdMu);
-            server.send(403, contentTypePlain, "Forbidden");
-            return;
+    bool     gzipped = false;
+    bool     found = false;
+    bool     directory = false;
+    uint32_t fileSize = 0;
+
+    auto err = storage::run([&](storage::sdAccess &sd) -> error {
+        if (sd.exists(gzPath.c_str())) {
+            gzipped = true;
+        } else if (!sd.exists(path.c_str())) {
+            return {};
         }
 
-        String contentType = contentTypePlain;
-        if (path.endsWith(".html") || path.endsWith(".html.gz")) {
-            contentType = F("text/html");
-        } else if (path.endsWith(".css") || path.endsWith(".css.gz")) {
-            contentType = F("text/css");
-        } else if (path.endsWith(".js") || path.endsWith(".js.gz")) {
-            contentType = F("application/javascript");
-        } else if (path.endsWith(".json") || path.endsWith(".json.gz")) {
-            contentType = contentTypeJSON;
-        } else if (path.endsWith(".png") || path.endsWith(".png.gz")) {
-            contentType = F("image/png");
-        } else if (path.endsWith(".jpg") || path.endsWith(".jpeg") ||
-                   path.endsWith(".jpg.gz") || path.endsWith(".jpeg.gz")) {
-            contentType = F("image/jpeg");
-        } else if (path.endsWith(".ico") || path.endsWith(".ico.gz")) {
-            contentType = F("image/x-icon");
-        } else if (path.endsWith(".svg") || path.endsWith(".svg.gz")) {
-            contentType = F("image/svg+xml");
+        const char *p = gzipped ? gzPath.c_str() : path.c_str();
+        found = true;
+        directory = sd.isDirectory(p);
+        if (directory) {
+            return {};
         }
 
-        if (!server.chunkedResponseModeStart(200, contentType.c_str())) {
-            server.send(505, contentTypePlain, F("HTTP1.1 required"));
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
+        fileSize = sd.size(p);
 
-        uint8_t buffer[1024];
-        while (true) {
-            const int readLen = f.read(buffer, sizeof(buffer));
-            if (readLen <= 0) {
-                break;
-            }
-            server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
-        }
-        server.chunkedResponseFinalize();
-        f.close();
-
-        mutex_exit(&sdMu);
+        // Held open for the duration of the transfer so each chunk does not
+        // reopen the file. The card lock is still released between chunks.
+        sd.pin(p);
+        return {};
+    });
+    if (err) {
+        server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
-    mutex_exit(&sdMu);
+    if (!found) {
+        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
+        return;
+    }
+    if (directory) {
+        server.send(403, contentTypePlain, "Forbidden");
+        return;
+    }
 
-    server.send(404, contentTypeJSON, "Not Found");
+    if (gzipped) {
+        server.sendHeader("Content-Encoding", "gzip");
+        path = gzPath;
+    }
+
+    String contentType = contentTypePlain;
+    if (path.endsWith(".html") || path.endsWith(".html.gz")) {
+        contentType = F("text/html");
+    } else if (path.endsWith(".css") || path.endsWith(".css.gz")) {
+        contentType = F("text/css");
+    } else if (path.endsWith(".js") || path.endsWith(".js.gz")) {
+        contentType = F("application/javascript");
+    } else if (path.endsWith(".json") || path.endsWith(".json.gz")) {
+        contentType = contentTypeJSON;
+    } else if (path.endsWith(".png") || path.endsWith(".png.gz")) {
+        contentType = F("image/png");
+    } else if (path.endsWith(".jpg") || path.endsWith(".jpeg") ||
+               path.endsWith(".jpg.gz") || path.endsWith(".jpeg.gz")) {
+        contentType = F("image/jpeg");
+    } else if (path.endsWith(".ico") || path.endsWith(".ico.gz")) {
+        contentType = F("image/x-icon");
+    } else if (path.endsWith(".svg") || path.endsWith(".svg.gz")) {
+        contentType = F("image/svg+xml");
+    }
+
+    if (!server.chunkedResponseModeStart(200, contentType.c_str())) {
+        server.send(505, contentTypePlain, F("HTTP1.1 required"));
+        unpinPath(path.c_str());
+        return;
+    }
+
+    sendFileChunked(path.c_str(), 0, fileSize);
+
+    server.chunkedResponseFinalize();
+    unpinPath(path.c_str());
 }

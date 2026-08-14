@@ -7,6 +7,7 @@
 #include <ctime>
 #include "../stubs/TestLogger.h"
 #include "../../src/logger.h"
+#include "../../src/storage.h"
 
 // Shared logger instance recreated for each test.
 Logger *testLogger;
@@ -33,6 +34,9 @@ void setUp() {
         sd.file = nullptr;
     }
     sd.directories.clear();
+
+    // Release any handle the storage layer cached onto the stub we just reset.
+    storage::init();
 
     // Use a time value that is <= 10,000,000 so timestamps are suppressed
     // unless a test explicitly requests them.

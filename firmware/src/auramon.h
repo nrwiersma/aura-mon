@@ -20,8 +20,8 @@
 #include "crash_handler.h"
 #include "config.h"
 #include "ethernet.h"
+#include "storage.h"
 #include "data_log.h"
-#include "sd_writer.h"
 #include "task.h"
 #include "modbus.h"
 #include "api.h"
@@ -73,8 +73,6 @@ extern NetworkConfig  netCfg;
 extern PCF85063A rtc;
 extern bool      rtcRunning;
 
-extern mutex_t sdMu;
-extern SdFs    sd;
 
 extern ModbusRTUMaster modbus;
 

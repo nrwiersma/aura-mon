@@ -80,9 +80,10 @@ uint32_t logData(void *param) {
     lastMS = nowMS;
     rec->logHours += elapsedHrs;
 
-    // Queue the record to be written.
-    if (!queueLogRecord(rec)) {
-        LOGE("SD write queue full, retrying");
+    // Queued rather than written here, so this core never blocks on a card
+    // stall and trips its watchdog.
+    if (auto err = datalog.queueWrite(rec); err) {
+        LOGE("Could not queue datalog record: %s", err.Error());
         return 1;
     }
 

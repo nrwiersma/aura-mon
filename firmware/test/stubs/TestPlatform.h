@@ -80,6 +80,10 @@ inline unsigned long millis() {
     return time;
 }
 
+inline unsigned long micros() {
+    return millis() * 1000;
+}
+
 // Arduino String backed by std::string – exposes the methods used by
 // production code and tests.
 class String {
@@ -186,6 +190,8 @@ inline bool mutex_enter_timeout_ms(mutex_t *mtx, uint32_t timeout) {
 }
 
 // Mock file operations flags
+typedef int oflag_t;
+
 #define O_RDONLY 0x01
 #define O_RDWR 0x02
 #define O_CREAT 0x0100

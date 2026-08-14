@@ -7,8 +7,35 @@
 #else
 #include "../test/stubs/TestLogger.h"
 #include "logger.h"
-#include "sd_writer.h"
+#include "storage.h"
 #endif
+
+namespace {
+    // Longer message log lines are truncated. The line is copied into the
+    // queued closure, so this bounds the queue entry size.
+    constexpr size_t messageMaxLen = 192;
+
+    // Queues a line to be appended to the message log. A full queue drops the
+    // newest line rather than the oldest, as during a burst the earliest lines
+    // carry the cause.
+    void queueMessage(const char *buf, size_t len) {
+        if (len > messageMaxLen) {
+            len = messageMaxLen;
+        }
+
+        struct msgJob {
+            uint16_t len;
+            char     buf[messageMaxLen];
+        } job{static_cast<uint16_t>(len), {}};
+        memcpy(job.buf, buf, len);
+
+        if (!storage::submit([job](storage::sdAccess &sd) -> error {
+            return sd.append(MESSAGE_LOG_PATH, job.buf, job.len);
+        })) {
+            metrics.sd_queue_dropped_total.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+}
 
 const char *lvls[] PROGMEM = {"unkn", "dbug", "info", "eror"};
 
@@ -94,7 +121,6 @@ void Logger::write(const LVL lvl, const char *buffer, size_t size) {
     }
 
     if (_restart) {
-        // Queue the restart marker ahead of the first persisted line.
         static const char marker[] = "\r\n**** RESTART ****\r\n";
         queueMessage(marker, sizeof(marker) - 1);
         _restart = false;

@@ -7,10 +7,8 @@
 uint32_t syncState(void *param) {
     (void) param;
 
-    mutex_enter_blocking(&sdMu);
-    auto sdPresent = sd.card()->status() != 0 && sd.card()->errorCode() == 0;
-    auto sdError = sd.card()->errorCode();
-    mutex_exit(&sdMu);
+    uint8_t    sdError = 0;
+    const bool sdPresent = storage::status(sdError);
 
     if (!sdPresent) {
         ledState = LEDColor::Red;

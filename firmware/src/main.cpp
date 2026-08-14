@@ -13,9 +13,6 @@ time_t            startTime;
 Ticker            ledTimer;
 volatile LEDColor ledState;
 
-mutex_t sdMu;
-SdFs    sd;
-
 Logger msgLog;
 
 PCF85063A rtc;
@@ -60,12 +57,8 @@ void setup() {
 
     LOGD("Booting");
 
-    mutex_init(&sdMu);
-    initSDWriter();
-    if (!sd.begin(SD_CONFIG)) {
-        Serial.println("Could not initialize SD Card. Halting");
-        sd.initErrorPrint(&Serial);
-
+    storage::init();
+    if (!storage::begin()) {
         digitalWrite(LED_GREEN, LOW);
         while (1) { delay(1000); }
     }
@@ -145,9 +138,7 @@ void setup() {
     c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);
     c0Queue.add(syncState, 4);
-    // The SD writer must stay on core 0: core 1 runs a 1s watchdog and a card
-    // stall can exceed it.
-    c0Queue.add(sdWriterTask, 6);
+    c0Queue.add(storage::drainTask, 6);
 
     c1Queue.add(logData, 7);
     c1Queue.add(syncDevices, 6);
@@ -196,14 +187,10 @@ void loop1() {
 }
 
 void safeReboot() {
-    // Flush anything still queued, then drain the data log.
-    drainSDWriter();
+    storage::drain();
     datalog.end();
 
-    // Block any remaining SD operations and cleanly terminate the
-    // SDIO peripheral before resetting.
-    mutex_enter_blocking(&sdMu);
-    sd.end();
+    storage::end();
 
     rp2040.reboot();
 }

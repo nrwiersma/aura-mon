@@ -10,63 +10,68 @@
 #endif
 
 bool DataLog::begin() {
-    if (_file) return true;
+    if (_open) return true;
 
-    mutex_enter_blocking(&sdMu);
-    if (!sd.exists(DATA_LOG_PATH)) {
-        String msgDir = DATA_LOG_PATH;
-        msgDir.remove(msgDir.indexOf('/', 1));
-        sd.mkdir(msgDir.c_str());
-    }
-    _file = sd.open(DATA_LOG_PATH, O_RDWR | O_CREAT);
-    if (!_file) {
-        mutex_exit(&sdMu);
+    bool damaged = false;
+
+    auto err = storage::run([&](storage::sdAccess &sd) -> error {
+        if (auto e = sd.mkdirFor(DATA_LOG_PATH); e) {
+            return e;
+        }
+
+        sd.pin(DATA_LOG_PATH);
+
+        _fileSize = sd.size(DATA_LOG_PATH);
+        _maxFileSize = max(_fileSize, _maxFileSize);
+        if (_fileSize) {
+            _first = readKey(sd, 0);
+            _last = readKey(sd, _fileSize - _recordSize);
+            _entries = _fileSize / _recordSize;
+
+            LOGD("Found %d entries in log file", _entries);
+        }
+
+        if (_first.ts > _last.ts) {
+            _wrapPos = findWrapPos(sd, 0, _first.ts, _fileSize - _recordSize, _last.ts);
+            _first = readKey(sd, _wrapPos);
+            _last = readKey(sd, _wrapPos - _recordSize);
+        }
+
+        if (_fileSize && _last.rev - _first.rev + 1 != _entries) {
+            damaged = true;
+            return sd.remove(DATA_LOG_PATH);
+        }
+
+        _open = true;
+        return {};
+    });
+
+    if (damaged) {
+        LOGE("log: File %s damaged.\r\n", DATA_LOG_PATH);
+        LOGE("log: Deleting %s and restarting.\r\n", DATA_LOG_PATH);
+        rp2040.reboot();
         return false;
     }
 
-    _fileSize = _file.size();
-    _maxFileSize = max(_fileSize, _maxFileSize);
-    if (_fileSize) {
-        _first = readKey(0);
-        _last = readKey(_fileSize - _recordSize);
-        _entries = _fileSize / _recordSize;
-
-        LOGD("Found %d entries in log file", _entries);
+    if (err) {
+        LOGE("log: Could not open %s: %s", DATA_LOG_PATH, err.Error());
+        return false;
     }
-
-    if (_first.ts > _last.ts) {
-        _wrapPos = findWrapPos(0, _first.ts, _fileSize - _recordSize, _last.ts);
-        _file.seek(_wrapPos);
-        _file.read(&_first, sizeof(LogRecordKey));
-        _file.seek(_wrapPos - _recordSize);
-        _file.read(&_last, sizeof(LogRecordKey));
-    }
-
-    if (_fileSize && _last.rev - _first.rev + 1 != _entries) {
-        _file.close();
-        sd.remove(DATA_LOG_PATH);
-        mutex_exit(&sdMu);
-
-        LOGE("log: File %s damaged.\r\n", DATA_LOG_PATH);
-        LOGE("log: Deleting %s and restarting.\r\n", DATA_LOG_PATH);
-
-        mutex_enter_blocking(&sdMu);
-
-        rp2040.reboot();
-    }
-
-    mutex_exit(&sdMu);
-    return true;
+    return _open;
 }
 
 void DataLog::end() {
+    // Anything still queued must land before the handle is closed.
+    storage::drain();
+
     mutex_enter_blocking(&_mu);
-    if (_file) {
-        mutex_enter_blocking(&sdMu);
-        _file.close();
-        mutex_exit(&sdMu);
-    }
+    _open = false;
     mutex_exit(&_mu);
+
+    storage::run([](storage::sdAccess &sd) {
+        sd.closeAll();
+        return error{};
+    });
 }
 
 uint32_t DataLog::entries() {
@@ -122,7 +127,7 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         mutex_enter_blocking(&_mu);
     }
 
-    if (!_file) {
+    if (!_open) {
         mutex_exit(&_mu);
         return newError("file not open");
     }
@@ -131,24 +136,9 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         mutex_exit(&_mu);
         return newError("no entries");
     }
-    if (ts < _first.ts) {
-        // Before the beginning of the file.
-        readRev(_first.rev, rec);
-        rec->ts = ts;
 
-        mutex_exit(&_mu);
-        return {};
-    }
-    if (ts > _last.ts) {
-        // Past the end of the file.
-        readRev(_last.rev, rec);
-        rec->ts = ts;
-
-        mutex_exit(&_mu);
-        return {};
-    }
-
-    // Check the last records cache if we are in the time range.
+    // Check the last records cache before entering a transaction, so a cache
+    // hit is never delayed by a card stall.
     if (ts >= _last.ts - _lastCacheSize * _interval) {
         for (int i = 0; i < _lastCacheSize; i++) {
             uint32_t cacheTS = _lastCache[i].ts;
@@ -163,50 +153,92 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         }
     }
 
-    // Check the last read record cache, it is likely that reads will be sequential, so this will give us a good hint
-    // of where to search.
-    if (_lastReadTS < ts) {
-        uint32_t rev = (ts - _lastReadTS) / _interval + _lastReadRev;
-        readRev(rev, rec);
-        if (rec->ts == ts) {
-            mutex_exit(&_mu);
+    mutex_exit(&_mu);
+
+    // The whole search runs in one transaction rather than taking the card lock
+    // per seek. The bounds are re-read inside it: a write may have landed while
+    // we were waiting for the card, and readRev validates against them.
+    return storage::run([&](storage::sdAccess &sd) -> error {
+        const LogRecordKey first = _first;
+        const LogRecordKey last = _last;
+
+        if (ts < first.ts) {
+            // Before the beginning of the file.
+            if (readRev(sd, first.rev, rec)) {
+                return newError("could not read record");
+            }
+            rec->ts = ts;
             return {};
         }
-    }
+        if (ts > last.ts) {
+            // Past the end of the file.
+            if (readRev(sd, last.rev, rec)) {
+                return newError("could not read record");
+            }
+            rec->ts = ts;
+            return {};
+        }
 
-    uint32_t lowRev = _first.rev;
-    uint32_t lowTS = _first.ts;
-    uint32_t highRev = _last.rev;
-    uint32_t highTS = _last.ts;
+        // Reads are likely to be sequential, so the last read record gives a
+        // good hint of where to search.
+        if (_lastReadTS < ts) {
+            uint32_t rev = (ts - _lastReadTS) / _interval + _lastReadRev;
+            if (!readRev(sd, rev, rec) && rec->ts == ts) {
+                return {};
+            }
+        }
 
-    search(ts, rec, lowTS, lowRev, highTS, highRev);
-    rec->ts = ts;
-
-    mutex_exit(&_mu);
-    return {};
+        if (search(sd, ts, rec, first.ts, first.rev, last.ts, last.rev)) {
+            return newError("could not read record");
+        }
+        rec->ts = ts;
+        return {};
+    }, timeoutMS > 0 ? timeoutMS : SD_LOCK_TIMEOUT_MS);
 }
 
-error DataLog::write(LogRecord *rec) {
-    // Only one write may be in flight at a time, but _mu must not be held
-    // across the card I/O or a card stall blocks cache-hit reads too.
-    if (!mutex_enter_timeout_ms(&_writeMu, SD_LOCK_TIMEOUT_MS)) {
-        return newError("write mutex timeout");
-    }
+error DataLog::queueWrite(const LogRecord *rec) {
+    auto job = [this, r = *rec](storage::sdAccess &sd) mutable -> error {
+        const auto start = micros();
 
-    // --- Reserve -----------------------------------------------------------
-    if (!mutex_enter_timeout_ms(&_mu, SD_LOCK_TIMEOUT_MS)) {
-        mutex_exit(&_writeMu);
-        return newError("mutex timeout");
-    }
+        auto err = this->write(sd, &r);
+        if (err) {
+            metrics.datalog_write_errors_total.fetch_add(1, std::memory_order_relaxed);
+            LOGE("Error writing datalog: %s", err.Error());
+            return err;
+        }
 
-    if (!_file) {
+        const uint32_t took = micros() - start;
+        metrics.datalog_write_time_us_total.fetch_add(took, std::memory_order_relaxed);
+
+        uint32_t slowest = metrics.datalog_write_time_us_max.load(std::memory_order_relaxed);
+        while (took > slowest &&
+               !metrics.datalog_write_time_us_max.compare_exchange_weak(
+                   slowest, took, std::memory_order_relaxed)) {
+        }
+        return {};
+    };
+
+#ifdef UNIT_TEST
+    // Run inline so tests observe the write's own error rather than only
+    // whether it was accepted onto the queue.
+    return storage::run(job);
+#else
+    if (!storage::submit(job)) {
+        return newError("sd queue full");
+    }
+    return {};
+#endif
+}
+
+error DataLog::write(storage::sdAccess &sd, LogRecord *rec) {
+    mutex_enter_blocking(&_mu);
+
+    if (!_open) {
         mutex_exit(&_mu);
-        mutex_exit(&_writeMu);
         return newError("file not open");
     }
     if (rec->ts <= _last.ts) {
         mutex_exit(&_mu);
-        mutex_exit(&_writeMu);
         return newError("timestamp not increasing");
     }
 
@@ -215,15 +247,18 @@ error DataLog::write(LogRecord *rec) {
     const uint32_t writePos = wrapping ? _wrapPos : _fileSize;
 
     // Snapshot for rollback should the card write fail.
+    const LogRecordKey prevFirst = _first;
     const LogRecordKey prevLast = _last;
     const uint32_t     prevWrapPos = _wrapPos;
     const uint32_t     prevFileSize = _fileSize;
     const uint32_t     prevEntries = _entries;
+    const uint32_t     prevCachePos = _lastCachePos;
 
     rec->rev = ++_last.rev;
     _last.ts = rec->ts;
 
-    // Add it to the last records cache.
+    // Cached before the card I/O so readers are served from RAM while the card
+    // is busy.
     const uint32_t cachePos = _lastCachePos;
     _lastCache[_lastCachePos++] = *rec;
     _lastCachePos %= _lastCacheSize;
@@ -243,32 +278,26 @@ error DataLog::write(LogRecord *rec) {
     const uint32_t nextWrapPos = _wrapPos;
     mutex_exit(&_mu);
 
-    // --- Card I/O, holding only sdMu ---------------------------------------
-    bool         ok = false;
+    error        err = sd.writeAt(DATA_LOG_PATH, writePos, rec, _recordSize);
     LogRecordKey newFirst{};
-    if (mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
-        ok = _file.seek(writePos) && _file.write(rec, _recordSize) == _recordSize;
-        _file.flush();
-
-        if (ok && wrapping) {
-            // Read the new first key.
-            _file.seek(nextWrapPos);
-            _file.read(&newFirst, sizeof(LogRecordKey));
-        }
-        mutex_exit(&sdMu);
+    if (!err && wrapping) {
+        // Reads the new first key. Failing here must roll back rather than
+        // publish a zeroed _first, which would corrupt the (rev - _first.rev)
+        // arithmetic in readRev for every later seek.
+        err = sd.readAt(DATA_LOG_PATH, nextWrapPos, &newFirst, sizeof(LogRecordKey));
     }
 
-    // --- Publish or roll back ----------------------------------------------
     mutex_enter_blocking(&_mu);
-    if (!ok) {
+    if (err) {
+        _first = prevFirst;
         _last = prevLast;
         _wrapPos = prevWrapPos;
         _fileSize = prevFileSize;
         _entries = prevEntries;
-        _lastCache[cachePos] = LogRecord{}; // Invalidate the speculative entry.
+        _lastCache[cachePos] = LogRecord{};
+        _lastCachePos = prevCachePos;
         mutex_exit(&_mu);
-        mutex_exit(&_writeMu);
-        return newError("sd card write failed");
+        return err;
     }
     if (wrapping) {
         _first = newFirst;
@@ -276,72 +305,67 @@ error DataLog::write(LogRecord *rec) {
     mutex_exit(&_mu);
 
     metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
-
-    mutex_exit(&_writeMu);
     return {};
 }
 
-DataLog::LogRecordKey DataLog::readKey(uint32_t pos) {
+DataLog::LogRecordKey DataLog::readKey(storage::sdAccess &sd, const uint32_t pos) {
     auto key = LogRecordKey{};
-    _file.seek(pos);
-    _file.read(&key, sizeof(LogRecordKey));
-
-    metrics.datalog_read_io.fetch_add(1, std::memory_order_relaxed);
-
+    sd.readAt(DATA_LOG_PATH, pos, &key, sizeof(LogRecordKey));
     return key;
 }
 
-uint8_t DataLog::readRev(uint32_t rev, LogRecord *rec) {
+uint8_t DataLog::readRev(storage::sdAccess &sd, const uint32_t rev, LogRecord *rec) {
     if (rev < _first.rev || rev > _last.rev) {
         return 1;
     }
 
     uint32_t pos = ((rev - _first.rev) * _recordSize + _wrapPos) % _fileSize;
 
-    if (!mutex_enter_timeout_ms(&sdMu, SD_LOCK_TIMEOUT_MS)) {
+    if (auto err = sd.readAt(DATA_LOG_PATH, pos, rec, _recordSize); err) {
         return 1;
     }
-    _file.seek(pos);
-    _file.read(rec, _recordSize);
-    mutex_exit(&sdMu);
 
     _lastReadTS = rec->ts;
     _lastReadRev = rec->rev;
-
-    metrics.datalog_read_io.fetch_add(1, std::memory_order_relaxed);
-
     return 0;
 }
 
-void DataLog::search(const uint32_t ts, LogRecord *        rec,
-                     const uint32_t lowTS, const uint32_t  lowRev,
-                     const uint32_t highTS, const uint32_t highRev) {
+uint8_t DataLog::search(storage::sdAccess &sd, const uint32_t ts, LogRecord *rec,
+                        const uint32_t     lowTS, const uint32_t lowRev,
+                        const uint32_t     highTS, const uint32_t highRev) {
     if (highRev - lowRev <= 1) {
-        readRev(lowRev, rec);
-        return;
+        return readRev(sd, lowRev, rec);
     }
-    readRev((lowRev + highRev) / 2, rec);
+    if (readRev(sd, (lowRev + highRev) / 2, rec)) {
+        return 1;
+    }
     if (rec->ts == ts) {
-        return;
+        return 0;
     }
+
+    // A record outside the bounds means the file disagrees with the metadata.
+    // Recursing on it would not converge.
+    if (rec->rev <= lowRev || rec->rev >= highRev) {
+        return 1;
+    }
+
     if (rec->ts < ts) {
-        search(ts, rec, rec->ts, rec->rev, highTS, highRev);
-        return;
+        return search(sd, ts, rec, rec->ts, rec->rev, highTS, highRev);
     }
-    search(ts, rec, lowTS, lowRev, rec->ts, rec->rev);
+    return search(sd, ts, rec, lowTS, lowRev, rec->ts, rec->rev);
 }
 
-uint32_t DataLog::findWrapPos(const uint32_t lowPos, const uint32_t lowTS, const uint32_t highPos,
-                              const uint32_t highTS) {
+uint32_t DataLog::findWrapPos(storage::sdAccess &sd, const uint32_t lowPos, const uint32_t lowTS,
+                              const uint32_t     highPos, const uint32_t highTS) {
     if (highPos - lowPos == _recordSize) {
         return highPos;
     }
     uint32_t midPos = (lowPos + highPos) / 2;
     midPos += midPos % _recordSize;
 
-    uint32_t midTS = readKey(midPos).ts;
+    uint32_t midTS = readKey(sd, midPos).ts;
     if (midTS > lowTS) {
-        return findWrapPos(midPos, midTS, highPos, highTS);
+        return findWrapPos(sd, midPos, midTS, highPos, highTS);
     }
-    return findWrapPos(lowPos, lowTS, midPos, midTS);
+    return findWrapPos(sd, lowPos, lowTS, midPos, midTS);
 }
