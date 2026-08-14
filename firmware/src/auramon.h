@@ -48,7 +48,8 @@
 #define SD_CLK 4
 #define SD_CMD 5
 #define SD_DAT0 6 // DAT[1:3] - 7:9
-#define SD_CONFIG SdioConfig(SD_CLK, SD_CMD, SD_DAT0)
+#define SD_CLKDIV 2.0 // Run below 25MHz
+#define SD_CONFIG SdioConfig(SD_CLK, SD_CMD, SD_DAT0, SD_CLKDIV)
 
 #define RS485_TX 0
 #define RS485_RX 1
