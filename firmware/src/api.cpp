@@ -190,6 +190,9 @@ void handleMetrics() {
     const uint32_t datalogWriteMsTotal = metrics.datalog_write_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t datalogCacheHit = metrics.datalog_cache_hit.load(std::memory_order_relaxed);
     const uint32_t datalogWriteErrors = metrics.datalog_write_errors_total.load(std::memory_order_relaxed);
+    const uint32_t datalogQueueDepth = metrics.datalog_queue_depth.load(std::memory_order_relaxed);
+    const uint32_t datalogQueueFull = metrics.datalog_queue_full_total.load(std::memory_order_relaxed);
+    const uint32_t datalogDropped = metrics.datalog_records_dropped_total.load(std::memory_order_relaxed);
     const uint32_t ntpSyncs = metrics.ntp_syncs_total.load(std::memory_order_relaxed);
     const uint32_t ntpFailures = metrics.ntp_failures_total.load(std::memory_order_relaxed);
     const int32_t  ntpOffsetMs = metrics.ntp_last_offset_ms.load(std::memory_order_relaxed);
@@ -278,6 +281,21 @@ void handleMetrics() {
     response += F("# TYPE auramon_datalog_write_errors_total counter\n");
     response += F("auramon_datalog_write_errors_total ");
     response += String(datalogWriteErrors);
+    response += '\n';
+    response += F("# HELP auramon_datalog_queue_depth Number of records waiting to be written to the datalog.\n");
+    response += F("# TYPE auramon_datalog_queue_depth gauge\n");
+    response += F("auramon_datalog_queue_depth ");
+    response += String(datalogQueueDepth);
+    response += '\n';
+    response += F("# HELP auramon_datalog_queue_full_total Total times a record could not be queued because the queue was full.\n");
+    response += F("# TYPE auramon_datalog_queue_full_total counter\n");
+    response += F("auramon_datalog_queue_full_total ");
+    response += String(datalogQueueFull);
+    response += '\n';
+    response += F("# HELP auramon_datalog_records_dropped_total Total records dropped after repeated write failures.\n");
+    response += F("# TYPE auramon_datalog_records_dropped_total counter\n");
+    response += F("auramon_datalog_records_dropped_total ");
+    response += String(datalogDropped);
     response += '\n';
 
     // NTP metrics.

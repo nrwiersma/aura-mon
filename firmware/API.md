@@ -230,6 +230,10 @@ Exposed metrics:
 - `auramon_datalog_write_io` (counter)
 - `auramon_datalog_write_time_seconds_total` (counter)
 - `auramon_datalog_cache_hit` (counter)
+- `auramon_datalog_write_errors_total` (counter)
+- `auramon_datalog_queue_depth` (gauge)
+- `auramon_datalog_queue_full_total` (counter)
+- `auramon_datalog_records_dropped_total` (counter)
 
 ### `GET /readyz`
 

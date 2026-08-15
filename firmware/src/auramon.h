@@ -21,6 +21,7 @@
 #include "config.h"
 #include "ethernet.h"
 #include "data_log.h"
+#include "log_queue.h"
 #include "task.h"
 #include "modbus.h"
 #include "api.h"
@@ -98,6 +99,8 @@ uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
 void     initLogData();
 uint32_t logData(void *param);
+uint32_t writeLogData(void *param);
+void     drainLogData();
 void     syncDeviceInfo();
 uint32_t syncDevices(void *param);
 uint32_t syncState(void *param);
