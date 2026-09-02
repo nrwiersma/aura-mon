@@ -7,15 +7,12 @@
 uint32_t syncState(void *param) {
     (void) param;
 
-    mutex_enter_blocking(&sdMu);
-    auto sdPresent = sd.card()->status() != 0 && sd.card()->errorCode() == 0;
-    auto sdError = sd.card()->errorCode();
-    mutex_exit(&sdMu);
+    auto writeFailures = metrics.datalog_write_consecutive_failures.load(std::memory_order_relaxed);
 
-    if (!sdPresent) {
+    if (writeFailures > 1) {
         ledState = LEDColor::Red;
 
-        LOGD("SD Card not present or error: %d", sdError);
+        LOGD("Not able to write to SD Card: %d", writeFailures);
 
         return 1000;
     }

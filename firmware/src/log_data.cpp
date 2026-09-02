@@ -159,6 +159,7 @@ static bool writeNextRecord() {
     const auto start = millis();
     if (auto err = datalog.write(&rec); err) {
         metrics.datalog_write_errors_total.fetch_add(1, std::memory_order_relaxed);
+        metrics.datalog_write_consecutive_failures.fetch_add(1, std::memory_order_relaxed);
         LOGE("Error writing datalog: %s", err.Error());
 
         if (++retries < MAX_WRITE_RETRIES) {
@@ -171,6 +172,7 @@ static bool writeNextRecord() {
         return true;
     }
     pending = false;
+    metrics.datalog_write_consecutive_failures.store(0, std::memory_order_relaxed);
 
     const auto took = millis() - start;
     metrics.datalog_write_time_ms_total.fetch_add(took, std::memory_order_relaxed);
