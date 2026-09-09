@@ -1,3 +1,5 @@
 .pio
 firmware.bin
 public/*.gz
+
+ref/

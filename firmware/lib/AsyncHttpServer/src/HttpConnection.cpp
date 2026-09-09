@@ -1,0 +1,198 @@
+#include "HttpConnection.h"
+
+#include <cstdio>
+#include <cstring>
+
+#include "ImmediateResponse.h"
+
+namespace {
+
+const char *statusText(int code) {
+    switch (code) {
+        case 200: return "OK";
+        case 202: return "Accepted";
+        case 204: return "No Content";
+        case 400: return "Bad Request";
+        case 404: return "Not Found";
+        case 408: return "Request Timeout";
+        case 409: return "Conflict";
+        case 500: return "Internal Server Error";
+        case 505: return "HTTP Version Not Supported";
+        default: return "Unknown";
+    }
+}
+
+}  // namespace
+
+HttpConnection::HttpConnection(HttpTransport &transport, HttpRouter &router)
+    : _transport(transport), _router(router) {}
+
+void HttpConnection::onDataReceived(const uint8_t *data, size_t len) {
+    if (_state != State::AwaitingRequest) {
+        // Ignore stray data once we've started responding (no pipelining
+        // support in phase 1 - "Connection: close" always).
+        return;
+    }
+
+    HttpParseStatus status = _parser.feed(data, len);
+    if (status == HttpParseStatus::NeedMoreData) {
+        return;
+    }
+    if (status == HttpParseStatus::Error) {
+        respondWithError(400, _parser.errorReason() ? _parser.errorReason() : "malformed request");
+        return;
+    }
+
+    dispatch();
+    pump();
+}
+
+void HttpConnection::dispatch() {
+    _producer = _router.route(_parser.request());
+    if (!_producer) {
+        _producer = std::make_unique<ImmediateResponse>(404, "application/json", "{\"error\":\"Not Found\"}");
+    }
+    _state = State::Dispatched;
+}
+
+void HttpConnection::respondWithError(int statusCode, const char *reason) {
+    _producer = std::make_unique<ImmediateResponse>(ImmediateResponse::error(statusCode, reason ? reason : ""));
+    _state = State::Dispatched;
+    pump();
+}
+
+void HttpConnection::onWritable() {
+    pump();
+}
+
+void HttpConnection::onPollTick() {
+    pump();
+}
+
+void HttpConnection::onClosed() {
+    _state = State::Closed;
+}
+
+void HttpConnection::writePending() {
+    if (_outBuf.empty()) {
+        return;
+    }
+    size_t n = _transport.write(reinterpret_cast<const uint8_t *>(_outBuf.data()), _outBuf.size());
+    if (n > 0) {
+        _outBuf.erase(0, n);
+    }
+}
+
+void HttpConnection::appendHeaders(int statusCode, const char *contentType, bool chunked, size_t contentLength) {
+    char line[160];
+    snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n", statusCode, statusText(statusCode));
+    _outBuf += line;
+    _outBuf += "Content-Type: ";
+    _outBuf += contentType;
+    _outBuf += "\r\n";
+    _outBuf += "Access-Control-Allow-Origin: *\r\n";
+    _outBuf += "Connection: close\r\n";
+    if (chunked) {
+        _outBuf += "Transfer-Encoding: chunked\r\n\r\n";
+    } else {
+        snprintf(line, sizeof(line), "Content-Length: %zu\r\n\r\n", contentLength);
+        _outBuf += line;
+    }
+}
+
+void HttpConnection::appendChunk(const uint8_t *data, size_t len) {
+    if (len == 0) {
+        return;
+    }
+    char sizeLine[16];
+    snprintf(sizeLine, sizeof(sizeLine), "%zx\r\n", len);
+    _outBuf += sizeLine;
+    _outBuf.append(reinterpret_cast<const char *>(data), len);
+    _outBuf += "\r\n";
+}
+
+void HttpConnection::appendChunkTerminator() {
+    _outBuf += "0\r\n\r\n";
+}
+
+void HttpConnection::closeIfDrained() {
+    if (_finished && _outBuf.empty()) {
+        _transport.close();
+        _state = State::Closing;
+    }
+}
+
+void HttpConnection::pump() {
+    if (_state != State::Dispatched) {
+        return;
+    }
+
+    writePending();
+    if (!_outBuf.empty()) {
+        // Still backed up from a previous round; wait for onWritable().
+        return;
+    }
+
+    if (_finished) {
+        closeIfDrained();
+        return;
+    }
+
+    size_t written = 0;
+    HttpResponseProducer::Status status = _producer->produce(_workBuf, kWorkBufSize, written);
+
+    switch (status) {
+        case HttpResponseProducer::Status::Pending:
+            // Nothing to send yet; onPollTick() will retry.
+            return;
+
+        case HttpResponseProducer::Status::Error:
+            if (!_headersSent) {
+                std::string body = std::string("{\"error\":\"") +
+                                    (_producer->errorReason() ? _producer->errorReason() : "internal error") +
+                                    "\"}";
+                int code = _producer->statusCode();
+                if (code < 400) {
+                    code = 500;  // errorReason() implies failure; default if the producer didn't set one
+                }
+                appendHeaders(code, "application/json", false, body.size());
+                _outBuf += body;
+                _headersSent = true;
+            }
+            // If headers were already sent we cannot report an error anymore;
+            // just stop and close below.
+            _finished = true;
+            break;
+
+        case HttpResponseProducer::Status::Data:
+            if (!_headersSent) {
+                appendHeaders(_producer->statusCode(), _producer->contentType(), /*chunked=*/true, 0);
+                _chunked = true;
+                _headersSent = true;
+            }
+            if (_chunked) {
+                appendChunk(_workBuf, written);
+            } else {
+                _outBuf.append(reinterpret_cast<const char *>(_workBuf), written);
+            }
+            break;
+
+        case HttpResponseProducer::Status::Done:
+            if (!_headersSent) {
+                // Single-shot response: exact length known now.
+                appendHeaders(_producer->statusCode(), _producer->contentType(), /*chunked=*/false, written);
+                _outBuf.append(reinterpret_cast<const char *>(_workBuf), written);
+                _headersSent = true;
+            } else if (_chunked) {
+                appendChunk(_workBuf, written);
+                appendChunkTerminator();
+            } else {
+                _outBuf.append(reinterpret_cast<const char *>(_workBuf), written);
+            }
+            _finished = true;
+            break;
+    }
+
+    writePending();
+    closeIfDrained();
+}
