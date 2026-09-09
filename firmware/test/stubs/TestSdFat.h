@@ -20,12 +20,15 @@ public:
     std::shared_ptr<std::vector<uint8_t>> data;
     uint32_t position;
     bool open;
+    bool directory = false;
 
     FsFile() : data(std::make_shared<std::vector<uint8_t>>()), position(0), open(false) {}
 
     bool isOpen() const { return open; }
 
     operator bool() const { return isOpen(); }
+
+    bool isDirectory() { return directory; }
 
     uint32_t size() { return data->size(); }
 
@@ -189,6 +192,7 @@ public:
             FsFile handle;
             handle.data = target->data;
             handle.open = true;
+            handle.directory = target->directory;
             handle.position = appendPosition ? static_cast<uint32_t>(target->data->size()) : 0;
             namedFileExists[path] = true;
             return handle;

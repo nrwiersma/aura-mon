@@ -2,6 +2,8 @@
 
 #ifndef UNIT_TEST
 
+#include <Arduino.h>
+
 AsyncHttpServer::AsyncHttpServer(HttpRouter &router, uint16_t port, size_t maxConnections)
     : _router(router), _port(port), _slots(maxConnections) {}
 
@@ -36,8 +38,26 @@ bool AsyncHttpServer::begin() {
 }
 
 void AsyncHttpServer::reap() {
+    // A client that connects but then stalls mid-request holds its slot
+    // indefinitely; close it out once it has been idle this long so the
+    // (small) pool can't be starved.
+    static constexpr uint32_t kIdleTimeoutMs = 10000;
+
+    const uint32_t now = millis();
     for (auto &slot : _slots) {
-        if (slot.inUse() && slot.connection->isFinished()) {
+        if (!slot.inUse()) {
+            continue;
+        }
+        if (slot.connection->isFinished()) {
+            slot.connection.reset();
+            slot.transport.reset();
+            continue;
+        }
+        if (now - slot.connection->lastActivityMs() > kIdleTimeoutMs) {
+            // Let the connection clean up (e.g. abort an in-flight upload),
+            // then recycle the slot.
+            slot.connection->onClosed();
+            slot.transport->close();
             slot.connection.reset();
             slot.transport.reset();
         }

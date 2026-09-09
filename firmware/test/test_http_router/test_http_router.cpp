@@ -81,6 +81,59 @@ void test_multiple_routes_first_exact_match_wins() {
     TEST_ASSERT_EQUAL('b', buf[0]);
 }
 
+namespace {
+
+class FakeUploadHandler : public HttpUploadHandler {
+public:
+    void onUploadStart(const std::string &, const std::string &) override {}
+    void onUploadWrite(const uint8_t *, size_t) override {}
+    void onUploadEnd() override {}
+    void onUploadAborted() override {}
+    std::unique_ptr<HttpResponseProducer> finish() override {
+        return std::make_unique<ImmediateResponse>(204, "text/plain", "");
+    }
+};
+
+}  // namespace
+
+void test_upload_route_found_by_method_and_path() {
+    HttpRouter router;
+    bool factoryCalled = false;
+    router.onUpload(HttpMethod::POST, "/ota", [&](const HttpRequest &) {
+        factoryCalled = true;
+        return std::make_unique<FakeUploadHandler>();
+    });
+
+    const auto *factory = router.findUpload(HttpMethod::POST, "/ota");
+    TEST_ASSERT_NOT_NULL(factory);
+    auto handler = (*factory)(makeRequest(HttpMethod::POST, "/ota"));
+    TEST_ASSERT_TRUE(factoryCalled);
+    TEST_ASSERT_NOT_NULL(handler.get());
+}
+
+void test_upload_route_not_found_for_other_path() {
+    HttpRouter router;
+    router.onUpload(HttpMethod::POST, "/ota", [&](const HttpRequest &) {
+        return std::make_unique<FakeUploadHandler>();
+    });
+
+    TEST_ASSERT_NULL(router.findUpload(HttpMethod::POST, "/other"));
+    TEST_ASSERT_NULL(router.findUpload(HttpMethod::GET, "/ota"));
+}
+
+void test_upload_routes_do_not_interfere_with_normal_routes() {
+    HttpRouter router;
+    router.onUpload(HttpMethod::POST, "/ota", [&](const HttpRequest &) {
+        return std::make_unique<FakeUploadHandler>();
+    });
+    router.on(HttpMethod::GET, "/status", [&](const HttpRequest &) {
+        return std::make_unique<ImmediateResponse>(200, "text/plain", "ok");
+    });
+
+    TEST_ASSERT_NULL(router.route(makeRequest(HttpMethod::POST, "/ota")).get());
+    TEST_ASSERT_NOT_NULL(router.route(makeRequest(HttpMethod::GET, "/status")).get());
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_exact_match_invokes_handler);
@@ -88,5 +141,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_path_mismatch_does_not_match);
     RUN_TEST(test_not_found_fallback_invoked);
     RUN_TEST(test_multiple_routes_first_exact_match_wins);
+    RUN_TEST(test_upload_route_found_by_method_and_path);
+    RUN_TEST(test_upload_route_not_found_for_other_path);
+    RUN_TEST(test_upload_routes_do_not_interfere_with_normal_routes);
     return UNITY_END();
 }

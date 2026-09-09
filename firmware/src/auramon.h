@@ -12,9 +12,11 @@
 #include <ModbusRTUMaster.h>
 #include <Wire.h>
 #include <PCF85063A.h>
-#include <WebServer.h>
 #include <ArduinoJSON.h>
 #include <Ticker.h>
+
+#include <AsyncHttpServer.h>
+#include <HttpRouter.h>
 
 #include "Logger.h"
 #include "crash_handler.h"
@@ -78,7 +80,9 @@ extern SdFs    sd;
 
 extern ModbusRTUMaster modbus;
 
-extern WebServer server;
+extern HttpRouter router;
+extern AsyncHttpServer httpServer;
+extern taskQueue c0Queue;
 
 #define MAX_DEVICES 15
 extern mutex_t             deviceDataMu;

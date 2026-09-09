@@ -151,6 +151,80 @@ void test_reset_allows_reuse() {
     TEST_ASSERT_EQUAL_STRING("/b", p.request().path.c_str());
 }
 
+// ============================================================================
+// Streaming body (onHeadersComplete + streamBodyTo)
+// ============================================================================
+
+void test_headers_complete_fires_before_body() {
+    HttpRequestParser p;
+    bool fired = false;
+    std::string seenPath;
+    p.onHeadersComplete([&](const HttpRequest &req) {
+        fired = true;
+        seenPath = req.path;
+    });
+    feed(p, "POST /ota HTTP/1.1\r\nContent-Length: 3\r\n\r\nabc");
+    TEST_ASSERT_TRUE(fired);
+    TEST_ASSERT_EQUAL_STRING("/ota", seenPath.c_str());
+}
+
+void test_stream_body_to_sink_bypasses_buffering() {
+    HttpRequestParser p;
+    std::string received;
+    p.onHeadersComplete([&](const HttpRequest &) { p.streamBodyTo([&](const uint8_t *d, size_t n) {
+        received.append(reinterpret_cast<const char *>(d), n);
+    }); });
+    HttpParseStatus status = feed(p, "POST /ota HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello");
+    TEST_ASSERT_EQUAL(static_cast<int>(HttpParseStatus::Complete), static_cast<int>(status));
+    TEST_ASSERT_EQUAL_STRING("hello", received.c_str());
+    TEST_ASSERT_TRUE(p.request().body.empty());
+}
+
+void test_stream_body_bypasses_max_body_bytes() {
+    HttpRequestParser p;
+    std::string received;
+    p.onHeadersComplete([&](const HttpRequest &) { p.streamBodyTo([&](const uint8_t *d, size_t n) {
+        received.append(reinterpret_cast<const char *>(d), n);
+    }); });
+    std::string body(HttpRequestParser::kMaxBodyBytes * 2, 'x');
+    std::string full = "POST /ota HTTP/1.1\r\nContent-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
+    // Feed in modest chunks to exercise multi-call streaming.
+    HttpParseStatus status = HttpParseStatus::NeedMoreData;
+    for (size_t i = 0; i < full.size(); i += 4096) {
+        status = feed(p, full.substr(i, 4096));
+    }
+    TEST_ASSERT_EQUAL(static_cast<int>(HttpParseStatus::Complete), static_cast<int>(status));
+    TEST_ASSERT_EQUAL(body.size(), received.size());
+    TEST_ASSERT_EQUAL_STRING(body.c_str(), received.c_str());
+}
+
+void test_stream_body_split_across_many_small_feeds() {
+    HttpRequestParser p;
+    std::string received;
+    p.onHeadersComplete([&](const HttpRequest &) { p.streamBodyTo([&](const uint8_t *d, size_t n) {
+        received.append(reinterpret_cast<const char *>(d), n);
+    }); });
+    std::string full = "POST /ota HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello";
+    HttpParseStatus status = HttpParseStatus::NeedMoreData;
+    for (size_t i = 0; i < full.size(); i++) {
+        status = feed(p, full.substr(i, 1));
+    }
+    TEST_ASSERT_EQUAL(static_cast<int>(HttpParseStatus::Complete), static_cast<int>(status));
+    TEST_ASSERT_EQUAL_STRING("hello", received.c_str());
+}
+
+void test_without_sink_behavior_is_unchanged() {
+    // Registering onHeadersComplete without calling streamBodyTo() must not
+    // change the default buffering behavior.
+    HttpRequestParser p;
+    bool fired = false;
+    p.onHeadersComplete([&](const HttpRequest &) { fired = true; });
+    HttpParseStatus status = feed(p, "POST /config HTTP/1.1\r\nContent-Length: 9\r\n\r\n{\"a\":\"b\"}");
+    TEST_ASSERT_TRUE(fired);
+    TEST_ASSERT_EQUAL(static_cast<int>(HttpParseStatus::Complete), static_cast<int>(status));
+    TEST_ASSERT_EQUAL_STRING("{\"a\":\"b\"}", p.request().body.c_str());
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_simple_get_no_headers_body);
@@ -166,5 +240,10 @@ int main(int argc, char **argv) {
     RUN_TEST(test_malformed_content_length_is_error);
     RUN_TEST(test_oversized_body_is_error);
     RUN_TEST(test_reset_allows_reuse);
+    RUN_TEST(test_headers_complete_fires_before_body);
+    RUN_TEST(test_stream_body_to_sink_bypasses_buffering);
+    RUN_TEST(test_stream_body_bypasses_max_body_bytes);
+    RUN_TEST(test_stream_body_split_across_many_small_feeds);
+    RUN_TEST(test_without_sink_behavior_is_unchanged);
     return UNITY_END();
 }

@@ -4,65 +4,54 @@
 
 #include "auramon.h"
 
-#include <Updater.h>
-#include <LittleFS.h>
+#include <cstdlib>
+
+#include <ImmediateResponse.h>
+
+#include "log_truncate_producer.h"
+#include "log_range_producer.h"
+#include "energy_export_producer.h"
+#include "static_file_producer.h"
+#include "ota_upload_handler.h"
+#include "public_upload_handler.h"
 
 const char *contentTypeJSON PROGMEM = "application/json";
 const char *contentTypePlain PROGMEM = "text/plain";
-const char *contentTypeHTML PROGMEM = "text/html";
-const char *contentTypeCSV PROGMEM = "text/csv";
 
-void returnOK();
-void handleGetConfig();
-void handlePostConfig();
-void handleStatus();
-void handleEnergy();
-void handleLogs();
-void handleLogsTrunc();
-void handleNotFound();
-void handleOtaFinish();
-void handleOtaUpload();
-void handlePublicUploadFinish();
-void handlePublicUpload();
-void handleDeviceAction();
-void handleMetrics();
-void handleReboot();
+namespace {
 
-void setupAPI() {
-    server.on("/config", HTTP_GET, handleGetConfig);
-    server.on("/config", HTTP_POST, handlePostConfig);
-    server.on("/status", HTTP_GET, handleStatus);
-    server.on("/energy", HTTP_GET, handleEnergy);
-    server.on("/device/action", HTTP_POST, handleDeviceAction);
-    server.on("/logs", HTTP_GET, handleLogs);
-    server.on("/logs/trunc", HTTP_POST, handleLogsTrunc);
-    server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
-    server.on("/ota/public", HTTP_POST, handlePublicUploadFinish, handlePublicUpload);
-    server.on("/metrics", HTTP_GET, handleMetrics);
-    server.on("/reboot", HTTP_POST, handleReboot);
-    server.on("/readyz", HTTP_GET, returnOK);
-    server.on("/livez", HTTP_GET, returnOK);
-
-    server.onNotFound(handleNotFound); // Serve "public" from SD Card.
-    server.enableCORS(true);
-    server.enableCrossOrigin(true);
+// Parses a query parameter as an unsigned integer, falling back to
+// `def` when the parameter is absent. Returns false (leaving `out`
+// unchanged) if the parameter is present but not a valid, non-negative
+// integer.
+bool parseUintQueryParam(const HttpRequest &req, const char *key, uint32_t def, uint32_t &out) {
+    const std::string *v = req.queryParam(key);
+    if (!v) {
+        out = def;
+        return true;
+    }
+    char *end = nullptr;
+    const long parsed = strtol(v->c_str(), &end, 10);
+    if (end == v->c_str() || *end != '\0' || parsed < 0) {
+        return false;
+    }
+    out = static_cast<uint32_t>(parsed);
+    return true;
 }
 
-void returnOK() {
-    server.send(200, contentTypePlain, "");
+std::unique_ptr<HttpResponseProducer> jsonError(int statusCode, const char *msg) {
+    std::string body = std::string("{\"error\":\"") + msg + "\"}";
+    return std::make_unique<ImmediateResponse>(statusCode, contentTypeJSON, body);
 }
 
-void returnInternalError(const char *reason) {
-    String msg = "{\"error\":\"Internal Error\",\"reason\":\"";
-    msg.concat(reason);
-    msg.concat("\"}");
-    server.send(500, contentTypeJSON, msg);
+std::unique_ptr<HttpResponseProducer> internalError(const char *reason) {
+    std::string body = std::string("{\"error\":\"Internal Error\",\"reason\":\"") + reason + "\"}";
+    return std::make_unique<ImmediateResponse>(500, contentTypeJSON, body);
 }
 
-struct deviceColumn {
-    uint8_t index;
-    String  name;
-};
+std::unique_ptr<HttpResponseProducer> returnOK() {
+    return std::make_unique<ImmediateResponse>(200, contentTypePlain, "");
+}
 
 void appendCSVValue(String &row, double value, const uint8_t precision = 3) {
     row += ",";
@@ -71,69 +60,56 @@ void appendCSVValue(String &row, double value, const uint8_t precision = 3) {
     }
 }
 
-void handleGetConfig() {
+std::unique_ptr<HttpResponseProducer> handleGetConfig(const HttpRequest &) {
     JsonDocument doc;
     saveConfigJSON(doc);
 
     String response;
     serializeJson(doc, response);
 
-    server.send(200, contentTypeJSON, response);
+    return std::make_unique<ImmediateResponse>(200, contentTypeJSON, response.c_str());
 }
 
-void handlePostConfig() {
-    if (server.hasArg("plain") == false) {
-        server.send(400, contentTypeJSON, F("{\"error\":\"No data provided\"}"));
-        return;
+std::unique_ptr<HttpResponseProducer> handlePostConfig(const HttpRequest &req) {
+    if (req.body.empty()) {
+        return jsonError(400, "No data provided");
     }
 
-    String body = server.arg("plain");
-
     JsonDocument doc;
-    if (auto err = deserializeJson(doc, body); err) {
-        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid JSON\"}"));
-        return;
+    if (auto err = deserializeJson(doc, req.body); err) {
+        return jsonError(400, "Invalid JSON");
     }
 
     auto err = loadConfigJSON(doc);
     if (err) {
-        String msg = "{\"error\":\"Invalid configuration\",\"reason\":\"";
-        msg.concat(err.Error());
-        msg.concat("\"}");
-        server.send(400, contentTypeJSON, msg);
-        return;
+        std::string msg = std::string("{\"error\":\"Invalid configuration\",\"reason\":\"") + err.Error() + "\"}";
+        return std::make_unique<ImmediateResponse>(400, contentTypeJSON, msg);
     }
 
     err = saveConfig();
     if (err) {
-        returnInternalError(err.Error());
-        return;
+        return internalError(err.Error());
     }
 
     mutex_enter_blocking(&deviceInfoMu);
     devicesChanged = true;
     mutex_exit(&deviceInfoMu);
 
-    server.send(200, contentTypePlain, "");
+    return std::make_unique<ImmediateResponse>(200, contentTypePlain, "");
 }
 
-void handleDeviceAction() {
-    if (server.hasArg("plain") == false) {
-        server.send(400, contentTypeJSON, F("{\"error\":\"No data provided\"}"));
-        return;
+std::unique_ptr<HttpResponseProducer> handleDeviceAction(const HttpRequest &req) {
+    if (req.body.empty()) {
+        return jsonError(400, "No data provided");
     }
 
-    String body = server.arg("plain");
-
     JsonDocument doc;
-    if (auto err = deserializeJson(doc, body); err) {
-        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid JSON\"}"));
-        return;
+    if (auto err = deserializeJson(doc, req.body); err) {
+        return jsonError(400, "Invalid JSON");
     }
 
     if (!doc["action"].is<const char *>() || !doc["address"].is<uint32_t>()) {
-        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid action payload\"}"));
-        return;
+        return jsonError(400, "Invalid action payload");
     }
 
     const char *     actionStr = doc["action"].as<const char *>();
@@ -145,42 +121,43 @@ void handleDeviceAction() {
     } else if (strcmp(actionStr, "assign") == 0) {
         action = DeviceActionType::Assign;
     } else {
-        server.send(400, contentTypeJSON, F("{\"error\":\"Unknown action\"}"));
-        return;
+        return jsonError(400, "Unknown action");
     }
 
     if (address == 0 || address > MAX_DEVICES) {
-        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid address\"}"));
-        return;
+        return jsonError(400, "Invalid address");
     }
 
     if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {
-        returnInternalError("could not acquire deviceInfoMu");
-        return;
+        return internalError("could not acquire deviceInfoMu");
     }
 
     if (deviceActionControl.type != DeviceActionType::None) {
         mutex_exit(&deviceActionMu);
-        server.send(409, contentTypeJSON, F("{\"error\":\"Action already pending\"}"));
-        return;
+        return jsonError(409, "Action already pending");
     }
 
     deviceActionControl = {action, static_cast<uint8_t>(address)};
 
     mutex_exit(&deviceActionMu);
 
-    server.send(202, contentTypeJSON, F("{\"status\":\"queued\"}"));
+    return std::make_unique<ImmediateResponse>(202, contentTypeJSON, "{\"status\":\"queued\"}");
 }
 
-void handleReboot() {
+std::unique_ptr<HttpResponseProducer> handleReboot(const HttpRequest &) {
     LOGI("Reboot requested");
 
-    server.send(204, contentTypePlain, "");
+    // Deferred, exactly like the OTA success path, so the 204 response has
+    // already been handed off to the transport before we reset.
+    c0Queue.add([](void *) -> uint32_t {
+        safeReboot();
+        return 0;
+    }, 10);
 
-    safeReboot();
+    return std::make_unique<ImmediateResponse>(204, contentTypePlain, "");
 }
 
-void handleMetrics() {
+std::unique_ptr<HttpResponseProducer> handleMetrics(const HttpRequest &) {
     const uint32_t errors = metrics.modbus_errors_total.load(std::memory_order_relaxed);
     const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
@@ -329,10 +306,10 @@ void handleMetrics() {
     response += String(logErrors);
     response += '\n';
 
-    server.send(200, contentTypePlain, response);
+    return std::make_unique<ImmediateResponse>(200, contentTypePlain, response.c_str());
 }
 
-void handleStatus() {
+std::unique_ptr<HttpResponseProducer> handleStatus(const HttpRequest &) {
     JsonDocument doc;
 
     doc["version"] = AURAMON_VERSION;
@@ -342,7 +319,6 @@ void handleStatus() {
     statsObj["currentTime"] = time(nullptr);
     statsObj["runSeconds"] = time(nullptr) - startTime;
     statsObj["heapFree"] = rp2040.getFreeHeap();
-
 
     JsonArray devicesArr = doc["devices"].to<JsonArray>();
 
@@ -385,626 +361,68 @@ void handleStatus() {
     String response;
     serializeJson(doc, response);
 
-    server.send(200, contentTypeJSON, response);
+    return std::make_unique<ImmediateResponse>(200, contentTypeJSON, response.c_str());
 }
 
-void handleEnergy() {
-    uint32_t baseInterval = datalog.interval();
-    uint32_t start = server.arg("start").toInt();
-    uint32_t end = server.hasArg("end") ? server.arg("end").toInt() : time(nullptr);
-    uint32_t interval = server.hasArg("interval") ? server.arg("interval").toInt() : 5;
+std::unique_ptr<HttpResponseProducer> handleEnergy(const HttpRequest &req) {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    uint32_t interval = 0;
+    if (!parseUintQueryParam(req, "start", 0, start) ||
+        !parseUintQueryParam(req, "end", static_cast<uint32_t>(time(nullptr)), end) ||
+        !parseUintQueryParam(req, "interval", 5, interval)) {
+        return jsonError(400, "Invalid parameters");
+    }
 
     LOGD("Energy request start=%u end=%u interval=%u", start, end, interval);
 
-    start -= start % baseInterval;
-    end -= end % baseInterval;
-    interval -= interval % baseInterval;
-
-    if (start >= end || interval == 0) {
-        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
-        return;
-    }
-    if (end > start + interval * 99) {
-        // Limit to 100 rows to prevent excessively large responses.
-        end = start + interval * 99;
-    }
-
-    if (!datalog.entries()) {
-        server.send(204, contentTypePlain, "");
-        return;
-    }
-
-    LOGD("energy: adjusted parameters start=%u end=%u interval=%u", start, end, interval);
-
-    deviceColumn deviceColumns[MAX_DEVICES];
-    size_t       deviceCount = 0;
-    mutex_enter_blocking(&deviceInfoMu);
-    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        auto info = deviceInfos[i];
-        if (!info || !info->isEnabled() || info->name.isEmpty()) {
-            continue;
-        }
-        deviceColumns[deviceCount++] = deviceColumn{i, info->name};
-    }
-    mutex_exit(&deviceInfoMu);
-
-    LOGD("energy: collected devices: %u", deviceCount);
-
-    if (deviceCount == 0) {
-        server.send(204, contentTypePlain, "");
-        return;
-    }
-
-    uint32_t lastTs = datalog.lastTS();
-    if (start > lastTs) {
-        server.send(204, contentTypePlain, "");
-        return;
-    }
-    if (end > lastTs) {
-        end = lastTs;
-    }
-
-    LogRecord prevRec;
-    if (auto err = datalog.read(start - interval, &prevRec); err) {
-        returnInternalError(err.Error());
-        return;
-    }
-
-    LOGD("energy: read previous record: %u", prevRec.rev);
-
-    if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
-        server.send(505, contentTypeHTML, F("HTTP1.1 required"));
-        return;
-    }
-
-    String header = F("timestamp,Hz");
-    for (size_t i = 0; i < deviceCount; i++) {
-        const String &name = deviceColumns[i].name;
-        header += "," + name + ".V";
-        header += "," + name + ".A";
-        header += "," + name + ".W";
-        header += "," + name + ".Wh";
-        header += "," + name + ".PF";
-    }
-    header += "\n";
-    server.sendContent(header);
-
-    for (uint32_t ts = start; ts <= end; ts += interval) {
-        LogRecord rec;
-        if (auto err = datalog.read(ts, &rec); err) {
-            server.sendContent(F("error reading datalog\n"));
-            server.chunkedResponseFinalize();
-            return;
-        }
-
-        if (rec.ts <= prevRec.ts) {
-            continue;
-        }
-        if (rec.rev == prevRec.rev) {
-            continue;
-        }
-
-        const double elapsedHours = rec.logHours - prevRec.logHours;
-        if (elapsedHours <= 0) {
-            prevRec = rec;
-            continue;
-        }
-
-        auto row = String(rec.ts);
-        row.reserve(row.length() + deviceCount * 48);
-
-        const double hz = (rec.hzHrs - prevRec.hzHrs) / elapsedHours;
-        appendCSVValue(row, hz, 2);
-
-        for (size_t i = 0; i < deviceCount; i++) {
-            const uint8_t idx = deviceColumns[i].index;
-            const double  voltage = (rec.voltHrs[idx] - prevRec.voltHrs[idx]) / elapsedHours;
-            double        energyWh = rec.wattHrs[idx] - prevRec.wattHrs[idx];
-            const double  power = energyWh / elapsedHours;
-            const double  apparentPower = (rec.vaHrs[idx] - prevRec.vaHrs[idx]) / elapsedHours;
-            if (energyWh < 0) {
-                energyWh = 0;
-            }
-            const double current = (voltage != 0.0) ? (apparentPower / voltage) : 0.0;
-            const double powerFactor = (apparentPower > 0.0) ? (power / apparentPower) : 0.0;
-
-            appendCSVValue(row, voltage);
-            appendCSVValue(row, current);
-            appendCSVValue(row, power);
-            appendCSVValue(row, energyWh, 6);
-            appendCSVValue(row, powerFactor, 4);
-        }
-
-        row += "\n";
-        server.sendContent(row);
-        prevRec = rec;
-    }
-
-    LOGD("energy: completed response");
-
-    server.chunkedResponseFinalize();
+    return std::make_unique<EnergyExportProducer>(datalog, start, end, interval);
 }
 
-void handleLogs() {
+std::unique_ptr<HttpResponseProducer> handleLogs(const HttpRequest &req) {
     uint32_t startOffset = 0;
-    if (server.hasArg("start")) {
-        startOffset = server.arg("start").toInt();
-        if (startOffset == 0 && server.arg("start") != "0") {
-            server.send(400, contentTypeJSON, F("{\"error\":\"Invalid start\"}"));
-            return;
-        }
+    if (!parseUintQueryParam(req, "start", 0, startOffset)) {
+        return jsonError(400, "Invalid start");
     }
     uint32_t limitBytes = 0;
-    if (server.hasArg("limit")) {
-        limitBytes = server.arg("limit").toInt();
-        if (limitBytes == 0) {
-            server.send(400, contentTypeJSON, F("{\"error\":\"Invalid limit\"}"));
-            return;
+    if (req.queryParam("limit")) {
+        if (!parseUintQueryParam(req, "limit", 0, limitBytes) || limitBytes == 0) {
+            return jsonError(400, "Invalid limit");
         }
     }
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
-    if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
-        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
-        return;
-    }
-
-    if (auto f = sd.open(MESSAGE_LOG_PATH, O_READ); f) {
-        const size_t fileSize = f.size();
-        if (startOffset >= fileSize) {
-            server.send(204, contentTypePlain, "");
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-        if (startOffset > 0 && !f.seek(startOffset)) {
-            returnInternalError("could not seek log");
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-
-        size_t remaining = fileSize - startOffset;
-        if (limitBytes > 0 && limitBytes < remaining) {
-            remaining = limitBytes;
-        }
-        if (remaining == 0) {
-            server.send(204, contentTypePlain, "");
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-
-        if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
-            server.send(505, contentTypePlain, F("HTTP1.1 required"));
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-
-        uint8_t buffer[1024];
-        while (remaining > 0) {
-            const int readLen = f.read(buffer, min(remaining, sizeof(buffer)));
-            if (readLen <= 0) {
-                break;
-            }
-            server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
-            remaining -= static_cast<size_t>(readLen);
-        }
-        server.chunkedResponseFinalize();
-        f.close();
-
-        mutex_exit(&sdMu);
-        return;
-    }
-    mutex_exit(&sdMu);
-
-    server.send(404, contentTypeJSON, "Not Found");
+    return std::make_unique<LogRangeProducer>(startOffset, limitBytes);
 }
 
-void handleLogsTrunc() {
+std::unique_ptr<HttpResponseProducer> handleLogsTrunc(const HttpRequest &) {
     LOGI("Log truncation requested");
-
-    constexpr char   restartMarker[] = "**** RESTART ****";
-    constexpr size_t restartMarkerLen = sizeof(restartMarker) - 1;
-    constexpr char   tempPath[] = MESSAGE_LOG_PATH ".trunc";
-
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
-    if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
-        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
-        return;
-    }
-
-    auto src = sd.open(MESSAGE_LOG_PATH, O_READ);
-    if (!src) {
-        mutex_exit(&sdMu);
-        returnInternalError("could not open log");
-        return;
-    }
-
-    constexpr size_t chunkSize = 1024;
-    uint8_t          window[chunkSize + restartMarkerLen - 1];
-    uint8_t          overlap[restartMarkerLen - 1];
-    size_t           overlapLen = 0;
-    uint32_t         lastMarkerOffset = 0;
-    bool             markerFound = false;
-
-    for (uint32_t chunkEnd = src.size(); chunkEnd > 0 && !markerFound;) {
-        const uint32_t chunkStart = (chunkEnd > chunkSize) ? (chunkEnd - chunkSize) : 0;
-        const size_t   chunkLen = chunkEnd - chunkStart;
-
-        if (!src.seek(chunkStart)) {
-            src.close();
-            mutex_exit(&sdMu);
-            returnInternalError("could not seek log");
-            return;
-        }
-
-        const int readLen = src.read(window, chunkLen);
-        if (readLen < 0 || static_cast<size_t>(readLen) != chunkLen) {
-            src.close();
-            mutex_exit(&sdMu);
-            returnInternalError("could not read log");
-            return;
-        }
-        if (overlapLen > 0) {
-            // Copy the overlap to the end of the window.
-            memcpy(window + chunkLen, overlap, overlapLen);
-        }
-
-        const size_t totalLen = chunkLen + overlapLen;
-        if (totalLen >= restartMarkerLen) {
-            for (size_t i = totalLen - restartMarkerLen + 1; i > 0; i--) {
-                const size_t idx = i - 1;
-                if (memcmp(window + idx, restartMarker, restartMarkerLen) == 0) {
-                    lastMarkerOffset = chunkStart + idx;
-                    markerFound = true;
-                    break;
-                }
-            }
-        }
-
-        // Copy the start of the chunk into overlap, to be checked in the next round
-        // to find markers over the boundary.
-        overlapLen = min(chunkLen, restartMarkerLen - 1);
-        if (overlapLen > 0) {
-            memcpy(overlap, window, overlapLen);
-        }
-
-        chunkEnd = chunkStart;
-    }
-
-    const uint32_t startOffset = markerFound ? lastMarkerOffset : 0;
-    if (!src.seek(startOffset)) {
-        src.close();
-        mutex_exit(&sdMu);
-        returnInternalError("could not seek log");
-        return;
-    }
-
-    auto tmp = sd.open(tempPath, O_WRITE | O_CREAT | O_TRUNC);
-    if (!tmp) {
-        src.close();
-        mutex_exit(&sdMu);
-        returnInternalError("could not open temp log");
-        return;
-    }
-
-    uint8_t buffer[1024];
-    while (true) {
-        const int readLen = src.read(buffer, sizeof(buffer));
-        if (readLen <= 0) {
-            break;
-        }
-
-        if (tmp.write(buffer, static_cast<size_t>(readLen)) != static_cast<size_t>(readLen)) {
-            tmp.close();
-            src.close();
-            sd.remove(tempPath);
-            mutex_exit(&sdMu);
-            returnInternalError("could not write temp log");
-            return;
-        }
-    }
-
-    tmp.flush();
-    tmp.close();
-    src.close();
-
-    sd.remove(MESSAGE_LOG_PATH);
-    if (!sd.rename(tempPath, MESSAGE_LOG_PATH)) {
-        sd.remove(tempPath);
-        mutex_exit(&sdMu);
-        returnInternalError("could not replace log");
-        return;
-    }
-
-    LOGD("Log truncated at offset %u", startOffset);
-
-    mutex_exit(&sdMu);
-
-    server.send(204, contentTypePlain, "");
+    return std::make_unique<LogTruncateProducer>();
 }
 
-static bool    otaRestartNeeded = false;
-static bool    otaUploadFailed = false;
-static uint8_t otaErrorCode = UPDATE_ERROR_OK;
+}  // namespace
 
-void handleOtaFinish() {
-    if (otaUploadFailed || Update.hasError()) {
-        String msg = F("{\"error\":\"Update failed\",\"code\":");
-        msg.concat(otaErrorCode);
-        msg.concat("}");
-        server.send(500, contentTypeJSON, msg);
+void setupAPI() {
+    router.on(HttpMethod::GET, "/config", handleGetConfig);
+    router.on(HttpMethod::POST, "/config", handlePostConfig);
+    router.on(HttpMethod::GET, "/status", handleStatus);
+    router.on(HttpMethod::GET, "/energy", handleEnergy);
+    router.on(HttpMethod::POST, "/device/action", handleDeviceAction);
+    router.on(HttpMethod::GET, "/logs", handleLogs);
+    router.on(HttpMethod::POST, "/logs/trunc", handleLogsTrunc);
+    router.on(HttpMethod::GET, "/metrics", handleMetrics);
+    router.on(HttpMethod::POST, "/reboot", handleReboot);
+    router.on(HttpMethod::GET, "/readyz", [](const HttpRequest &) { return returnOK(); });
+    router.on(HttpMethod::GET, "/livez", [](const HttpRequest &) { return returnOK(); });
 
-        if (otaRestartNeeded) {
-            LOGE("OTA: update failed with code %u. Rebooting", otaErrorCode);
+    router.onUpload(HttpMethod::POST, "/ota", [](const HttpRequest &) {
+        return std::make_unique<OtaUploadHandler>();
+    });
+    router.onUpload(HttpMethod::POST, "/ota/public", [](const HttpRequest &) {
+        return std::make_unique<PublicUploadHandler>();
+    });
 
-            safeReboot();
-        }
-
-        LOGE("OTA: update failed with code %u", otaErrorCode);
-
-        return;
-    }
-
-    LOGI("OTA: update finished, rebooting");
-
-    server.send(204, contentTypePlain, "");
-    safeReboot();
-}
-
-void handleOtaUpload() {
-    HTTPUpload &upload = server.upload();
-
-    if (upload.status == UPLOAD_FILE_START) {
-        otaUploadFailed = false;
-        otaErrorCode = UPDATE_ERROR_OK;
-        Update.clearError();
-
-        if (upload.name != "firmware") {
-            otaUploadFailed = true;
-            otaErrorCode = UPDATE_ERROR_NO_DATA;
-            LOGE("OTA: unexpected form field name: %s", upload.name.c_str());
-            return;
-        }
-
-        FSInfo i;
-        LittleFS.begin();
-        LittleFS.info(i);
-        uint32_t update_size = i.totalBytes - i.usedBytes;
-
-        LOGI("OTA: start upload size=%u", update_size);
-
-        if (!Update.begin(update_size)) {
-            otaUploadFailed = true;
-            otaErrorCode = Update.getError();
-            LOGE("OTA: begin failed (%u)", otaErrorCode);
-            return;
-        }
-
-        LOGD("OTA: update started");
-    } else if (upload.status == UPLOAD_FILE_WRITE && !otaUploadFailed) {
-        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
-            otaUploadFailed = true;
-            otaErrorCode = Update.getError();
-            LOGE("OTA: write failed (%u)", otaErrorCode);
-            return;
-        }
-
-        LOGD("OTA: written %u bytes", upload.totalSize);
-    } else if (upload.status == UPLOAD_FILE_END && !otaUploadFailed) {
-        if (!Update.end(true)) {
-            otaUploadFailed = true;
-            otaErrorCode = Update.getError();
-            LOGE("OTA: end failed (%u)", otaErrorCode);
-            return;
-        }
-
-        LOGI("OTA: upload complete (%u bytes)", upload.totalSize);
-    } else if (upload.status == UPLOAD_FILE_ABORTED) {
-        otaUploadFailed = true;
-        otaErrorCode = UPDATE_ERROR_STREAM;
-        Update.end();
-
-        LOGE("OTA: upload aborted\r");
-    }
-}
-
-static bool   publicUploadFailed = false;
-static int    publicUploadStatus = 200;
-static String publicUploadError;
-static bool   publicUploadMutexHeld = false;
-static FsFile publicUploadFile;
-
-void handlePublicUploadFinish() {
-    if (publicUploadFailed) {
-        String msg = F("{\"error\":\"Upload failed\",\"reason\":\"");
-        msg.concat(publicUploadError);
-        msg.concat("\"}");
-        server.send(publicUploadStatus, contentTypeJSON, msg);
-        return;
-    }
-
-    server.send(204, contentTypePlain, "");
-}
-
-void handlePublicUpload() {
-    HTTPUpload &upload = server.upload();
-
-    if (upload.status == UPLOAD_FILE_START) {
-        publicUploadFailed = false;
-        publicUploadStatus = 200;
-        publicUploadError = "";
-
-        if (upload.name != "file") {
-            publicUploadFailed = true;
-            publicUploadStatus = 400;
-            publicUploadError = F("Unexpected form field name");
-            LOGE("Public upload: unexpected form field name: %s", upload.name.c_str());
-            return;
-        }
-
-        if (upload.filename.length() == 0 || upload.filename.indexOf('/') >= 0 ||
-            upload.filename.indexOf('\\') >= 0) {
-            publicUploadFailed = true;
-            publicUploadStatus = 400;
-            publicUploadError = F("Invalid filename");
-            LOGE("Public upload: invalid filename: %s", upload.filename.c_str());
-            return;
-        }
-
-        String path = "public/";
-        path.concat(upload.filename);
-
-        LOGI("Public upload: start %s", path.c_str());
-
-        if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-            publicUploadFailed = true;
-            publicUploadStatus = 408;
-            publicUploadError = F("Request Timeout");
-            LOGE("Public upload: failed to acquire sdMu");
-            return;
-        }
-        publicUploadMutexHeld = true;
-
-        publicUploadFile = sd.open(path.c_str(), O_WRITE | O_CREAT | O_TRUNC);
-        if (!publicUploadFile) {
-            publicUploadFailed = true;
-            publicUploadStatus = 500;
-            publicUploadError = F("Failed to open file");
-            mutex_exit(&sdMu);
-            LOGE("Public upload: failed to open %s", path.c_str());
-            publicUploadMutexHeld = false;
-        }
-    } else if (upload.status == UPLOAD_FILE_WRITE && !publicUploadFailed) {
-        if (publicUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
-            publicUploadFailed = true;
-            publicUploadStatus = 500;
-            publicUploadError = F("Write failed");
-            Serial.printf("Public upload: write failed at %u bytes", upload.totalSize);
-            publicUploadFile.close();
-            if (publicUploadMutexHeld) {
-                mutex_exit(&sdMu);
-                publicUploadMutexHeld = false;
-            }
-        }
-    } else if (upload.status == UPLOAD_FILE_END && !publicUploadFailed) {
-        publicUploadFile.flush();
-        publicUploadFile.close();
-
-        if (publicUploadMutexHeld) {
-            mutex_exit(&sdMu);
-            publicUploadMutexHeld = false;
-        }
-
-        LOGI("Public upload: complete (%u bytes)", upload.totalSize);
-    } else if (upload.status == UPLOAD_FILE_ABORTED) {
-        publicUploadFailed = true;
-        publicUploadStatus = 500;
-        publicUploadError = F("Upload aborted");
-
-        if (publicUploadFile) {
-            publicUploadFile.close();
-        }
-
-        if (publicUploadMutexHeld) {
-            mutex_exit(&sdMu);
-            publicUploadMutexHeld = false;
-        }
-
-        LOGE("Public upload: aborted");
-    }
-}
-
-void handleNotFound() {
-    LOGD("NotFound requested URL: %s", server.uri().c_str());
-
-    if (server.method() != HTTP_GET) {
-        server.send(405, contentTypePlain, "Method Not Allowed");
-        return;
-    }
-
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
-    String path = server.uri();
-    if (!path.startsWith("/")) path = '/' + path;
-    if (path == "/") path = "/index.html";
-    path = "public" + path;
-    auto gzPath = path + ".gz";
-
-    if (sd.exists(gzPath.c_str())) {
-        server.sendHeader("Content-Encoding", "gzip");
-        path = gzPath;
-    } else if (!sd.exists(path.c_str())) {
-        mutex_exit(&sdMu);
-        server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
-        return;
-    }
-
-    if (auto f = sd.open(path.c_str(), O_READ); f) {
-        if (f.isDirectory()) {
-            f.close();
-            mutex_exit(&sdMu);
-            server.send(403, contentTypePlain, "Forbidden");
-            return;
-        }
-
-        String contentType = contentTypePlain;
-        if (path.endsWith(".html") || path.endsWith(".html.gz")) {
-            contentType = F("text/html");
-        } else if (path.endsWith(".css") || path.endsWith(".css.gz")) {
-            contentType = F("text/css");
-        } else if (path.endsWith(".js") || path.endsWith(".js.gz")) {
-            contentType = F("application/javascript");
-        } else if (path.endsWith(".json") || path.endsWith(".json.gz")) {
-            contentType = contentTypeJSON;
-        } else if (path.endsWith(".png") || path.endsWith(".png.gz")) {
-            contentType = F("image/png");
-        } else if (path.endsWith(".jpg") || path.endsWith(".jpeg") ||
-                   path.endsWith(".jpg.gz") || path.endsWith(".jpeg.gz")) {
-            contentType = F("image/jpeg");
-        } else if (path.endsWith(".ico") || path.endsWith(".ico.gz")) {
-            contentType = F("image/x-icon");
-        } else if (path.endsWith(".svg") || path.endsWith(".svg.gz")) {
-            contentType = F("image/svg+xml");
-        }
-
-        if (!server.chunkedResponseModeStart(200, contentType.c_str())) {
-            server.send(505, contentTypePlain, F("HTTP1.1 required"));
-            f.close();
-            mutex_exit(&sdMu);
-            return;
-        }
-
-        uint8_t buffer[1024];
-        while (true) {
-            const int readLen = f.read(buffer, sizeof(buffer));
-            if (readLen <= 0) {
-                break;
-            }
-            server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
-        }
-        server.chunkedResponseFinalize();
-        f.close();
-
-        mutex_exit(&sdMu);
-        return;
-    }
-    mutex_exit(&sdMu);
-
-    server.send(404, contentTypeJSON, "Not Found");
+    // Serve "public/" from the SD card for anything else.
+    router.onNotFound([](const HttpRequest &req) -> std::unique_ptr<HttpResponseProducer> {
+        return std::make_unique<StaticFileProducer>(req.method, req.path);
+    });
 }

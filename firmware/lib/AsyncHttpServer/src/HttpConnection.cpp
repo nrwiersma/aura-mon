@@ -1,7 +1,12 @@
 #include "HttpConnection.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
+
+#ifndef UNIT_TEST
+#include <Arduino.h>
+#endif
 
 #include "ImmediateResponse.h"
 
@@ -22,12 +27,92 @@ const char *statusText(int code) {
     }
 }
 
+// Case-insensitively extracts the boundary= parameter from a Content-Type
+// header value, tolerating an optionally-quoted value. Returns "" if the
+// header isn't multipart/form-data or has no boundary.
+std::string extractBoundary(const std::string &contentType) {
+    static const char kNeedle[] = "boundary=";
+    size_t pos = std::string::npos;
+    for (size_t i = 0; i + sizeof(kNeedle) - 1 <= contentType.size(); i++) {
+        bool match = true;
+        for (size_t j = 0; j < sizeof(kNeedle) - 1; j++) {
+            if (std::tolower(static_cast<unsigned char>(contentType[i + j])) != kNeedle[j]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            pos = i + sizeof(kNeedle) - 1;
+            break;
+        }
+    }
+    if (pos == std::string::npos) {
+        return "";
+    }
+    size_t end = contentType.find(';', pos);
+    std::string value = contentType.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+    if (!value.empty() && value.front() == '"') {
+        size_t closing = value.find('"', 1);
+        value = value.substr(1, closing == std::string::npos ? std::string::npos : closing - 1);
+    }
+    return value;
+}
+
 }  // namespace
 
 HttpConnection::HttpConnection(HttpTransport &transport, HttpRouter &router)
-    : _transport(transport), _router(router) {}
+    : _transport(transport), _router(router) {
+    _parser.onHeadersComplete([this](const HttpRequest &req) { onHeadersComplete(req); });
+    touch();
+}
+
+void HttpConnection::onHeadersComplete(const HttpRequest &req) {
+    const HttpRouter::UploadFactoryFn *factory = _router.findUpload(req.method, req.path);
+    if (!factory) {
+        return;  // ordinary route - body (if any) buffers normally
+    }
+
+    _isUpload = true;
+    const std::string *contentType = req.header("content-type");
+    std::string boundary = extractBoundary(contentType ? *contentType : "");
+    if (boundary.empty()) {
+        _uploadBoundaryError = true;
+        return;  // dispatch() responds 400 once the (buffered) body is complete
+    }
+
+    _uploadHandler = (*factory)(req);
+    _multipart = std::make_unique<MultipartParser>(boundary, *this);
+    _parser.streamBodyTo([this](const uint8_t *data, size_t len) { _multipart->feed(data, len); });
+}
+
+void HttpConnection::onPartBegin(const std::string &name, const std::string &filename) {
+    _partOpen = true;
+    if (_uploadHandler) {
+        _uploadHandler->onUploadStart(name, filename);
+    }
+}
+
+void HttpConnection::onPartData(const uint8_t *data, size_t len) {
+    if (_uploadHandler) {
+        _uploadHandler->onUploadWrite(data, len);
+    }
+}
+
+void HttpConnection::onPartEnd() {
+    _partOpen = false;
+    if (_uploadHandler) {
+        _uploadHandler->onUploadEnd();
+    }
+}
+
+void HttpConnection::touch() {
+#ifndef UNIT_TEST
+    _lastActivityMs = millis();
+#endif
+}
 
 void HttpConnection::onDataReceived(const uint8_t *data, size_t len) {
+    touch();
     if (_state != State::AwaitingRequest) {
         // Ignore stray data once we've started responding (no pipelining
         // support in phase 1 - "Connection: close" always).
@@ -48,6 +133,25 @@ void HttpConnection::onDataReceived(const uint8_t *data, size_t len) {
 }
 
 void HttpConnection::dispatch() {
+    if (_isUpload) {
+        if (_uploadBoundaryError || !_uploadHandler) {
+            _producer = std::make_unique<ImmediateResponse>(
+                ImmediateResponse::error(400, "missing or invalid multipart boundary"));
+        } else {
+            if (!_multipart->isDone() || _partOpen) {
+                // Body ended without a proper closing boundary/part.
+                _uploadHandler->onUploadAborted();
+            }
+            _producer = _uploadHandler->finish();
+            if (!_producer) {
+                _producer = std::make_unique<ImmediateResponse>(ImmediateResponse::error(500, "upload failed"));
+            }
+        }
+        _uploadFinished = true;
+        _state = State::Dispatched;
+        return;
+    }
+
     _producer = _router.route(_parser.request());
     if (!_producer) {
         _producer = std::make_unique<ImmediateResponse>(404, "application/json", "{\"error\":\"Not Found\"}");
@@ -62,14 +166,20 @@ void HttpConnection::respondWithError(int statusCode, const char *reason) {
 }
 
 void HttpConnection::onWritable() {
+    touch();
     pump();
 }
 
 void HttpConnection::onPollTick() {
+    touch();
     pump();
 }
 
 void HttpConnection::onClosed() {
+    if (_isUpload && !_uploadFinished && _uploadHandler) {
+        _uploadHandler->onUploadAborted();
+        _uploadFinished = true;
+    }
     _state = State::Closed;
 }
 
@@ -90,6 +200,11 @@ void HttpConnection::appendHeaders(int statusCode, const char *contentType, bool
     _outBuf += "Content-Type: ";
     _outBuf += contentType;
     _outBuf += "\r\n";
+    if (_producer) {
+        if (const char *extra = _producer->extraHeaders()) {
+            _outBuf += extra;
+        }
+    }
     _outBuf += "Access-Control-Allow-Origin: *\r\n";
     _outBuf += "Connection: close\r\n";
     if (chunked) {

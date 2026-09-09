@@ -38,6 +38,9 @@ void HttpRequestParser::reset() {
     _consumed = 0;
     _req = HttpRequest();
     _contentLength = 0;
+    _bodyBytesRemaining = 0;
+    _onHeadersComplete = nullptr;
+    _bodySink = nullptr;
     _errorReason = nullptr;
 }
 
@@ -185,12 +188,17 @@ HttpParseStatus HttpRequestParser::pump() {
                         if (end == cl->c_str() || v < 0) {
                             return fail("malformed content-length");
                         }
-                        if (static_cast<size_t>(v) > kMaxBodyBytes) {
-                            return fail("body too large");
-                        }
                         _contentLength = static_cast<size_t>(v);
                     }
+                    _bodyBytesRemaining = _contentLength;
                     _state = State::Body;
+                    if (_onHeadersComplete) {
+                        // May call streamBodyTo() before any body byte is consumed.
+                        _onHeadersComplete(_req);
+                    }
+                    if (!_bodySink && _contentLength > kMaxBodyBytes) {
+                        return fail("body too large");
+                    }
                     break;
                 }
                 if (!parseHeaderLine(line)) {
@@ -200,6 +208,23 @@ HttpParseStatus HttpRequestParser::pump() {
             }
             case State::Body: {
                 size_t available = _buf.size() - _consumed;
+                if (_bodySink) {
+                    size_t take = available < _bodyBytesRemaining ? available : _bodyBytesRemaining;
+                    if (take > 0) {
+                        _bodySink(reinterpret_cast<const uint8_t *>(_buf.data() + _consumed), take);
+                        _consumed += take;
+                        _bodyBytesRemaining -= take;
+                    }
+                    // Drop everything already handed to the sink so the
+                    // buffer doesn't grow across an arbitrarily long body.
+                    _buf.erase(0, _consumed);
+                    _consumed = 0;
+                    if (_bodyBytesRemaining > 0) {
+                        return HttpParseStatus::NeedMoreData;
+                    }
+                    _state = State::Complete;
+                    return HttpParseStatus::Complete;
+                }
                 if (available < _contentLength) {
                     return HttpParseStatus::NeedMoreData;
                 }

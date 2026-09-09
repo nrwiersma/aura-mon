@@ -10,6 +10,7 @@
 
 #include "../../lib/AsyncHttpServer/src/HttpConnection.h"
 #include "../../lib/AsyncHttpServer/src/HttpRouter.h"
+#include "../../lib/AsyncHttpServer/src/HttpUploadHandler.h"
 #include "../../lib/AsyncHttpServer/src/ImmediateResponse.h"
 #include "../stubs/FakeTransport.h"
 
@@ -238,6 +239,129 @@ void test_backpressure_partial_writes_do_not_drop_or_duplicate_bytes() {
     TEST_ASSERT_EQUAL(std::string::npos, second);
 }
 
+// ============================================================================
+// Streaming multipart uploads
+// ============================================================================
+
+class RecordingUploadHandler : public HttpUploadHandler {
+public:
+    void onUploadStart(const std::string &name, const std::string &filename) override {
+        events.push_back("start:" + name + ":" + filename);
+    }
+    void onUploadWrite(const uint8_t *data, size_t len) override {
+        received.append(reinterpret_cast<const char *>(data), len);
+        events.push_back("write");
+    }
+    void onUploadEnd() override { events.push_back("end"); }
+    void onUploadAborted() override { events.push_back("aborted"); }
+    std::unique_ptr<HttpResponseProducer> finish() override {
+        events.push_back("finish");
+        return std::make_unique<ImmediateResponse>(200, "application/json", "{\"ok\":true}");
+    }
+
+    std::vector<std::string> events;
+    std::string received;
+};
+
+void test_upload_route_streams_parts_to_handler_and_returns_finish_response() {
+    FakeTransport transport;
+    HttpRouter router;
+    auto *handler = new RecordingUploadHandler();
+    router.onUpload(HttpMethod::POST, "/ota", [handler](const HttpRequest &) {
+        return std::unique_ptr<HttpUploadHandler>(handler);
+    });
+    HttpConnection conn(transport, router);
+
+    std::string body =
+        "--B\r\n"
+        "Content-Disposition: form-data; name=\"firmware\"; filename=\"fw.bin\"\r\n"
+        "Content-Type: application/octet-stream\r\n"
+        "\r\n"
+        "BINARYDATA"
+        "\r\n--B--\r\n";
+    std::string req = "POST /ota HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=B\r\nContent-Length: " +
+                       std::to_string(body.size()) + "\r\n\r\n" + body;
+    feedRequest(conn, req);
+
+    TEST_ASSERT_EQUAL_STRING("BINARYDATA", handler->received.c_str());
+    TEST_ASSERT_TRUE(handler->events.size() >= 3);
+    TEST_ASSERT_EQUAL_STRING("start:firmware:fw.bin", handler->events.front().c_str());
+    TEST_ASSERT_EQUAL_STRING("finish", handler->events.back().c_str());
+    // Never aborted - the part closed normally before finish() was called.
+    for (const auto &e : handler->events) {
+        TEST_ASSERT_TRUE(e != "aborted");
+    }
+    TEST_ASSERT_TRUE(transport.written.find("HTTP/1.1 200 OK") != std::string::npos);
+    TEST_ASSERT_TRUE(transport.closeCalled);
+}
+
+void test_upload_missing_boundary_returns_400() {
+    FakeTransport transport;
+    HttpRouter router;
+    router.onUpload(HttpMethod::POST, "/ota", [](const HttpRequest &) {
+        return std::make_unique<RecordingUploadHandler>();
+    });
+    HttpConnection conn(transport, router);
+
+    feedRequest(conn, "POST /ota HTTP/1.1\r\nContent-Type: multipart/form-data\r\nContent-Length: 4\r\n\r\nabcd");
+
+    TEST_ASSERT_TRUE(transport.written.find("HTTP/1.1 400") != std::string::npos);
+    TEST_ASSERT_TRUE(transport.closeCalled);
+}
+
+void test_upload_split_across_many_small_feeds_still_streams_correctly() {
+    FakeTransport transport;
+    HttpRouter router;
+    auto *handler = new RecordingUploadHandler();
+    router.onUpload(HttpMethod::POST, "/ota", [handler](const HttpRequest &) {
+        return std::unique_ptr<HttpUploadHandler>(handler);
+    });
+    HttpConnection conn(transport, router);
+
+    std::string body =
+        "--B\r\n"
+        "Content-Disposition: form-data; name=\"firmware\"; filename=\"fw.bin\"\r\n"
+        "\r\n"
+        "0123456789"
+        "\r\n--B--\r\n";
+    std::string req = "POST /ota HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=B\r\nContent-Length: " +
+                       std::to_string(body.size()) + "\r\n\r\n" + body;
+    for (size_t i = 0; i < req.size(); i++) {
+        conn.onDataReceived(reinterpret_cast<const uint8_t *>(req.data() + i), 1);
+    }
+
+    TEST_ASSERT_EQUAL_STRING("0123456789", handler->received.c_str());
+    TEST_ASSERT_TRUE(transport.written.find("HTTP/1.1 200 OK") != std::string::npos);
+}
+
+void test_upload_never_closed_calls_aborted_before_finish() {
+    FakeTransport transport;
+    HttpRouter router;
+    auto *handler = new RecordingUploadHandler();
+    router.onUpload(HttpMethod::POST, "/ota", [handler](const HttpRequest &) {
+        return std::unique_ptr<HttpUploadHandler>(handler);
+    });
+    HttpConnection conn(transport, router);
+
+    // Body ends (Content-Length exhausted) without ever sending a closing
+    // boundary - a truncated/aborted upload.
+    std::string body =
+        "--B\r\n"
+        "Content-Disposition: form-data; name=\"firmware\"; filename=\"fw.bin\"\r\n"
+        "\r\n"
+        "partial-data-only";
+    std::string req = "POST /ota HTTP/1.1\r\nContent-Type: multipart/form-data; boundary=B\r\nContent-Length: " +
+                       std::to_string(body.size()) + "\r\n\r\n" + body;
+    feedRequest(conn, req);
+
+    bool sawAborted = false;
+    for (const auto &e : handler->events) {
+        if (e == "aborted") sawAborted = true;
+    }
+    TEST_ASSERT_TRUE(sawAborted);
+    TEST_ASSERT_EQUAL_STRING("finish", handler->events.back().c_str());
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_immediate_response_sends_content_length_and_closes);
@@ -248,5 +372,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_pending_producer_retried_via_poll_tick_without_new_data);
     RUN_TEST(test_error_before_any_bytes_maps_to_500);
     RUN_TEST(test_backpressure_partial_writes_do_not_drop_or_duplicate_bytes);
+    RUN_TEST(test_upload_route_streams_parts_to_handler_and_returns_finish_response);
+    RUN_TEST(test_upload_missing_boundary_returns_400);
+    RUN_TEST(test_upload_split_across_many_small_feeds_still_streams_correctly);
+    RUN_TEST(test_upload_never_closed_calls_aborted_before_finish);
     return UNITY_END();
 }

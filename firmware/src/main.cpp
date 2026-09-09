@@ -39,7 +39,8 @@ promMetrics metrics;
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
-WebServer server(80);
+HttpRouter       router;
+AsyncHttpServer  httpServer(router, 80, 6);
 
 taskQueue c0Queue = {};
 taskQueue c1Queue = {};
@@ -139,7 +140,7 @@ void setup() {
     LOGI("Modbus initialised");
 
     setupAPI();
-    server.begin();
+    httpServer.begin();
 
     c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);
@@ -158,7 +159,7 @@ void setup() {
 }
 
 void loop() {
-    server.handleClient();
+    httpServer.reap();
     handleButtonPress();
 
     if (!c0Queue.runNextTask()) {

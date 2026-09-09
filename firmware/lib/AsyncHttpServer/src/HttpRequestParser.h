@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include "HttpRequest.h"
@@ -44,12 +45,29 @@ public:
     // Valid once feed() has returned Error.
     const char *errorReason() const { return _errorReason; }
 
+    // Fired exactly once, right after the request line + headers have been
+    // fully parsed (method/path/query/headers are final; the body, if any,
+    // has not been touched yet). Lets a caller decide - based on the now-
+    // known method/path/headers - whether to redirect the body elsewhere
+    // via streamBodyTo() before any body bytes are consumed.
+    using HeadersCompleteCallback = std::function<void(const HttpRequest &)>;
+    void onHeadersComplete(HeadersCompleteCallback cb) { _onHeadersComplete = std::move(cb); }
+
+    // Redirects all remaining body bytes to `sink` instead of buffering
+    // them into request().body. Must be called synchronously from the
+    // onHeadersComplete() callback. Bypasses kMaxBodyBytes entirely -
+    // callers that stream a body are responsible for their own bounds
+    // (e.g. a fixed maximum firmware image size).
+    using BodySink = std::function<void(const uint8_t *, size_t)>;
+    void streamBodyTo(BodySink sink) { _bodySink = std::move(sink); }
+
     // Maximum number of bytes this parser will buffer for the request
     // line + headers before giving up with an error (guards against a
     // client that never sends a terminating blank line).
     static constexpr size_t kMaxHeaderBytes = 4096;
 
-    // Maximum body size accepted via Content-Length.
+    // Maximum body size accepted via Content-Length, unless the body has
+    // been redirected via streamBodyTo().
     static constexpr size_t kMaxBodyBytes = 65536;
 
 private:
@@ -74,5 +92,8 @@ private:
     size_t _consumed = 0;     // read cursor into _buf
     HttpRequest _req;
     size_t _contentLength = 0;
+    size_t _bodyBytesRemaining = 0;
+    HeadersCompleteCallback _onHeadersComplete;
+    BodySink _bodySink;
     const char *_errorReason = nullptr;
 };

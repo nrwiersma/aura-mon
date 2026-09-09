@@ -28,6 +28,10 @@ public:
 
     virtual int statusCode() const { return 200; }
     virtual const char *contentType() const { return "text/plain"; }
+    // Optional extra response header lines (already formatted, e.g.
+    // "Content-Encoding: gzip\r\n"), appended verbatim after the standard
+    // headers. Empty/nullptr (the default) adds nothing.
+    virtual const char *extraHeaders() const { return nullptr; }
     // Only meaningful when produce() returns Error.
     virtual const char *errorReason() const { return nullptr; }
 };
