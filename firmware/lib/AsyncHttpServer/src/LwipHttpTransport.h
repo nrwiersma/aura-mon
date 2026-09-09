@@ -23,10 +23,12 @@ public:
     explicit LwipHttpTransport(tcp_pcb *pcb);
     ~LwipHttpTransport() override;
 
-    // Must be called once, immediately after the HttpConnection that owns
-    // this transport has been constructed, so lwIP callbacks have somewhere
-    // to be delivered.
-    void setConnection(HttpConnection *connection) { _connection = connection; }
+    // Must be called once the HttpConnection that owns this transport has
+    // been constructed, so lwIP callbacks have somewhere to be delivered.
+    // May be deferred: while no connection is attached, received bytes are
+    // buffered (without tcp_recved, so TCP window backpressure caps the
+    // buffer) and flushed into the connection here.
+    void setConnection(HttpConnection *connection);
 
     size_t write(const uint8_t *data, size_t len) override;
     void close() override;
@@ -43,8 +45,14 @@ private:
     static err_t sPoll(void *arg, tcp_pcb *pcb);
     static void sError(void *arg, err_t err);
 
+    void freePending();
+
     tcp_pcb *_pcb;
     HttpConnection *_connection = nullptr;
+    pbuf *_pendingHead = nullptr;  // recv'd while connection-less (queued); a
+                                   // pbuf_cat()-linked chain, tail found by
+                                   // walking ->next when needed
+    size_t _pendingLen = 0;
 };
 
 #endif  // UNIT_TEST

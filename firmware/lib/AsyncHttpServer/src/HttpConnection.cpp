@@ -171,7 +171,10 @@ void HttpConnection::onWritable() {
 }
 
 void HttpConnection::onPollTick() {
-    touch();
+    // Deliberately not touch()ed: tcp_poll fires continuously for every
+    // open pcb, so it is not client activity - counting it would mask a
+    // stalled client from the idle timeout forever. Poll still drives
+    // pump() so Pending producers keep making progress.
     pump();
 }
 

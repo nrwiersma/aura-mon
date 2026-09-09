@@ -25,7 +25,7 @@ bool AsyncHttpServer::begin() {
         return false;
     }
 
-    tcp_pcb *listenPcb = tcp_listen_with_backlog(pcb, static_cast<uint8_t>(_slots.size()));
+    tcp_pcb *listenPcb = tcp_listen_with_backlog(pcb, static_cast<uint8_t>(_slots.size() + kMaxPending));
     if (!listenPcb) {
         tcp_close(pcb);
         return false;
@@ -37,12 +37,44 @@ bool AsyncHttpServer::begin() {
     return true;
 }
 
-void AsyncHttpServer::reap() {
-    // A client that connects but then stalls mid-request holds its slot
-    // indefinitely; close it out once it has been idle this long so the
-    // (small) pool can't be starved.
-    static constexpr uint32_t kIdleTimeoutMs = 10000;
+// A client that connects but then stalls mid-request holds its slot
+// indefinitely; close it out once it has been idle this long so the
+// (small) pool can't be starved.
+static constexpr uint32_t kIdleTimeoutMs = 10000;
 
+void AsyncHttpServer::attach(Slot &slot, tcp_pcb *pcb) {
+    slot.transport = std::make_unique<LwipHttpTransport>(pcb);
+    slot.connection = std::make_unique<HttpConnection>(*slot.transport, _router);
+    slot.transport->setConnection(slot.connection.get());
+}
+
+void AsyncHttpServer::drainPending() {
+    const uint32_t now = millis();
+
+    for (auto &slot : _slots) {
+        if (slot.inUse()) {
+            continue;
+        }
+
+        // Drop queued connections whose pcb died (peer reset / error) or
+        // that waited too long before handing this slot the next one.
+        while (!_pending.empty() &&
+               (!_pending.front().transport->isOpen() ||
+                now - _pending.front().queuedAtMs > kPendingTimeoutMs)) {
+            _pending.pop_front();
+        }
+        if (_pending.empty()) {
+            return;
+        }
+
+        slot.transport = std::move(_pending.front().transport);
+        _pending.pop_front();
+        slot.connection = std::make_unique<HttpConnection>(*slot.transport, _router);
+        slot.transport->setConnection(slot.connection.get());  // flushes buffered bytes
+    }
+}
+
+void AsyncHttpServer::reap() {
     const uint32_t now = millis();
     for (auto &slot : _slots) {
         if (!slot.inUse()) {
@@ -62,6 +94,8 @@ void AsyncHttpServer::reap() {
             slot.transport.reset();
         }
     }
+
+    drainPending();
 }
 
 err_t AsyncHttpServer::onAccept(tcp_pcb *newpcb, err_t /*err*/) {
@@ -70,14 +104,18 @@ err_t AsyncHttpServer::onAccept(tcp_pcb *newpcb, err_t /*err*/) {
             continue;
         }
 
-        slot.transport = std::make_unique<LwipHttpTransport>(newpcb);
-        slot.connection = std::make_unique<HttpConnection>(*slot.transport, _router);
-        slot.transport->setConnection(slot.connection.get());
+        attach(slot, newpcb);
         return ERR_OK;
     }
 
-    // Pool exhausted: refuse the connection rather than let it queue behind
-    // (and block) requests we can actually service.
+    // All slots busy: queue the pcb (it buffers its own request bytes via
+    // TCP window backpressure) and service it once reap() frees a slot.
+    // Only a queue overflow is a genuine overload worth refusing.
+    if (_pending.size() < kMaxPending) {
+        _pending.push_back(Pending{std::make_unique<LwipHttpTransport>(newpcb), millis()});
+        return ERR_OK;
+    }
+
     tcp_abort(newpcb);
     return ERR_ABRT;
 }

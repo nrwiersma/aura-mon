@@ -25,6 +25,37 @@ LwipHttpTransport::~LwipHttpTransport() {
         tcp_abort(_pcb);
         _pcb = nullptr;
     }
+    freePending();
+}
+
+void LwipHttpTransport::freePending() {
+    if (_pendingHead) {
+        pbuf_free(_pendingHead);
+        _pendingHead = nullptr;
+        _pendingLen = 0;
+    }
+}
+
+void LwipHttpTransport::setConnection(HttpConnection *connection) {
+    _connection = connection;
+    if (!connection) {
+        return;
+    }
+
+    // Flush anything buffered while we sat in the server's pending queue.
+    if (_pendingHead) {
+        pbuf *chain = _pendingHead;
+        const size_t total = _pendingLen;
+        _pendingHead = nullptr;
+        _pendingLen = 0;
+        for (pbuf *seg = chain; seg != nullptr; seg = seg->next) {
+            _connection->onDataReceived(reinterpret_cast<const uint8_t *>(seg->payload), seg->len);
+        }
+        if (_pcb) {
+            tcp_recved(_pcb, total);
+        }
+        pbuf_free(chain);
+    }
 }
 
 size_t LwipHttpTransport::write(const uint8_t *data, size_t len) {
@@ -59,6 +90,7 @@ void LwipHttpTransport::close() {
 
     tcp_pcb *pcb = _pcb;
     _pcb = nullptr;
+    freePending();
     if (tcp_close(pcb) != ERR_OK) {
         tcp_abort(pcb);
     }
@@ -75,6 +107,7 @@ err_t LwipHttpTransport::onRecv(tcp_pcb *pcb, pbuf *pb, err_t /*err*/) {
         tcp_err(pcb, nullptr);
         tcp_poll(pcb, nullptr, 0);
         _pcb = nullptr;
+        freePending();
         if (tcp_close(pcb) != ERR_OK) {
             tcp_abort(pcb);
         }
@@ -84,10 +117,24 @@ err_t LwipHttpTransport::onRecv(tcp_pcb *pcb, pbuf *pb, err_t /*err*/) {
         return ERR_OK;
     }
 
-    for (pbuf *seg = pb; seg != nullptr; seg = seg->next) {
-        if (_connection) {
-            _connection->onDataReceived(reinterpret_cast<const uint8_t *>(seg->payload), seg->len);
+    if (!_connection) {
+        // Queued by the server waiting for a free slot: hold the pbuf chain
+        // without tcp_recved() so the client stalls on TCP window
+        // backpressure instead of us growing an unbounded buffer. `pb`
+        // itself may be a multi-node chain (fragmented across several pool
+        // buffers), so use pbuf_cat() to append correctly rather than
+        // assuming pb is a single node.
+        if (_pendingHead) {
+            pbuf_cat(_pendingHead, pb);
+        } else {
+            _pendingHead = pb;
         }
+        _pendingLen += pb->tot_len;
+        return ERR_OK;
+    }
+
+    for (pbuf *seg = pb; seg != nullptr; seg = seg->next) {
+        _connection->onDataReceived(reinterpret_cast<const uint8_t *>(seg->payload), seg->len);
     }
     tcp_recved(pcb, pb->tot_len);
     pbuf_free(pb);
@@ -111,6 +158,7 @@ err_t LwipHttpTransport::onPoll(tcp_pcb * /*pcb*/) {
 void LwipHttpTransport::onError(err_t /*err*/) {
     // lwIP has already freed the pcb by the time this fires - never touch it.
     _pcb = nullptr;
+    freePending();
     if (_connection) {
         _connection->onClosed();
     }

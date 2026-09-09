@@ -1,9 +1,10 @@
 //
 // AsyncHttpServer - listens on a TCP port and drives up to a fixed number
 // of concurrent HttpConnections purely from lwIP callbacks (accept/recv/
-// sent/poll). Never blocks; nothing pumps anything. Extra connections
-// beyond the pool size are rejected immediately so one slow client can
-// never starve the others.
+// sent/poll). Never blocks; nothing pumps anything. Connections accepted
+// while every slot is busy are queued (they buffer their own request via
+// TCP window backpressure) and serviced as slots free up; only a queue
+// overflow is refused outright.
 //
 
 #pragma once
@@ -12,6 +13,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <vector>
 
@@ -51,13 +53,28 @@ private:
         bool inUse() const { return connection != nullptr; }
     };
 
+    // A connection accepted while every slot was busy: the pcb is alive and
+    // buffering its incoming bytes (bounded by TCP window backpressure)
+    // until a slot frees up in reap().
+    struct Pending {
+        std::unique_ptr<LwipHttpTransport> transport;
+        uint32_t queuedAtMs;
+    };
+
     err_t onAccept(tcp_pcb *newpcb, err_t err);
     static err_t sAccept(void *arg, tcp_pcb *newpcb, err_t err);
+
+    void attach(Slot &slot, tcp_pcb *pcb);
+    void drainPending();
+
+    static constexpr size_t kMaxPending = 2;
+    static constexpr uint32_t kPendingTimeoutMs = 10000;
 
     HttpRouter &_router;
     uint16_t _port;
     tcp_pcb *_listenPcb = nullptr;
     std::vector<Slot> _slots;
+    std::deque<Pending> _pending;
 };
 
 #endif  // UNIT_TEST
