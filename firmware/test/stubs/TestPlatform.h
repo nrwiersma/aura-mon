@@ -187,9 +187,11 @@ inline bool mutex_enter_timeout_ms(mutex_t *mtx, uint32_t timeout) {
 
 // Mock file operations flags
 #define O_RDONLY 0x01
+#define O_READ O_RDONLY
 #define O_RDWR 0x02
 #define O_CREAT 0x0100
 #define O_TRUNC 0x0200
+#define O_WRITE 0x0004
 
 // Utility functions
 template<typename T>

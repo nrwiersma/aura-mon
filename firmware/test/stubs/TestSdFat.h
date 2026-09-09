@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <memory>
+#include <map>
 
 #include "TestPlatform.h"
 #include <vector>
@@ -46,12 +47,16 @@ public:
     }
 
     size_t read(void* buf, size_t sz) {
-        if (!open || position + sz > data->size()) {
+        // Matches real filesystem semantics: return whatever is left (down
+        // to zero at EOF), not just an exact-fit chunk.
+        if (!open || position >= data->size()) {
             return 0;
         }
-        std::memcpy(buf, &(*data)[position], sz);
-        position += sz;
-        return sz;
+        size_t available = data->size() - position;
+        size_t n = sz < available ? sz : available;
+        std::memcpy(buf, &(*data)[position], n);
+        position += n;
+        return n;
     }
 
     void truncate() {
@@ -99,13 +104,30 @@ public:
     std::vector<std::string> directories;
     bool fileExists;
 
+    // Opt-in multi-path mode: existing single-canonical-file tests
+    // (test_config/test_datalog/test_logger) rely on `file`/`fileExists`
+    // being agnostic of the path argument, so that behaviour is preserved
+    // by default. Tests that need two independent files open at once
+    // (e.g. a source file plus a temp file during a rename dance) set
+    // `multiFileMode = true` and get real per-path storage instead.
+    bool multiFileMode = false;
+    std::map<std::string, FsFile*> namedFiles;
+    std::map<std::string, bool> namedFileExists;
+
     MockSD() : file(nullptr), fileExists(false) {}
 
     ~MockSD() {
         if (file) delete file;
+        for (auto &kv : namedFiles) {
+            delete kv.second;
+        }
     }
 
     bool exists(const char* path) {
+        if (multiFileMode) {
+            auto it = namedFileExists.find(path);
+            return it != namedFileExists.end() && it->second;
+        }
         return fileExists;
     }
 
@@ -115,6 +137,15 @@ public:
     }
 
     bool remove(const char* path) {
+        if (multiFileMode) {
+            auto it = namedFiles.find(path);
+            if (it != namedFiles.end()) {
+                it->second->data->clear();
+                it->second->open = false;
+            }
+            namedFileExists[path] = false;
+            return true;
+        }
         if (file) {
             file->data->clear();
             file->open = false;
@@ -124,10 +155,45 @@ public:
     }
 
     bool rename(const char* oldpath, const char* newpath) {
+        if (multiFileMode) {
+            auto it = namedFiles.find(oldpath);
+            if (it == namedFiles.end()) {
+                return false;
+            }
+            if (namedFiles.count(newpath)) {
+                delete namedFiles[newpath];
+            }
+            namedFiles[newpath] = it->second;
+            namedFileExists[newpath] = true;
+            namedFiles.erase(it);
+            namedFileExists[oldpath] = false;
+            return true;
+        }
         return true;
     }
 
     FsFile open(const char* path, int mode) {
+        // Real SdFat only seeks to end for append-style opens (O_RDWR, as
+        // used by FILE_WRITE); a pure O_READ open starts at position 0.
+        const bool appendPosition = (mode & O_RDWR) != 0;
+
+        if (multiFileMode) {
+            FsFile* target;
+            auto it = namedFiles.find(path);
+            if (it == namedFiles.end()) {
+                target = new FsFile();
+                namedFiles[path] = target;
+            } else {
+                target = it->second;
+            }
+            FsFile handle;
+            handle.data = target->data;
+            handle.open = true;
+            handle.position = appendPosition ? static_cast<uint32_t>(target->data->size()) : 0;
+            namedFileExists[path] = true;
+            return handle;
+        }
+
         if (!file) {
             file = new FsFile();
         }
@@ -135,8 +201,7 @@ public:
         FsFile handle;
         handle.data = file->data;
         handle.open = true;
-        // Seek to end for append-style writes (FILE_WRITE behaviour).
-        handle.position = static_cast<uint32_t>(file->data->size());
+        handle.position = appendPosition ? static_cast<uint32_t>(file->data->size()) : 0;
         fileExists = true;
         return handle;
     }
