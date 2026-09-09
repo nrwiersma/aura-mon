@@ -1,7 +1,7 @@
 //
 // HttpTransport - the seam between the async HTTP connection logic and the
-// underlying socket implementation. Keeps HttpConnection/HttpRequestParser/
-// HttpResponseProducer fully unit-testable without lwIP.
+// underlying socket implementation. Keeps HttpConnection/HttpRequestParser
+// fully unit-testable without lwIP.
 //
 
 #pragma once

@@ -80,6 +80,10 @@ void AsyncHttpServer::reap() {
         if (!slot.inUse()) {
             continue;
         }
+        // The sole close() call site: closing from inside an lwIP callback
+        // resets the connection on this stack, so completions staged by the
+        // recv/sent/poll callbacks are closed here, from loop context.
+        slot.connection->closeIfDrained();
         if (slot.connection->isFinished()) {
             slot.connection.reset();
             slot.transport.reset();

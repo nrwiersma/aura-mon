@@ -9,10 +9,9 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 
-#include "HttpResponseProducer.h"
+class HttpRequest;
 
 class HttpUploadHandler {
 public:
@@ -34,6 +33,6 @@ public:
     virtual void onUploadAborted() = 0;
 
     // Called exactly once, after onUploadEnd() or onUploadAborted(), to
-    // build the final HTTP response describing the outcome.
-    virtual std::unique_ptr<HttpResponseProducer> finish() = 0;
+    // send the final HTTP response describing the outcome via req.send().
+    virtual void finish(HttpRequest &req) = 0;
 };

@@ -20,7 +20,7 @@ public:
     void onUploadWrite(const uint8_t *data, size_t len) override;
     void onUploadEnd() override;
     void onUploadAborted() override;
-    std::unique_ptr<HttpResponseProducer> finish() override;
+    void finish(HttpRequest &req) override;
 
 private:
     bool     _failed = false;

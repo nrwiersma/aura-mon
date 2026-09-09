@@ -1,11 +1,11 @@
 //
-// Unit tests for HttpRouter: method/path matching and not-found fallback.
+// Unit tests for HttpRouter: method/path matching, not-found fallback,
+// upload-route lookup.
 //
 
 #include <unity.h>
 
 #include "../../lib/AsyncHttpServer/src/HttpRouter.h"
-#include "../../lib/AsyncHttpServer/src/ImmediateResponse.h"
 
 void setUp() {}
 void tearDown() {}
@@ -20,65 +20,52 @@ static HttpRequest makeRequest(HttpMethod m, const std::string &path) {
 void test_exact_match_invokes_handler() {
     HttpRouter router;
     bool called = false;
-    router.on(HttpMethod::GET, "/status", [&](const HttpRequest &) {
-        called = true;
-        return std::make_unique<ImmediateResponse>(200, "text/plain", "ok");
-    });
+    router.on(HttpMethod::GET, "/status", [&](HttpRequest &) { called = true; });
 
-    auto producer = router.route(makeRequest(HttpMethod::GET, "/status"));
+    auto req = makeRequest(HttpMethod::GET, "/status");
+    router.route(req);
     TEST_ASSERT_TRUE(called);
-    TEST_ASSERT_NOT_NULL(producer.get());
 }
 
 void test_method_mismatch_does_not_match() {
     HttpRouter router;
-    router.on(HttpMethod::GET, "/status", [&](const HttpRequest &) {
-        return std::make_unique<ImmediateResponse>(200, "text/plain", "ok");
-    });
+    bool called = false;
+    router.on(HttpMethod::GET, "/status", [&](HttpRequest &) { called = true; });
 
-    auto producer = router.route(makeRequest(HttpMethod::POST, "/status"));
-    TEST_ASSERT_NULL(producer.get());
+    auto req = makeRequest(HttpMethod::POST, "/status");
+    router.route(req);
+    TEST_ASSERT_FALSE(called);
 }
 
 void test_path_mismatch_does_not_match() {
     HttpRouter router;
-    router.on(HttpMethod::GET, "/status", [&](const HttpRequest &) {
-        return std::make_unique<ImmediateResponse>(200, "text/plain", "ok");
-    });
+    bool called = false;
+    router.on(HttpMethod::GET, "/status", [&](HttpRequest &) { called = true; });
 
-    auto producer = router.route(makeRequest(HttpMethod::GET, "/other"));
-    TEST_ASSERT_NULL(producer.get());
+    auto req = makeRequest(HttpMethod::GET, "/other");
+    router.route(req);
+    TEST_ASSERT_FALSE(called);
 }
 
 void test_not_found_fallback_invoked() {
     HttpRouter router;
     bool notFoundCalled = false;
-    router.onNotFound([&](const HttpRequest &) {
-        notFoundCalled = true;
-        return std::make_unique<ImmediateResponse>(404, "application/json", "{}");
-    });
+    router.onNotFound([&](HttpRequest &) { notFoundCalled = true; });
 
-    auto producer = router.route(makeRequest(HttpMethod::GET, "/nope"));
+    auto req = makeRequest(HttpMethod::GET, "/nope");
+    router.route(req);
     TEST_ASSERT_TRUE(notFoundCalled);
-    TEST_ASSERT_NOT_NULL(producer.get());
 }
 
 void test_multiple_routes_first_exact_match_wins() {
     HttpRouter router;
-    router.on(HttpMethod::GET, "/a", [&](const HttpRequest &) {
-        return std::make_unique<ImmediateResponse>(200, "text/plain", "a");
-    });
-    router.on(HttpMethod::GET, "/b", [&](const HttpRequest &) {
-        return std::make_unique<ImmediateResponse>(200, "text/plain", "b");
-    });
+    std::string hit;
+    router.on(HttpMethod::GET, "/a", [&](HttpRequest &) { hit = "a"; });
+    router.on(HttpMethod::GET, "/b", [&](HttpRequest &) { hit = "b"; });
 
-    size_t written = 0;
-    uint8_t buf[16];
-    auto producer = router.route(makeRequest(HttpMethod::GET, "/b"));
-    TEST_ASSERT_NOT_NULL(producer.get());
-    producer->produce(buf, sizeof(buf), written);
-    TEST_ASSERT_EQUAL(1, written);
-    TEST_ASSERT_EQUAL('b', buf[0]);
+    auto req = makeRequest(HttpMethod::GET, "/b");
+    router.route(req);
+    TEST_ASSERT_EQUAL_STRING("b", hit.c_str());
 }
 
 namespace {
@@ -89,9 +76,7 @@ public:
     void onUploadWrite(const uint8_t *, size_t) override {}
     void onUploadEnd() override {}
     void onUploadAborted() override {}
-    std::unique_ptr<HttpResponseProducer> finish() override {
-        return std::make_unique<ImmediateResponse>(204, "text/plain", "");
-    }
+    void finish(HttpRequest &) override {}
 };
 
 }  // namespace
@@ -99,21 +84,22 @@ public:
 void test_upload_route_found_by_method_and_path() {
     HttpRouter router;
     bool factoryCalled = false;
-    router.onUpload(HttpMethod::POST, "/ota", [&](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota", [&](HttpRequest &) {
         factoryCalled = true;
         return std::make_unique<FakeUploadHandler>();
     });
 
     const auto *factory = router.findUpload(HttpMethod::POST, "/ota");
     TEST_ASSERT_NOT_NULL(factory);
-    auto handler = (*factory)(makeRequest(HttpMethod::POST, "/ota"));
+    auto req = makeRequest(HttpMethod::POST, "/ota");
+    auto handler = (*factory)(req);
     TEST_ASSERT_TRUE(factoryCalled);
     TEST_ASSERT_NOT_NULL(handler.get());
 }
 
 void test_upload_route_not_found_for_other_path() {
     HttpRouter router;
-    router.onUpload(HttpMethod::POST, "/ota", [&](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota", [&](HttpRequest &) {
         return std::make_unique<FakeUploadHandler>();
     });
 
@@ -123,15 +109,19 @@ void test_upload_route_not_found_for_other_path() {
 
 void test_upload_routes_do_not_interfere_with_normal_routes() {
     HttpRouter router;
-    router.onUpload(HttpMethod::POST, "/ota", [&](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota", [&](HttpRequest &) {
         return std::make_unique<FakeUploadHandler>();
     });
-    router.on(HttpMethod::GET, "/status", [&](const HttpRequest &) {
-        return std::make_unique<ImmediateResponse>(200, "text/plain", "ok");
-    });
+    bool statusCalled = false;
+    router.on(HttpMethod::GET, "/status", [&](HttpRequest &) { statusCalled = true; });
 
-    TEST_ASSERT_NULL(router.route(makeRequest(HttpMethod::POST, "/ota")).get());
-    TEST_ASSERT_NOT_NULL(router.route(makeRequest(HttpMethod::GET, "/status")).get());
+    auto uploadReq = makeRequest(HttpMethod::POST, "/ota");
+    router.route(uploadReq);  // no normal route matches: default 404 send (no-op, no conn)
+    TEST_ASSERT_FALSE(statusCalled);
+
+    auto statusReq = makeRequest(HttpMethod::GET, "/status");
+    router.route(statusReq);
+    TEST_ASSERT_TRUE(statusCalled);
 }
 
 int main(int argc, char **argv) {

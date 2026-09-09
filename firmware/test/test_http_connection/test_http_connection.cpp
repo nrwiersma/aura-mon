@@ -1,6 +1,6 @@
 //
-// Unit tests for HttpConnection: immediate responses, streamed bodies,
-// Pending retried via poll ticks, error-before-any-bytes, and backpressure.
+// Unit tests for HttpConnection: inline responses via req.send, parked
+// responses via req.hold/write/done, backpressure, and multipart uploads.
 //
 
 #include <unity.h>
@@ -11,7 +11,6 @@
 #include "../../lib/AsyncHttpServer/src/HttpConnection.h"
 #include "../../lib/AsyncHttpServer/src/HttpRouter.h"
 #include "../../lib/AsyncHttpServer/src/HttpUploadHandler.h"
-#include "../../lib/AsyncHttpServer/src/ImmediateResponse.h"
 #include "../stubs/FakeTransport.h"
 
 void setUp() {}
@@ -19,54 +18,20 @@ void tearDown() {}
 
 static void feedRequest(HttpConnection &conn, const std::string &req) {
     conn.onDataReceived(reinterpret_cast<const uint8_t *>(req.data()), req.size());
+    // Emulate reap(): closes only ever happen from loop context, never from
+    // the receive path.
+    conn.closeIfDrained();
 }
 
-// A producer that requires N poll ticks before it starts producing data,
-// simulating a slow resource that eventually becomes ready without any
-// hand-rolled pump loop.
-class PendingThenDataProducer : public HttpResponseProducer {
-public:
-    explicit PendingThenDataProducer(int pendingTicks, std::string body)
-        : _pendingTicks(pendingTicks), _body(std::move(body)) {}
-
-    Status produce(uint8_t *buf, size_t cap, size_t &written) override {
-        if (_pendingTicks > 0) {
-            _pendingTicks--;
-            written = 0;
-            return Status::Pending;
-        }
-        size_t remaining = _body.size() - _offset;
-        size_t n = remaining < cap ? remaining : cap;
-        memcpy(buf, _body.data() + _offset, n);
-        _offset += n;
-        written = n;
-        return _offset >= _body.size() ? Status::Done : Status::Data;
-    }
-
-private:
-    int _pendingTicks;
-    std::string _body;
-    size_t _offset = 0;
-};
-
-class ErrorBeforeAnyBytesProducer : public HttpResponseProducer {
-public:
-    Status produce(uint8_t *, size_t, size_t &written) override {
-        written = 0;
-        return Status::Error;
-    }
-    const char *errorReason() const override { return "boom"; }
-};
-
 // ============================================================================
-// Immediate (small, single-shot) responses
+// Inline (small, single-shot) responses
 // ============================================================================
 
-void test_immediate_response_sends_content_length_and_closes() {
+void test_send_writes_full_response_and_closes() {
     FakeTransport transport;
     HttpRouter router;
-    router.on(HttpMethod::GET, "/status", [](const HttpRequest &) {
-        return std::make_unique<ImmediateResponse>(200, "application/json", "{\"ok\":true}");
+    router.on(HttpMethod::GET, "/status", [](HttpRequest &req) {
+        req.send(200, "application/json", "{\"ok\":true}");
     });
     HttpConnection conn(transport, router);
 
@@ -76,6 +41,11 @@ void test_immediate_response_sends_content_length_and_closes() {
     TEST_ASSERT_TRUE(transport.written.find("Content-Length: 11") != std::string::npos);
     TEST_ASSERT_TRUE(transport.written.find("{\"ok\":true}") != std::string::npos);
     TEST_ASSERT_TRUE(transport.closeCalled);
+    // A completed inline response must free its slot immediately - locally
+    // initiated closes never fire onClosed(), so without this the slot
+    // would be held until the idle timeout and a few fast requests would
+    // starve the server's (small) connection pool.
+    TEST_ASSERT_TRUE(conn.isFinished());
 }
 
 void test_not_found_route_returns_404() {
@@ -100,124 +70,203 @@ void test_malformed_request_returns_400() {
     TEST_ASSERT_TRUE(transport.closeCalled);
 }
 
-// ============================================================================
-// Streamed bodies (multiple Data calls)
-// ============================================================================
-
-void test_single_call_producer_uses_content_length_not_chunked() {
+void test_handler_that_never_responds_gets_500() {
     FakeTransport transport;
     HttpRouter router;
-    router.on(HttpMethod::GET, "/logs", [](const HttpRequest &) {
-        return std::make_unique<PendingThenDataProducer>(0, "hello-world-body");
-    });
+    router.on(HttpMethod::GET, "/quiet", [](HttpRequest &) {});
     HttpConnection conn(transport, router);
 
-    feedRequest(conn, "GET /logs HTTP/1.1\r\n\r\n");
-    // The producer's whole body fits in one produce() call (work buffer is
-    // 512B), so it resolves straight to Done on the first call - the
-    // connection then knows the exact length up front and uses
-    // Content-Length instead of chunked framing.
-    TEST_ASSERT_TRUE(transport.written.find("Content-Length: 16") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.written.find("hello-world-body") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.closeCalled);
-}
-
-class MultiChunkProducer : public HttpResponseProducer {
-public:
-    Status produce(uint8_t *buf, size_t cap, size_t &written) override {
-        static const char *chunks[] = {"AAA", "BBB", "CCC"};
-        if (_idx >= 3) {
-            written = 0;
-            return Status::Done;
-        }
-        size_t len = strlen(chunks[_idx]);
-        memcpy(buf, chunks[_idx], len);
-        written = len;
-        _idx++;
-        return Status::Data;
-    }
-
-private:
-    int _idx = 0;
-};
-
-void test_multi_call_streamed_body_is_chunk_framed() {
-    FakeTransport transport;
-    HttpRouter router;
-    router.on(HttpMethod::GET, "/stream", [](const HttpRequest &) {
-        return std::make_unique<MultiChunkProducer>();
-    });
-    HttpConnection conn(transport, router);
-
-    feedRequest(conn, "GET /stream HTTP/1.1\r\n\r\n");
-    // onDataReceived only pumps once per produce cycle per call in our
-    // implementation's dispatch+pump; drive additional writable ticks to
-    // pull the rest of the data through.
-    for (int i = 0; i < 5 && !transport.closeCalled; i++) {
-        conn.onWritable();
-    }
-
-    TEST_ASSERT_TRUE(transport.written.find("Transfer-Encoding: chunked") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.written.find("3\r\nAAA\r\n") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.written.find("3\r\nBBB\r\n") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.written.find("3\r\nCCC\r\n") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.written.find("0\r\n\r\n") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.closeCalled);
-}
-
-// ============================================================================
-// Pending retried via poll ticks (no hand-rolled pump loop needed)
-// ============================================================================
-
-void test_pending_producer_retried_via_poll_tick_without_new_data() {
-    FakeTransport transport;
-    HttpRouter router;
-    router.on(HttpMethod::GET, "/trunc", [](const HttpRequest &) {
-        return std::make_unique<PendingThenDataProducer>(3, "done");
-    });
-    HttpConnection conn(transport, router);
-
-    feedRequest(conn, "GET /trunc HTTP/1.1\r\n\r\n");
-    TEST_ASSERT_TRUE(transport.written.empty());  // still pending, nothing sent
-
-    conn.onPollTick();
-    conn.onPollTick();
-    TEST_ASSERT_TRUE(transport.written.empty());  // still pending
-
-    conn.onPollTick();  // this call flips to Data/Done
-    TEST_ASSERT_TRUE(transport.written.find("done") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.closeCalled);
-}
-
-// ============================================================================
-// Errors before any bytes sent
-// ============================================================================
-
-void test_error_before_any_bytes_maps_to_500() {
-    FakeTransport transport;
-    HttpRouter router;
-    router.on(HttpMethod::GET, "/boom", [](const HttpRequest &) {
-        return std::make_unique<ErrorBeforeAnyBytesProducer>();
-    });
-    HttpConnection conn(transport, router);
-
-    feedRequest(conn, "GET /boom HTTP/1.1\r\n\r\n");
+    feedRequest(conn, "GET /quiet HTTP/1.1\r\n\r\n");
 
     TEST_ASSERT_TRUE(transport.written.find("HTTP/1.1 500") != std::string::npos);
-    TEST_ASSERT_TRUE(transport.written.find("boom") != std::string::npos);
     TEST_ASSERT_TRUE(transport.closeCalled);
 }
 
 // ============================================================================
-// Backpressure: transport accepts partial writes
+// Held (deferred) responses: hold -> write* -> done
+// ============================================================================
+
+void test_hold_sends_headers_immediately_and_parks() {
+    FakeTransport transport;
+    HttpRouter router;
+    HttpRequest *parked = nullptr;
+    router.on(HttpMethod::GET, "/energy", [&parked](HttpRequest &req) {
+        req.hold(200, "text/plain");
+        parked = &req;
+    });
+    HttpConnection conn(transport, router);
+
+    feedRequest(conn, "GET /energy HTTP/1.1\r\n\r\n");
+
+    TEST_ASSERT_TRUE(transport.written.find("HTTP/1.1 200 OK") != std::string::npos);
+    TEST_ASSERT_TRUE(transport.written.find("Transfer-Encoding: chunked") != std::string::npos);
+    TEST_ASSERT_FALSE(transport.closeCalled);  // parked, not closed
+    TEST_ASSERT_NOT_NULL(parked);
+    TEST_ASSERT_TRUE(parked->alive());
+}
+
+void test_held_write_is_chunk_framed_and_done_closes() {
+    FakeTransport transport;
+    HttpRouter router;
+    HttpRequest *parked = nullptr;
+    router.on(HttpMethod::GET, "/energy", [&parked](HttpRequest &req) {
+        req.hold(200, "text/plain");
+        parked = &req;
+    });
+    HttpConnection conn(transport, router);
+
+    feedRequest(conn, "GET /energy HTTP/1.1\r\n\r\n");
+
+    const char *row = "1234,50.01\n";
+    TEST_ASSERT_EQUAL(strlen(row), parked->write(reinterpret_cast<const uint8_t *>(row), strlen(row)));
+    TEST_ASSERT_TRUE(transport.written.find("b\r\n1234,50.01\n\r\n") != std::string::npos);
+    TEST_ASSERT_FALSE(transport.closeCalled);
+
+    parked->done();
+    TEST_ASSERT_TRUE(transport.written.find("0\r\n\r\n") != std::string::npos);
+    conn.closeIfDrained();  // emulates reap(), the sole closer
+    TEST_ASSERT_TRUE(transport.closeCalled);
+}
+
+void test_held_write_stages_data_even_when_window_only_partially_accepts_it() {
+    FakeTransport transport;
+    HttpRouter router;
+    HttpRequest *parked = nullptr;
+    router.on(HttpMethod::GET, "/energy", [&parked](HttpRequest &req) {
+        req.hold(200, "text/plain");
+        parked = &req;
+    });
+    HttpConnection conn(transport, router);
+
+    feedRequest(conn, "GET /energy HTTP/1.1\r\n\r\n");
+
+    // The transport only accepts 1 byte per write() call, so writeHeld()'s
+    // first flush attempt can only partially drain the staged frame. Those
+    // bytes are already irrevocably on the wire, so the write must still be
+    // reported as accepted (not rejected) - rejecting it here would either
+    // lose the unflushed remainder or cause the caller to duplicate the
+    // record once the window reopens.
+    transport.writeLimit = 1;
+    const char *row = "ROWDATA\n";
+    size_t accepted = parked->write(reinterpret_cast<const uint8_t *>(row), strlen(row));
+    TEST_ASSERT_EQUAL(strlen(row), accepted);
+
+    // Nothing more can be staged until the partially-flushed frame drains.
+    accepted = parked->write(reinterpret_cast<const uint8_t *>(row), strlen(row));
+    TEST_ASSERT_EQUAL(0, accepted);
+
+    // Draining via onWritable() (as repeated tcp_sent callbacks would)
+    // flushes the rest of the first frame without losing or duplicating
+    // any of it.
+    transport.writeLimit = 0;
+    for (int i = 0; i < 50; i++) {
+        conn.onWritable();
+    }
+    size_t first = transport.written.find("ROWDATA");
+    TEST_ASSERT_TRUE(first != std::string::npos);
+    TEST_ASSERT_EQUAL(std::string::npos, transport.written.find("ROWDATA", first + 1));
+
+    // Now that the frame is fully drained, a new write is accepted again.
+    accepted = parked->write(reinterpret_cast<const uint8_t *>(row), strlen(row));
+    TEST_ASSERT_EQUAL(strlen(row), accepted);
+}
+
+void test_alive_goes_false_after_peer_disconnect() {
+    FakeTransport transport;
+    HttpRouter router;
+    HttpRequest *parked = nullptr;
+    router.on(HttpMethod::GET, "/energy", [&parked](HttpRequest &req) {
+        req.hold(200, "text/plain");
+        parked = &req;
+    });
+    HttpConnection conn(transport, router);
+
+    feedRequest(conn, "GET /energy HTTP/1.1\r\n\r\n");
+    TEST_ASSERT_TRUE(parked->alive());
+
+    conn.onClosed();
+    TEST_ASSERT_FALSE(parked->alive());
+    // write/done become no-ops once dead.
+    TEST_ASSERT_EQUAL(0, parked->write(reinterpret_cast<const uint8_t *>("x"), 1));
+}
+
+// Regression test: AsyncHttpServer::reap() can destroy a HttpConnection
+// (idle timeout) while a c0Queue job still holds its own copy of the
+// HttpRequest. That copy must detect the connection is gone rather than
+// dereferencing freed memory.
+void test_alive_and_write_are_safe_after_connection_is_destroyed() {
+    FakeTransport transport;
+    HttpRouter router;
+    HttpRequest captured;
+    router.on(HttpMethod::GET, "/energy", [&captured](HttpRequest &req) {
+        req.hold(200, "text/plain");
+        captured = req;  // simulates a job stashing its own HttpRequest copy
+    });
+    auto *conn = new HttpConnection(transport, router);
+
+    feedRequest(*conn, "GET /energy HTTP/1.1\r\n\r\n");
+    TEST_ASSERT_TRUE(captured.alive());
+
+    // Simulate reap() tearing down the slot out from under the job.
+    delete conn;
+
+    TEST_ASSERT_FALSE(captured.alive());
+    TEST_ASSERT_EQUAL(0, captured.write(reinterpret_cast<const uint8_t *>("x"), 1));
+    captured.done();  // must also be a safe no-op, not a crash
+}
+
+void test_write_before_hold_is_rejected() {
+    FakeTransport transport;
+    HttpRouter router;
+    HttpRequest *captured = nullptr;
+    router.on(HttpMethod::GET, "/x", [&captured](HttpRequest &req) { captured = &req; });
+    HttpConnection conn(transport, router);
+
+    feedRequest(conn, "GET /x HTTP/1.1\r\n\r\n");
+    // No hold() called: write must be rejected (connection not in chunked mode).
+    TEST_ASSERT_EQUAL(0, captured->write(reinterpret_cast<const uint8_t *>("x"), 1));
+}
+
+// Regression test: lwIP can fail to queue the FIN (ERR_MEM under pbuf
+// pressure). The connection must stay open and retry the close on the next
+// reap() pass instead of aborting - aborting RSTs a connection whose
+// response was already fully queued, and the client sees
+// ERR_CONNECTION_RESET on an otherwise-successful request.
+void test_failed_close_is_retried_from_poll_not_aborted() {
+    FakeTransport transport;
+    transport.failClose = true;
+    HttpRouter router;
+    router.on(HttpMethod::GET, "/status", [](HttpRequest &req) {
+        req.send(200, "application/json", "{\"ok\":true}");
+    });
+    HttpConnection conn(transport, router);
+
+    feedRequest(conn, "GET /status HTTP/1.1\r\n\r\n");
+
+    // Response fully written, but the close didn't land: still open, not
+    // finished, and no data lost.
+    TEST_ASSERT_TRUE(transport.written.find("{\"ok\":true}") != std::string::npos);
+    TEST_ASSERT_FALSE(transport.closeCalled);
+    TEST_ASSERT_TRUE(transport.isOpen());
+    TEST_ASSERT_FALSE(conn.isFinished());
+
+    // Once lwIP has memory again, the next reap() pass's retry closes it.
+    transport.failClose = false;
+    conn.closeIfDrained();
+    TEST_ASSERT_TRUE(transport.closeCalled);
+    TEST_ASSERT_TRUE(conn.isFinished());
+}
+
+// ============================================================================
+// Backpressure on inline responses: transport accepts partial writes
 // ============================================================================
 
 void test_backpressure_partial_writes_do_not_drop_or_duplicate_bytes() {
     FakeTransport transport;
     transport.writeLimit = 5;  // only accept 5 bytes per write() call
     HttpRouter router;
-    router.on(HttpMethod::GET, "/status", [](const HttpRequest &) {
-        return std::make_unique<ImmediateResponse>(200, "application/json", "{\"ok\":true}");
+    router.on(HttpMethod::GET, "/status", [](HttpRequest &req) {
+        req.send(200, "application/json", "{\"ok\":true}");
     });
     HttpConnection conn(transport, router);
 
@@ -226,17 +275,16 @@ void test_backpressure_partial_writes_do_not_drop_or_duplicate_bytes() {
     TEST_ASSERT_FALSE(transport.closeCalled);
 
     // Drain in small increments, exactly as repeated onWritable() calls
-    // (driven by tcp_sent callbacks) would.
+    // (driven by tcp_sent callbacks) interleaved with reap() passes would.
     for (int i = 0; i < 50 && !transport.closeCalled; i++) {
         conn.onWritable();
+        conn.closeIfDrained();
     }
 
     TEST_ASSERT_TRUE(transport.closeCalled);
-    TEST_ASSERT_TRUE(transport.written.find("{\"ok\":true}") != std::string::npos);
-    // Exactly one occurrence - no duplication.
     size_t first = transport.written.find("{\"ok\":true}");
-    size_t second = transport.written.find("{\"ok\":true}", first + 1);
-    TEST_ASSERT_EQUAL(std::string::npos, second);
+    TEST_ASSERT_TRUE(first != std::string::npos);
+    TEST_ASSERT_EQUAL(std::string::npos, transport.written.find("{\"ok\":true}", first + 1));
 }
 
 // ============================================================================
@@ -254,20 +302,20 @@ public:
     }
     void onUploadEnd() override { events.push_back("end"); }
     void onUploadAborted() override { events.push_back("aborted"); }
-    std::unique_ptr<HttpResponseProducer> finish() override {
+    void finish(HttpRequest &req) override {
         events.push_back("finish");
-        return std::make_unique<ImmediateResponse>(200, "application/json", "{\"ok\":true}");
+        req.send(200, "application/json", "{\"ok\":true}");
     }
 
     std::vector<std::string> events;
     std::string received;
 };
 
-void test_upload_route_streams_parts_to_handler_and_returns_finish_response() {
+void test_upload_route_streams_parts_to_handler_and_sends_finish_response() {
     FakeTransport transport;
     HttpRouter router;
     auto *handler = new RecordingUploadHandler();
-    router.onUpload(HttpMethod::POST, "/ota", [handler](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota", [handler](HttpRequest &) {
         return std::unique_ptr<HttpUploadHandler>(handler);
     });
     HttpConnection conn(transport, router);
@@ -287,7 +335,6 @@ void test_upload_route_streams_parts_to_handler_and_returns_finish_response() {
     TEST_ASSERT_TRUE(handler->events.size() >= 3);
     TEST_ASSERT_EQUAL_STRING("start:firmware:fw.bin", handler->events.front().c_str());
     TEST_ASSERT_EQUAL_STRING("finish", handler->events.back().c_str());
-    // Never aborted - the part closed normally before finish() was called.
     for (const auto &e : handler->events) {
         TEST_ASSERT_TRUE(e != "aborted");
     }
@@ -298,7 +345,7 @@ void test_upload_route_streams_parts_to_handler_and_returns_finish_response() {
 void test_upload_missing_boundary_returns_400() {
     FakeTransport transport;
     HttpRouter router;
-    router.onUpload(HttpMethod::POST, "/ota", [](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota", [](HttpRequest &) {
         return std::make_unique<RecordingUploadHandler>();
     });
     HttpConnection conn(transport, router);
@@ -313,7 +360,7 @@ void test_upload_split_across_many_small_feeds_still_streams_correctly() {
     FakeTransport transport;
     HttpRouter router;
     auto *handler = new RecordingUploadHandler();
-    router.onUpload(HttpMethod::POST, "/ota", [handler](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota", [handler](HttpRequest &) {
         return std::unique_ptr<HttpUploadHandler>(handler);
     });
     HttpConnection conn(transport, router);
@@ -338,7 +385,7 @@ void test_upload_never_closed_calls_aborted_before_finish() {
     FakeTransport transport;
     HttpRouter router;
     auto *handler = new RecordingUploadHandler();
-    router.onUpload(HttpMethod::POST, "/ota", [handler](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota", [handler](HttpRequest &) {
         return std::unique_ptr<HttpUploadHandler>(handler);
     });
     HttpConnection conn(transport, router);
@@ -364,15 +411,19 @@ void test_upload_never_closed_calls_aborted_before_finish() {
 
 int main(int argc, char **argv) {
     UNITY_BEGIN();
-    RUN_TEST(test_immediate_response_sends_content_length_and_closes);
+    RUN_TEST(test_send_writes_full_response_and_closes);
     RUN_TEST(test_not_found_route_returns_404);
     RUN_TEST(test_malformed_request_returns_400);
-    RUN_TEST(test_single_call_producer_uses_content_length_not_chunked);
-    RUN_TEST(test_multi_call_streamed_body_is_chunk_framed);
-    RUN_TEST(test_pending_producer_retried_via_poll_tick_without_new_data);
-    RUN_TEST(test_error_before_any_bytes_maps_to_500);
+    RUN_TEST(test_handler_that_never_responds_gets_500);
+    RUN_TEST(test_hold_sends_headers_immediately_and_parks);
+    RUN_TEST(test_held_write_is_chunk_framed_and_done_closes);
+    RUN_TEST(test_held_write_stages_data_even_when_window_only_partially_accepts_it);
+    RUN_TEST(test_alive_goes_false_after_peer_disconnect);
+    RUN_TEST(test_alive_and_write_are_safe_after_connection_is_destroyed);
+    RUN_TEST(test_write_before_hold_is_rejected);
+    RUN_TEST(test_failed_close_is_retried_from_poll_not_aborted);
     RUN_TEST(test_backpressure_partial_writes_do_not_drop_or_duplicate_bytes);
-    RUN_TEST(test_upload_route_streams_parts_to_handler_and_returns_finish_response);
+    RUN_TEST(test_upload_route_streams_parts_to_handler_and_sends_finish_response);
     RUN_TEST(test_upload_missing_boundary_returns_400);
     RUN_TEST(test_upload_split_across_many_small_feeds_still_streams_correctly);
     RUN_TEST(test_upload_never_closed_calls_aborted_before_finish);

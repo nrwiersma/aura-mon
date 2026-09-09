@@ -5,7 +5,7 @@
 #include "auramon.h"
 
 #include "public_upload_handler.h"
-#include <ImmediateResponse.h>
+#include <HttpRequest.h>
 
 void PublicUploadHandler::fail(int statusCode, const char *reason) {
     _failed = true;
@@ -89,10 +89,11 @@ void PublicUploadHandler::onUploadAborted() {
     LOGE("Public upload: aborted");
 }
 
-std::unique_ptr<HttpResponseProducer> PublicUploadHandler::finish() {
+void PublicUploadHandler::finish(HttpRequest &req) {
     if (_failed) {
         std::string msg = "{\"error\":\"Upload failed\",\"reason\":\"" + _errorReason + "\"}";
-        return std::make_unique<ImmediateResponse>(_statusCode, "application/json", msg);
+        req.send(_statusCode, "application/json", msg);
+        return;
     }
-    return std::make_unique<ImmediateResponse>(204, "text/plain", "");
+    req.send(204, "text/plain", "");
 }

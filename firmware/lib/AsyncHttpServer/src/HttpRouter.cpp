@@ -12,16 +12,18 @@ void HttpRouter::onNotFound(HandlerFn handler) {
     _notFound = std::move(handler);
 }
 
-std::unique_ptr<HttpResponseProducer> HttpRouter::route(const HttpRequest &req) const {
+void HttpRouter::route(HttpRequest &req) const {
     for (const auto &r : _routes) {
         if (r.method == req.method && r.path == req.path) {
-            return r.handler(req);
+            r.handler(req);
+            return;
         }
     }
     if (_notFound) {
-        return _notFound(req);
+        _notFound(req);
+        return;
     }
-    return nullptr;
+    req.send(404, "application/json", "{\"error\":\"Not Found\"}");
 }
 
 const HttpRouter::UploadFactoryFn *HttpRouter::findUpload(HttpMethod method, const std::string &path) const {

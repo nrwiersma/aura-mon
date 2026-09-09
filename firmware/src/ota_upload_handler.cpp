@@ -8,7 +8,7 @@
 #include <LittleFS.h>
 
 #include "ota_upload_handler.h"
-#include <ImmediateResponse.h>
+#include <HttpRequest.h>
 
 void OtaUploadHandler::onUploadStart(const std::string &name, const std::string &filename) {
     (void)filename;
@@ -93,24 +93,25 @@ void OtaUploadHandler::onUploadAborted() {
     LOGE("OTA: upload aborted");
 }
 
-std::unique_ptr<HttpResponseProducer> OtaUploadHandler::finish() {
+void OtaUploadHandler::finish(HttpRequest &req) {
     if (_failed || Update.hasError()) {
         String msg = F("{\"error\":\"Update failed\",\"code\":");
         msg.concat(_errorCode);
         msg.concat("}");
         LOGE("OTA: update failed with code %u", _errorCode);
-        return std::make_unique<ImmediateResponse>(500, "application/json", msg.c_str());
+        req.send(500, "application/json", msg.c_str());
+        return;
     }
 
     LOGI("OTA: update finished, rebooting");
     // Defer the reboot to the next loop() iteration so this response has
     // already been handed off to the transport (tcp_output()) before we
     // reset - rebooting from inside finish() itself would happen before
-    // pump() ever gets a chance to write it out.
+    // the connection ever gets a chance to write it out.
     c0Queue.add([](void *) -> uint32_t {
         safeReboot();
         return 0;
     }, 10);
 
-    return std::make_unique<ImmediateResponse>(204, "text/plain", "");
+    req.send(204, "text/plain", "");
 }

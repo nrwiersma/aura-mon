@@ -25,6 +25,9 @@ public:
     }
 
     void close() override {
+        if (failClose) {
+            return;  // simulate lwIP being unable to queue the FIN (ERR_MEM)
+        }
         _open = false;
         closeCalled = true;
     }
@@ -35,6 +38,7 @@ public:
     std::string written;
     size_t writeLimit = 0;  // 0 = unlimited
     bool closeCalled = false;
+    bool failClose = false;  // close() becomes a no-op, forcing a retry later
 
 private:
     bool _open = true;

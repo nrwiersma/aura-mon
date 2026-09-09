@@ -82,18 +82,22 @@ void LwipHttpTransport::close() {
     if (!_pcb) {
         return;
     }
-    tcp_arg(_pcb, nullptr);
-    tcp_recv(_pcb, nullptr);
-    tcp_sent(_pcb, nullptr);
-    tcp_err(_pcb, nullptr);
-    tcp_poll(_pcb, nullptr, 0);
-
+    if (tcp_close(_pcb) != ERR_OK) {
+        // lwIP couldn't queue the FIN (out of memory): leave the pcb and
+        // callbacks intact and let the next close() call (re-driven by
+        // HttpConnection's poll tick) retry. Aborting here would RST a
+        // connection whose response we already queued - the client sees
+        // ERR_CONNECTION_RESET on an otherwise-successful request.
+        return;
+    }
     tcp_pcb *pcb = _pcb;
     _pcb = nullptr;
     freePending();
-    if (tcp_close(pcb) != ERR_OK) {
-        tcp_abort(pcb);
-    }
+    tcp_arg(pcb, nullptr);
+    tcp_recv(pcb, nullptr);
+    tcp_sent(pcb, nullptr);
+    tcp_err(pcb, nullptr);
+    tcp_poll(pcb, nullptr, 0);
 }
 
 err_t LwipHttpTransport::onRecv(tcp_pcb *pcb, pbuf *pb, err_t /*err*/) {
@@ -136,7 +140,12 @@ err_t LwipHttpTransport::onRecv(tcp_pcb *pcb, pbuf *pb, err_t /*err*/) {
     for (pbuf *seg = pb; seg != nullptr; seg = seg->next) {
         _connection->onDataReceived(reinterpret_cast<const uint8_t *>(seg->payload), seg->len);
     }
-    tcp_recved(pcb, pb->tot_len);
+    // onDataReceived may have responded and closed the connection out from
+    // under us (inline responses close as soon as they've flushed); the pcb
+    // is gone then and tcp_recved() on it would be use-after-free.
+    if (_pcb) {
+        tcp_recved(pcb, pb->tot_len);
+    }
     pbuf_free(pb);
     return ERR_OK;
 }

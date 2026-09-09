@@ -6,11 +6,26 @@
 
 #ifndef UNIT_TEST
 #include <Arduino.h>
+#include <hardware/sync.h>
 #endif
 
-#include "ImmediateResponse.h"
-
 namespace {
+
+#ifndef UNIT_TEST
+// _outBuf is mutated from two contexts: c0Queue tasks (req.write/done on a
+// held connection) and lwIP callbacks (tcp_sent/tcp_poll -> flush()). Those
+// callbacks run from IRQ/async-context and can preempt a task mid-append,
+// corrupting the std::string. Guard every _outBuf touchpoint by disabling
+// interrupts briefly (correct primitive for loop-vs-IRQ on the same core;
+// nests safely via save/restore).
+struct IrqGuard {
+    uint32_t state;
+    IrqGuard() : state(save_and_disable_interrupts()) {}
+    ~IrqGuard() { restore_interrupts(state); }
+};
+#else
+struct IrqGuard {};
+#endif
 
 const char *statusText(int code) {
     switch (code) {
@@ -18,7 +33,9 @@ const char *statusText(int code) {
         case 202: return "Accepted";
         case 204: return "No Content";
         case 400: return "Bad Request";
+        case 403: return "Forbidden";
         case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
         case 408: return "Request Timeout";
         case 409: return "Conflict";
         case 500: return "Internal Server Error";
@@ -66,6 +83,10 @@ HttpConnection::HttpConnection(HttpTransport &transport, HttpRouter &router)
     touch();
 }
 
+HttpConnection::~HttpConnection() {
+    *_aliveFlag = false;
+}
+
 void HttpConnection::onHeadersComplete(const HttpRequest &req) {
     const HttpRouter::UploadFactoryFn *factory = _router.findUpload(req.method, req.path);
     if (!factory) {
@@ -80,7 +101,7 @@ void HttpConnection::onHeadersComplete(const HttpRequest &req) {
         return;  // dispatch() responds 400 once the (buffered) body is complete
     }
 
-    _uploadHandler = (*factory)(req);
+    _uploadHandler = (*factory)(const_cast<HttpRequest &>(req));
     _multipart = std::make_unique<MultipartParser>(boundary, *this);
     _parser.streamBodyTo([this](const uint8_t *data, size_t len) { _multipart->feed(data, len); });
 }
@@ -111,11 +132,19 @@ void HttpConnection::touch() {
 #endif
 }
 
+uint32_t HttpConnection::millis32() const {
+#ifdef UNIT_TEST
+    return 0;
+#else
+    return millis();
+#endif
+}
+
 void HttpConnection::onDataReceived(const uint8_t *data, size_t len) {
     touch();
     if (_state != State::AwaitingRequest) {
         // Ignore stray data once we've started responding (no pipelining
-        // support in phase 1 - "Connection: close" always).
+        // support - "Connection: close" always).
         return;
     }
 
@@ -124,58 +153,171 @@ void HttpConnection::onDataReceived(const uint8_t *data, size_t len) {
         return;
     }
     if (status == HttpParseStatus::Error) {
-        respondWithError(400, _parser.errorReason() ? _parser.errorReason() : "malformed request");
+        HttpRequest &req = const_cast<HttpRequest &>(_parser.request());
+        req._conn = this;
+        req._connAlive = _aliveFlag;
+        req.send(400, "text/plain", _parser.errorReason() ? _parser.errorReason() : "malformed request");
+        _state = State::Responded;
+        const IrqGuard irq;
+        flush();  // close happens from reap() - never from this callback
         return;
     }
 
     dispatch();
-    pump();
 }
 
 void HttpConnection::dispatch() {
+    HttpRequest &req = const_cast<HttpRequest &>(_parser.request());
+    req._conn = this;
+    req._connAlive = _aliveFlag;
+
     if (_isUpload) {
         if (_uploadBoundaryError || !_uploadHandler) {
-            _producer = std::make_unique<ImmediateResponse>(
-                ImmediateResponse::error(400, "missing or invalid multipart boundary"));
+            respondNow(400, "text/plain", "missing or invalid multipart boundary", nullptr);
         } else {
             if (!_multipart->isDone() || _partOpen) {
                 // Body ended without a proper closing boundary/part.
                 _uploadHandler->onUploadAborted();
             }
-            _producer = _uploadHandler->finish();
-            if (!_producer) {
-                _producer = std::make_unique<ImmediateResponse>(ImmediateResponse::error(500, "upload failed"));
+            _uploadHandler->finish(req);
+            if (!_answered) {
+                respondNow(500, "text/plain", "upload failed", nullptr);
             }
         }
         _uploadFinished = true;
-        _state = State::Dispatched;
+        _state = State::Responded;
+        const IrqGuard irq;
+        flush();  // close happens from reap() - never from this callback
         return;
     }
 
-    _producer = _router.route(_parser.request());
-    if (!_producer) {
-        _producer = std::make_unique<ImmediateResponse>(404, "application/json", "{\"error\":\"Not Found\"}");
+    _router.route(req);
+
+    if (!_answered) {
+        // Handler responded neither inline nor via hold() - treat as a bug.
+        respondNow(500, "text/plain", "handler produced no response", nullptr);
     }
-    _state = State::Dispatched;
+
+    _state = _chunked ? State::Held : State::Responded;
+    const IrqGuard irq;
+    flush();  // close happens from reap() - never from this callback
 }
 
-void HttpConnection::respondWithError(int statusCode, const char *reason) {
-    _producer = std::make_unique<ImmediateResponse>(ImmediateResponse::error(statusCode, reason ? reason : ""));
-    _state = State::Dispatched;
-    pump();
+void HttpConnection::respondNow(int statusCode, const char *contentType, const std::string &body,
+                                const char *extraHeaders) {
+    if (_answered || !isAlive()) {
+        return;
+    }
+    _answered = true;
+
+    const IrqGuard irq;
+
+    char line[160];
+    snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n", statusCode, statusText(statusCode));
+    _outBuf = line;
+    _outBuf += "Content-Type: ";
+    _outBuf += contentType;
+    _outBuf += "\r\n";
+    if (extraHeaders) {
+        _outBuf += extraHeaders;
+    }
+    _outBuf += "Access-Control-Allow-Origin: *\r\n";
+    _outBuf += "Connection: close\r\n";
+    snprintf(line, sizeof(line), "Content-Length: %zu\r\n\r\n", body.size());
+    _outBuf += line;
+    _outBuf += body;
+
+    if (_state == State::Responded) {
+        const IrqGuard irq;
+        flush();  // close happens from reap() - never from this callback
+    }
+}
+
+void HttpConnection::hold(int statusCode, const char *contentType, const char *extraHeaders) {
+    if (_answered || !isAlive()) {
+        return;
+    }
+    _answered = true;
+    _chunked = true;
+
+    const IrqGuard irq;
+
+    char line[160];
+    snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n", statusCode, statusText(statusCode));
+    _outBuf = line;
+    _outBuf += "Content-Type: ";
+    _outBuf += contentType;
+    _outBuf += "\r\n";
+    if (extraHeaders) {
+        _outBuf += extraHeaders;
+    }
+    _outBuf += "Access-Control-Allow-Origin: *\r\n";
+    _outBuf += "Connection: close\r\n";
+    _outBuf += "Transfer-Encoding: chunked\r\n\r\n";
+
+    // Always attempt to flush the headers immediately: hold() runs before
+    // dispatch() has flipped _state to Held, so waiting for that would mean
+    // a handler that calls write() right after hold() always sees _outBuf
+    // non-empty and always gets rejected. Flushing here lets that common
+    // case succeed inline instead of always deferring to a retry.
+    flush();
+}
+
+size_t HttpConnection::writeHeld(const uint8_t *data, size_t len) {
+    if (!_chunked || !isAlive() || len == 0) {
+        return 0;
+    }
+    // A record is either fully staged or not staged at all: while a
+    // previous frame is still draining (outBuf non-empty) we refuse new
+    // data so the caller retries the same record later. len is capped so a
+    // single call always fits within one staged frame.
+    const IrqGuard irq;  // the size check, append, and flush must be atomic
+                         // against IRQ-context flush() draining _outBuf
+    if (len > kMaxHeldWrite || _outBuf.size() > 0) {
+        return 0;
+    }
+    touch();
+
+    char sizeLine[16];
+    const int hdrLen = snprintf(sizeLine, sizeof(sizeLine), "%zx\r\n", len);
+    _outBuf.append(sizeLine, hdrLen);
+    _outBuf.append(reinterpret_cast<const char *>(data), len);
+    _outBuf += "\r\n";
+
+    // Best-effort flush now. If the transport only accepts part of the
+    // frame, those bytes are already irrevocably on the wire - the
+    // remainder simply stays queued in _outBuf and will drain via a later
+    // onWritable()/onPollTick() call. We must NOT discard it here: doing so
+    // would both lose the unsent tail and let the caller believe nothing
+    // was sent, causing it to resend the whole record and corrupt the
+    // chunked stream with a duplicate. Either way the data is now safely
+    // accounted for, so report full acceptance.
+    flush();
+    return len;
+}
+
+void HttpConnection::doneHeld() {
+    if (!_chunked || !isAlive()) {
+        return;
+    }
+    const IrqGuard irq;
+    touch();
+    _outBuf += "0\r\n\r\n";
+    _state = State::Responded;  // nothing more is coming; reap() closes it
+    flush();
 }
 
 void HttpConnection::onWritable() {
-    touch();
-    pump();
+    const IrqGuard irq;
+    flush();
 }
 
 void HttpConnection::onPollTick() {
     // Deliberately not touch()ed: tcp_poll fires continuously for every
     // open pcb, so it is not client activity - counting it would mask a
-    // stalled client from the idle timeout forever. Poll still drives
-    // pump() so Pending producers keep making progress.
-    pump();
+    // stalled client from the idle timeout forever.
+    const IrqGuard irq;
+    flush();
 }
 
 void HttpConnection::onClosed() {
@@ -186,7 +328,9 @@ void HttpConnection::onClosed() {
     _state = State::Closed;
 }
 
-void HttpConnection::writePending() {
+void HttpConnection::flush() {
+    // Callers must hold IrqGuard: _outBuf is shared between the loop task
+    // (writeHeld/doneHeld) and IRQ-context callbacks (onWritable/onPollTick).
     if (_outBuf.empty()) {
         return;
     }
@@ -196,121 +340,21 @@ void HttpConnection::writePending() {
     }
 }
 
-void HttpConnection::appendHeaders(int statusCode, const char *contentType, bool chunked, size_t contentLength) {
-    char line[160];
-    snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n", statusCode, statusText(statusCode));
-    _outBuf += line;
-    _outBuf += "Content-Type: ";
-    _outBuf += contentType;
-    _outBuf += "\r\n";
-    if (_producer) {
-        if (const char *extra = _producer->extraHeaders()) {
-            _outBuf += extra;
-        }
-    }
-    _outBuf += "Access-Control-Allow-Origin: *\r\n";
-    _outBuf += "Connection: close\r\n";
-    if (chunked) {
-        _outBuf += "Transfer-Encoding: chunked\r\n\r\n";
-    } else {
-        snprintf(line, sizeof(line), "Content-Length: %zu\r\n\r\n", contentLength);
-        _outBuf += line;
-    }
-}
-
-void HttpConnection::appendChunk(const uint8_t *data, size_t len) {
-    if (len == 0) {
-        return;
-    }
-    char sizeLine[16];
-    snprintf(sizeLine, sizeof(sizeLine), "%zx\r\n", len);
-    _outBuf += sizeLine;
-    _outBuf.append(reinterpret_cast<const char *>(data), len);
-    _outBuf += "\r\n";
-}
-
-void HttpConnection::appendChunkTerminator() {
-    _outBuf += "0\r\n\r\n";
-}
-
 void HttpConnection::closeIfDrained() {
-    if (_finished && _outBuf.empty()) {
+    // Runs from loop context only (reap()). Closing from inside an lwIP
+    // callback RSTs the connection on this stack, so socket callbacks only
+    // ever flush() - this is the sole closer.
+    const IrqGuard irq;
+    if (_state == State::Responded && _outBuf.empty()) {
         _transport.close();
-        _state = State::Closing;
+        if (!_transport.isOpen()) {
+            // close() detaches the lwIP callbacks, so onClosed() can never
+            // fire for a locally-initiated close. Mark the connection done
+            // immediately so reap() frees the slot on the next loop pass
+            // instead of holding it for the full idle timeout.
+            _state = State::Closed;
+        }
+        // else: lwIP couldn't queue the FIN yet (out of memory); the next
+        // reap() pass retries the close.
     }
-}
-
-void HttpConnection::pump() {
-    if (_state != State::Dispatched) {
-        return;
-    }
-
-    writePending();
-    if (!_outBuf.empty()) {
-        // Still backed up from a previous round; wait for onWritable().
-        return;
-    }
-
-    if (_finished) {
-        closeIfDrained();
-        return;
-    }
-
-    size_t written = 0;
-    HttpResponseProducer::Status status = _producer->produce(_workBuf, kWorkBufSize, written);
-
-    switch (status) {
-        case HttpResponseProducer::Status::Pending:
-            // Nothing to send yet; onPollTick() will retry.
-            return;
-
-        case HttpResponseProducer::Status::Error:
-            if (!_headersSent) {
-                std::string body = std::string("{\"error\":\"") +
-                                    (_producer->errorReason() ? _producer->errorReason() : "internal error") +
-                                    "\"}";
-                int code = _producer->statusCode();
-                if (code < 400) {
-                    code = 500;  // errorReason() implies failure; default if the producer didn't set one
-                }
-                appendHeaders(code, "application/json", false, body.size());
-                _outBuf += body;
-                _headersSent = true;
-            }
-            // If headers were already sent we cannot report an error anymore;
-            // just stop and close below.
-            _finished = true;
-            break;
-
-        case HttpResponseProducer::Status::Data:
-            if (!_headersSent) {
-                appendHeaders(_producer->statusCode(), _producer->contentType(), /*chunked=*/true, 0);
-                _chunked = true;
-                _headersSent = true;
-            }
-            if (_chunked) {
-                appendChunk(_workBuf, written);
-            } else {
-                _outBuf.append(reinterpret_cast<const char *>(_workBuf), written);
-            }
-            break;
-
-        case HttpResponseProducer::Status::Done:
-            if (!_headersSent) {
-                // Single-shot response: exact length known now.
-                appendHeaders(_producer->statusCode(), _producer->contentType(), /*chunked=*/false, written);
-                _outBuf.append(reinterpret_cast<const char *>(_workBuf), written);
-                _headersSent = true;
-            } else if (_chunked) {
-                appendChunk(_workBuf, written);
-                appendChunkTerminator();
-            } else {
-                _outBuf.append(reinterpret_cast<const char *>(_workBuf), written);
-            }
-            _finished = true;
-            break;
-    }
-
-    writePending();
-    closeIfDrained();
 }

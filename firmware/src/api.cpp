@@ -6,12 +6,8 @@
 
 #include <cstdlib>
 
-#include <ImmediateResponse.h>
-
-#include "log_truncate_producer.h"
-#include "log_range_producer.h"
-#include "energy_export_producer.h"
-#include "static_file_producer.h"
+#include "energy_export_job.h"
+#include "file_stream_job.h"
 #include "ota_upload_handler.h"
 #include "public_upload_handler.h"
 
@@ -19,6 +15,11 @@ const char *contentTypeJSON PROGMEM = "application/json";
 const char *contentTypePlain PROGMEM = "text/plain";
 
 namespace {
+
+constexpr char kRestartMarker[] = "**** RESTART ****";
+
+void serveStaticFile(HttpRequest &req);
+void truncateMessageLog(HttpRequest &req);
 
 // Parses a query parameter as an unsigned integer, falling back to
 // `def` when the parameter is absent. Returns false (leaving `out`
@@ -39,77 +40,73 @@ bool parseUintQueryParam(const HttpRequest &req, const char *key, uint32_t def, 
     return true;
 }
 
-std::unique_ptr<HttpResponseProducer> jsonError(int statusCode, const char *msg) {
+void jsonError(HttpRequest &req, int statusCode, const char *msg) {
     std::string body = std::string("{\"error\":\"") + msg + "\"}";
-    return std::make_unique<ImmediateResponse>(statusCode, contentTypeJSON, body);
+    req.send(statusCode, contentTypeJSON, body);
 }
 
-std::unique_ptr<HttpResponseProducer> internalError(const char *reason) {
+void internalError(HttpRequest &req, const char *reason) {
     std::string body = std::string("{\"error\":\"Internal Error\",\"reason\":\"") + reason + "\"}";
-    return std::make_unique<ImmediateResponse>(500, contentTypeJSON, body);
+    req.send(500, contentTypeJSON, body);
 }
 
-std::unique_ptr<HttpResponseProducer> returnOK() {
-    return std::make_unique<ImmediateResponse>(200, contentTypePlain, "");
-}
-
-void appendCSVValue(String &row, double value, const uint8_t precision = 3) {
-    row += ",";
-    if (std::isfinite(value)) {
-        row += String(value, precision);
-    }
-}
-
-std::unique_ptr<HttpResponseProducer> handleGetConfig(const HttpRequest &) {
+void handleGetConfig(HttpRequest &req) {
     JsonDocument doc;
     saveConfigJSON(doc);
 
     String response;
     serializeJson(doc, response);
 
-    return std::make_unique<ImmediateResponse>(200, contentTypeJSON, response.c_str());
+    req.send(200, contentTypeJSON, response.c_str());
 }
 
-std::unique_ptr<HttpResponseProducer> handlePostConfig(const HttpRequest &req) {
+void handlePostConfig(HttpRequest &req) {
     if (req.body.empty()) {
-        return jsonError(400, "No data provided");
+        jsonError(req, 400, "No data provided");
+        return;
     }
 
     JsonDocument doc;
     if (auto err = deserializeJson(doc, req.body); err) {
-        return jsonError(400, "Invalid JSON");
+        jsonError(req, 400, "Invalid JSON");
+        return;
     }
 
     auto err = loadConfigJSON(doc);
     if (err) {
         std::string msg = std::string("{\"error\":\"Invalid configuration\",\"reason\":\"") + err.Error() + "\"}";
-        return std::make_unique<ImmediateResponse>(400, contentTypeJSON, msg);
+        req.send(400, contentTypeJSON, msg);
+        return;
     }
 
     err = saveConfig();
     if (err) {
-        return internalError(err.Error());
+        internalError(req, err.Error());
+        return;
     }
 
     mutex_enter_blocking(&deviceInfoMu);
     devicesChanged = true;
     mutex_exit(&deviceInfoMu);
 
-    return std::make_unique<ImmediateResponse>(200, contentTypePlain, "");
+    req.send(200, contentTypePlain, "");
 }
 
-std::unique_ptr<HttpResponseProducer> handleDeviceAction(const HttpRequest &req) {
+void handleDeviceAction(HttpRequest &req) {
     if (req.body.empty()) {
-        return jsonError(400, "No data provided");
+        jsonError(req, 400, "No data provided");
+        return;
     }
 
     JsonDocument doc;
     if (auto err = deserializeJson(doc, req.body); err) {
-        return jsonError(400, "Invalid JSON");
+        jsonError(req, 400, "Invalid JSON");
+        return;
     }
 
     if (!doc["action"].is<const char *>() || !doc["address"].is<uint32_t>()) {
-        return jsonError(400, "Invalid action payload");
+        jsonError(req, 400, "Invalid action payload");
+        return;
     }
 
     const char *     actionStr = doc["action"].as<const char *>();
@@ -121,30 +118,34 @@ std::unique_ptr<HttpResponseProducer> handleDeviceAction(const HttpRequest &req)
     } else if (strcmp(actionStr, "assign") == 0) {
         action = DeviceActionType::Assign;
     } else {
-        return jsonError(400, "Unknown action");
+        jsonError(req, 400, "Unknown action");
+        return;
     }
 
     if (address == 0 || address > MAX_DEVICES) {
-        return jsonError(400, "Invalid address");
+        jsonError(req, 400, "Invalid address");
+        return;
     }
 
     if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {
-        return internalError("could not acquire deviceInfoMu");
+        internalError(req, "could not acquire deviceInfoMu");
+        return;
     }
 
     if (deviceActionControl.type != DeviceActionType::None) {
         mutex_exit(&deviceActionMu);
-        return jsonError(409, "Action already pending");
+        jsonError(req, 409, "Action already pending");
+        return;
     }
 
     deviceActionControl = {action, static_cast<uint8_t>(address)};
 
     mutex_exit(&deviceActionMu);
 
-    return std::make_unique<ImmediateResponse>(202, contentTypeJSON, "{\"status\":\"queued\"}");
+    req.send(202, contentTypeJSON, "{\"status\":\"queued\"}");
 }
 
-std::unique_ptr<HttpResponseProducer> handleReboot(const HttpRequest &) {
+void handleReboot(HttpRequest &req) {
     LOGI("Reboot requested");
 
     // Deferred, exactly like the OTA success path, so the 204 response has
@@ -154,10 +155,10 @@ std::unique_ptr<HttpResponseProducer> handleReboot(const HttpRequest &) {
         return 0;
     }, 10);
 
-    return std::make_unique<ImmediateResponse>(204, contentTypePlain, "");
+    req.send(204, contentTypePlain, "");
 }
 
-std::unique_ptr<HttpResponseProducer> handleMetrics(const HttpRequest &) {
+void handleMetrics(HttpRequest &req) {
     const uint32_t errors = metrics.modbus_errors_total.load(std::memory_order_relaxed);
     const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
     const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
@@ -306,10 +307,10 @@ std::unique_ptr<HttpResponseProducer> handleMetrics(const HttpRequest &) {
     response += String(logErrors);
     response += '\n';
 
-    return std::make_unique<ImmediateResponse>(200, contentTypePlain, response.c_str());
+    req.send(200, contentTypePlain, response.c_str());
 }
 
-std::unique_ptr<HttpResponseProducer> handleStatus(const HttpRequest &) {
+void handleStatus(HttpRequest &req) {
     JsonDocument doc;
 
     doc["version"] = AURAMON_VERSION;
@@ -361,42 +362,230 @@ std::unique_ptr<HttpResponseProducer> handleStatus(const HttpRequest &) {
     String response;
     serializeJson(doc, response);
 
-    return std::make_unique<ImmediateResponse>(200, contentTypeJSON, response.c_str());
+    req.send(200, contentTypeJSON, response.c_str());
 }
 
-std::unique_ptr<HttpResponseProducer> handleEnergy(const HttpRequest &req) {
+void handleEnergy(HttpRequest &req) {
     uint32_t start = 0;
     uint32_t end = 0;
     uint32_t interval = 0;
     if (!parseUintQueryParam(req, "start", 0, start) ||
         !parseUintQueryParam(req, "end", static_cast<uint32_t>(time(nullptr)), end) ||
         !parseUintQueryParam(req, "interval", 5, interval)) {
-        return jsonError(400, "Invalid parameters");
+        jsonError(req, 400, "Invalid parameters");
+        return;
     }
 
     LOGD("Energy request start=%u end=%u interval=%u", start, end, interval);
 
-    return std::make_unique<EnergyExportProducer>(datalog, start, end, interval);
+    auto *job = EnergyExportJob::start(req, datalog, start, end, interval);
+    if (job) {
+        c0Queue.add(&EnergyExportJob::stepTask, 6, job);
+    }
 }
 
-std::unique_ptr<HttpResponseProducer> handleLogs(const HttpRequest &req) {
+void handleLogs(HttpRequest &req) {
     uint32_t startOffset = 0;
     if (!parseUintQueryParam(req, "start", 0, startOffset)) {
-        return jsonError(400, "Invalid start");
+        jsonError(req, 400, "Invalid start");
+        return;
     }
     uint32_t limitBytes = 0;
     if (req.queryParam("limit")) {
         if (!parseUintQueryParam(req, "limit", 0, limitBytes) || limitBytes == 0) {
-            return jsonError(400, "Invalid limit");
+            jsonError(req, 400, "Invalid limit");
+            return;
         }
     }
 
-    return std::make_unique<LogRangeProducer>(startOffset, limitBytes);
+    auto *job = FileStreamJob::open(req, MESSAGE_LOG_PATH,
+                                    {.startOffset = startOffset, .limitBytes = limitBytes});
+    if (job) {
+        c0Queue.add(&FileStreamJob::stepTask, 6, job);
+    }
 }
 
-std::unique_ptr<HttpResponseProducer> handleLogsTrunc(const HttpRequest &) {
+void handleLogsTrunc(HttpRequest &req) {
     LOGI("Log truncation requested");
-    return std::make_unique<LogTruncateProducer>();
+    truncateMessageLog(req);
+}
+
+// ---- static file serving (SD public/ dir) ----
+
+bool endsWith(const std::string &s, const char *suffix) {
+    size_t len = strlen(suffix);
+    return s.size() >= len && s.compare(s.size() - len, len, suffix) == 0;
+}
+
+const char *contentTypeForPath(const std::string &path) {
+    if (endsWith(path, ".html") || endsWith(path, ".html.gz")) return "text/html";
+    if (endsWith(path, ".css") || endsWith(path, ".css.gz")) return "text/css";
+    if (endsWith(path, ".js") || endsWith(path, ".js.gz")) return "application/javascript";
+    if (endsWith(path, ".json") || endsWith(path, ".json.gz")) return "application/json";
+    if (endsWith(path, ".png") || endsWith(path, ".png.gz")) return "image/png";
+    if (endsWith(path, ".jpg") || endsWith(path, ".jpeg") || endsWith(path, ".jpg.gz") ||
+        endsWith(path, ".jpeg.gz"))
+        return "image/jpeg";
+    if (endsWith(path, ".ico") || endsWith(path, ".ico.gz")) return "image/x-icon";
+    if (endsWith(path, ".svg") || endsWith(path, ".svg.gz")) return "image/svg+xml";
+    return "text/plain";
+}
+
+void serveStaticFile(HttpRequest &req) {
+    if (req.method != HttpMethod::GET) {
+        req.send(405, "text/plain", "Method Not Allowed");
+        return;
+    }
+
+    std::string path = req.path;
+    if (path.empty() || path[0] != '/') {
+        path = "/" + path;
+    }
+    if (path == "/") {
+        path = "/index.html";
+    }
+    path = "public" + path;
+    const std::string gzPath = path + ".gz";
+
+    bool gzip = false;
+    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
+        req.send(408, "text/plain", "Request Timeout");
+        return;
+    }
+    if (sd.exists(gzPath.c_str())) {
+        gzip = true;
+        path = gzPath;
+    } else if (!sd.exists(path.c_str())) {
+        mutex_exit(&sdMu);
+        req.send(404, "text/plain", "Not Found");
+        return;
+    }
+    mutex_exit(&sdMu);
+
+    auto *job = FileStreamJob::open(req, path,
+                                    {.contentType = contentTypeForPath(path),
+                                     .extraHeaders = gzip ? "Content-Encoding: gzip\r\n" : nullptr});
+    if (job) {
+        c0Queue.add(&FileStreamJob::stepTask, 6, job);
+    }
+}
+
+// ---- message-log truncation (drops everything before the last restart
+// marker, keeping the current boot's log) ----
+
+void truncateMessageLog(HttpRequest &req) {
+    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
+        req.send(408, "text/plain", "Request Timeout");
+        return;
+    }
+    if (!sd.exists(MESSAGE_LOG_PATH)) {
+        mutex_exit(&sdMu);
+        req.send(404, "text/plain", "not found");
+        return;
+    }
+    FsFile src = sd.open(MESSAGE_LOG_PATH, O_READ);
+    if (!src) {
+        mutex_exit(&sdMu);
+        req.send(500, "text/plain", "could not open log");
+        return;
+    }
+
+    const size_t fileSize = src.size();
+
+    // Scan backward in chunks for the last restart marker.
+    static char window[1024 + 16];
+    size_t chunkEnd = fileSize;
+    uint32_t startOffset = 0;
+    bool markerFound = false;
+    uint32_t lastMarkerOffset = 0;
+    size_t overlapLen = 0;
+    char overlap[16];
+
+    while (chunkEnd > 0 && !markerFound) {
+        const uint32_t chunkStart = (chunkEnd > 1024) ? (chunkEnd - 1024) : 0;
+        const size_t chunkLen = chunkEnd - chunkStart;
+        if (!src.seek(chunkStart)) {
+            src.close();
+            mutex_exit(&sdMu);
+            req.send(500, "text/plain", "could not seek log");
+            return;
+        }
+        const int readLen = src.read(window, chunkLen);
+        if (readLen < 0 || static_cast<size_t>(readLen) != chunkLen) {
+            src.close();
+            mutex_exit(&sdMu);
+            req.send(500, "text/plain", "could not read log");
+            return;
+        }
+        if (overlapLen > 0) {
+            memcpy(window + chunkLen, overlap, overlapLen);
+        }
+        const size_t totalLen = chunkLen + overlapLen;
+        const size_t markerLen = strlen(kRestartMarker);
+        if (totalLen >= markerLen) {
+            for (size_t i = totalLen - markerLen + 1; i > 0; i--) {
+                const size_t idx = i - 1;
+                if (memcmp(window + idx, kRestartMarker, markerLen) == 0) {
+                    lastMarkerOffset = chunkStart + idx;
+                    markerFound = true;
+                    break;
+                }
+            }
+        }
+        overlapLen = min(chunkLen, markerLen - 1);
+        if (overlapLen > 0) {
+            memcpy(overlap, window, overlapLen);
+        }
+        chunkEnd = chunkStart;
+    }
+    startOffset = markerFound ? lastMarkerOffset : 0;
+
+    if (!src.seek(startOffset)) {
+        src.close();
+        mutex_exit(&sdMu);
+        req.send(500, "text/plain", "could not seek log");
+        return;
+    }
+    FsFile tmp = sd.open(MESSAGE_LOG_PATH ".trunc", O_WRITE | O_CREAT | O_TRUNC);
+    if (!tmp) {
+        src.close();
+        mutex_exit(&sdMu);
+        req.send(500, "text/plain", "could not open temp log");
+        return;
+    }
+
+    char copyBuf[512];
+    int readLen;
+    bool writeFailed = false;
+    while ((readLen = src.read(copyBuf, sizeof(copyBuf))) > 0) {
+        if (tmp.write(copyBuf, static_cast<size_t>(readLen)) != static_cast<size_t>(readLen)) {
+            writeFailed = true;
+            break;
+        }
+    }
+    tmp.flush();
+    tmp.close();
+    src.close();
+
+    if (writeFailed) {
+        sd.remove(MESSAGE_LOG_PATH ".trunc");
+        mutex_exit(&sdMu);
+        req.send(500, "text/plain", "could not write temp log");
+        return;
+    }
+
+    sd.remove(MESSAGE_LOG_PATH);
+    const bool renamed = sd.rename(MESSAGE_LOG_PATH ".trunc", MESSAGE_LOG_PATH);
+    if (!renamed) {
+        sd.remove(MESSAGE_LOG_PATH ".trunc");
+    }
+    mutex_exit(&sdMu);
+
+    if (!renamed) {
+        req.send(500, "text/plain", "could not replace log");
+        return;
+    }
+    req.send(204, "text/plain", "");
 }
 
 }  // namespace
@@ -411,18 +600,16 @@ void setupAPI() {
     router.on(HttpMethod::POST, "/logs/trunc", handleLogsTrunc);
     router.on(HttpMethod::GET, "/metrics", handleMetrics);
     router.on(HttpMethod::POST, "/reboot", handleReboot);
-    router.on(HttpMethod::GET, "/readyz", [](const HttpRequest &) { return returnOK(); });
-    router.on(HttpMethod::GET, "/livez", [](const HttpRequest &) { return returnOK(); });
+    router.on(HttpMethod::GET, "/readyz", [](HttpRequest &req) { req.send(200, contentTypePlain, ""); });
+    router.on(HttpMethod::GET, "/livez", [](HttpRequest &req) { req.send(200, contentTypePlain, ""); });
 
-    router.onUpload(HttpMethod::POST, "/ota", [](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota", [](HttpRequest &) {
         return std::make_unique<OtaUploadHandler>();
     });
-    router.onUpload(HttpMethod::POST, "/ota/public", [](const HttpRequest &) {
+    router.onUpload(HttpMethod::POST, "/ota/public", [](HttpRequest &) {
         return std::make_unique<PublicUploadHandler>();
     });
 
     // Serve "public/" from the SD card for anything else.
-    router.onNotFound([](const HttpRequest &req) -> std::unique_ptr<HttpResponseProducer> {
-        return std::make_unique<StaticFileProducer>(req.method, req.path);
-    });
+    router.onNotFound(serveStaticFile);
 }
