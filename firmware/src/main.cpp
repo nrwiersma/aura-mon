@@ -145,7 +145,7 @@ void setup() {
     c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);
     c0Queue.add(syncState, 4);
-    c0Queue.add(writeLogData, 6);
+    c0Queue.add(writeLogData, 7);
 
     c1Queue.add(logData, 7);
     c1Queue.add(syncDevices, 6);

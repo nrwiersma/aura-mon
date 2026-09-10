@@ -380,7 +380,7 @@ void handleEnergy(HttpRequest &req) {
 
     auto *job = EnergyExportJob::start(req, datalog, start, end, interval);
     if (job) {
-        c0Queue.add(&EnergyExportJob::stepTask, 6, job);
+        c0Queue.add(&EnergyExportJob::stepTask, 5, job);
     }
 }
 
@@ -401,7 +401,7 @@ void handleLogs(HttpRequest &req) {
     auto *job = FileStreamJob::open(req, MESSAGE_LOG_PATH,
                                     {.startOffset = startOffset, .limitBytes = limitBytes});
     if (job) {
-        c0Queue.add(&FileStreamJob::stepTask, 6, job);
+        c0Queue.add(&FileStreamJob::stepTask, 5, job);
     }
 }
 
@@ -466,7 +466,7 @@ void serveStaticFile(HttpRequest &req) {
                                     {.contentType = contentTypeForPath(path),
                                      .extraHeaders = gzip ? "Content-Encoding: gzip\r\n" : nullptr});
     if (job) {
-        c0Queue.add(&FileStreamJob::stepTask, 6, job);
+        c0Queue.add(&FileStreamJob::stepTask, 5, job);
     }
 }
 
