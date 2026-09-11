@@ -98,7 +98,7 @@ uint32_t logData(void *param) {
     if (!records.push(rec)) {
         metrics.datalog_queue_full_total.fetch_add(1, std::memory_order_relaxed);
         LOGE("Log record queue is full, retrying record %d", rec->ts);
-        return 1;
+        return 10;
     }
     metrics.datalog_queue_depth.store(records.size(), std::memory_order_relaxed);
 

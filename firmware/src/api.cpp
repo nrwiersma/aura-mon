@@ -6,17 +6,21 @@
 
 #include <Updater.h>
 #include <LittleFS.h>
+#include <HTTPRequest.h>
+#include "csv_query.h"
 
 const char *contentTypeJSON PROGMEM = "application/json";
 const char *contentTypePlain PROGMEM = "text/plain";
 const char *contentTypeHTML PROGMEM = "text/html";
 const char *contentTypeCSV PROGMEM = "text/csv";
 
+HTTPServer::ClientFuture hookEnergy(const String &method, const String &url, const String &params, WiFiClient *client,
+                                    WebServer::ContentTypeFunction contentType);
+
 void returnOK();
 void handleGetConfig();
 void handlePostConfig();
 void handleStatus();
-void handleEnergy();
 void handleLogs();
 void handleLogsTrunc();
 void handleNotFound();
@@ -29,10 +33,11 @@ void handleMetrics();
 void handleReboot();
 
 void setupAPI() {
+    server.addHook(hookEnergy);
     server.on("/config", HTTP_GET, handleGetConfig);
     server.on("/config", HTTP_POST, handlePostConfig);
     server.on("/status", HTTP_GET, handleStatus);
-    server.on("/energy", HTTP_GET, handleEnergy);
+    // server.on("/energy", HTTP_GET, handleEnergy);
     server.on("/device/action", HTTP_POST, handleDeviceAction);
     server.on("/logs", HTTP_GET, handleLogs);
     server.on("/logs/trunc", HTTP_POST, handleLogsTrunc);
@@ -59,16 +64,80 @@ void returnInternalError(const char *reason) {
     server.send(500, contentTypeJSON, msg);
 }
 
-struct deviceColumn {
-    uint8_t index;
-    String  name;
-};
-
-void appendCSVValue(String &row, double value, const uint8_t precision = 3) {
-    row += ",";
-    if (std::isfinite(value)) {
-        row += String(value, precision);
+HTTPServer::ClientFuture hookEnergy(const String &method, const String &url, const String &params, WiFiClient *client,
+                                    WebServer::ContentTypeFunction contentType) {
+    if (url != "/energy") {
+        // This is not an energy request, pass it onto the handlers.
+        return WebServer::CLIENT_REQUEST_CAN_CONTINUE;
     }
+    if (method.equals("OPTIONS")) {
+        // Handle CORS preflight.
+        HTTPRequest req(method, url, params, client, contentType);
+        req.enableCORS();
+        req.send(204, contentTypePlain, "");
+        req.finish();
+        return WebServer::CLIENT_MUST_STOP;
+    }
+    if (!method.equals("GET")) {
+        return WebServer::CLIENT_REQUEST_CAN_CONTINUE;
+    }
+
+    // From this point on, either CLIENT_MUST_STOP or CLIENT_IS_GIVEN must be returned.
+
+    auto *req = new HTTPRequest(method, url, params, client, contentType);
+    req->enableCORS();
+
+    const long baseInterval = datalog.interval();
+    const long requestedStart = req->hasArg("start") ? req->arg("start").toInt() : 0;
+    const long requestedEnd = req->hasArg("end") ? req->arg("end").toInt() : time(nullptr);
+    const long requestedInterval = req->hasArg("interval") ? req->arg("interval").toInt() : 5;
+    if (requestedStart <= 0 || requestedEnd <= 0 || requestedInterval <= 0) {
+        req->send(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
+        req->finish();
+        delete req;
+        return WebServer::CLIENT_MUST_STOP;
+    }
+
+    uint32_t start = requestedStart;
+    uint32_t end = requestedEnd;
+    uint32_t interval = requestedInterval;
+
+    start -= start % baseInterval;
+    end -= end % baseInterval;
+    interval -= interval % baseInterval;
+
+    if (start >= end || interval == 0) {
+        req->send(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
+        req->finish();
+        delete req;
+        return WebServer::CLIENT_MUST_STOP;
+    }
+    if ((end - start) / interval > 99) {
+        // Limit to 100 rows to prevent excessively large responses.
+        end = start + interval * 99;
+    }
+
+    if (!datalog.entries()) {
+        req->send(204, contentTypePlain, "");
+        req->finish();
+        delete req;
+        return WebServer::CLIENT_MUST_STOP;
+    }
+    const uint32_t lastTs = datalog.lastTS();
+    if (start > lastTs) {
+        req->send(204, contentTypePlain, "");
+        req->finish();
+        delete req;
+        return WebServer::CLIENT_MUST_STOP;
+    }
+    if (end > lastTs) {
+        end = lastTs;
+    }
+
+    auto *qry = new csvQuery(start, end, interval, req);
+    req->takeClientOwnership();
+    c0Queue.add(&csvQuery::stepTask, 4, qry);
+    return WebServer::CLIENT_IS_GIVEN;
 }
 
 void handleGetConfig() {
@@ -213,7 +282,8 @@ void handleMetrics() {
     response += F("auramon_collect_time_seconds_total ");
     response += String(totalMs / 1000.0, 6);
     response += '\n';
-    response += F("# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
+    response += F(
+        "# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
     response += F("# TYPE auramon_collect_time_seconds_avg gauge\n");
     response += F("auramon_collect_time_seconds_avg ");
     response += String(avgMs / 1000.0, 6);
@@ -240,7 +310,8 @@ void handleMetrics() {
         response += String(devErrors);
         response += '\n';
     }
-    response += F("# HELP auramon_modbus_device_collect_time_seconds Last successful collection time per Modbus device in seconds.\n");
+    response += F(
+        "# HELP auramon_modbus_device_collect_time_seconds Last successful collection time per Modbus device in seconds.\n");
     response += F("# TYPE auramon_modbus_device_collect_time_seconds gauge\n");
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
         const auto info = deviceInfos[i];
@@ -267,7 +338,8 @@ void handleMetrics() {
     response += F("auramon_datalog_write_io ");
     response += String(datalogWriteIO);
     response += '\n';
-    response += F("# HELP auramon_datalog_write_time_seconds_total Total time spent writing datalog records in seconds.\n");
+    response += F(
+        "# HELP auramon_datalog_write_time_seconds_total Total time spent writing datalog records in seconds.\n");
     response += F("# TYPE auramon_datalog_write_time_seconds_total counter\n");
     response += F("auramon_datalog_write_time_seconds_total ");
     response += String(datalogWriteMsTotal / 1000.0, 6);
@@ -287,12 +359,14 @@ void handleMetrics() {
     response += F("auramon_datalog_queue_depth ");
     response += String(datalogQueueDepth);
     response += '\n';
-    response += F("# HELP auramon_datalog_queue_full_total Total times a record could not be queued because the queue was full.\n");
+    response += F(
+        "# HELP auramon_datalog_queue_full_total Total times a record could not be queued because the queue was full.\n");
     response += F("# TYPE auramon_datalog_queue_full_total counter\n");
     response += F("auramon_datalog_queue_full_total ");
     response += String(datalogQueueFull);
     response += '\n';
-    response += F("# HELP auramon_datalog_records_dropped_total Total records dropped after repeated write failures.\n");
+    response += F(
+        "# HELP auramon_datalog_records_dropped_total Total records dropped after repeated write failures.\n");
     response += F("# TYPE auramon_datalog_records_dropped_total counter\n");
     response += F("auramon_datalog_records_dropped_total ");
     response += String(datalogDropped);
@@ -312,7 +386,7 @@ void handleMetrics() {
     response += F("# HELP auramon_ntp_offset_ms Clock offset applied during the last NTP sync in milliseconds.\n");
     response += F("# TYPE auramon_ntp_offset_ms gauge\n");
     response += F("auramon_ntp_offset_ms ");
-    response += String((long)ntpOffsetMs);
+    response += String((long) ntpOffsetMs);
     response += '\n';
 
     // Network metrics.
@@ -386,143 +460,6 @@ void handleStatus() {
     serializeJson(doc, response);
 
     server.send(200, contentTypeJSON, response);
-}
-
-void handleEnergy() {
-    uint32_t baseInterval = datalog.interval();
-    uint32_t start = server.arg("start").toInt();
-    uint32_t end = server.hasArg("end") ? server.arg("end").toInt() : time(nullptr);
-    uint32_t interval = server.hasArg("interval") ? server.arg("interval").toInt() : 5;
-
-    LOGD("Energy request start=%u end=%u interval=%u", start, end, interval);
-
-    start -= start % baseInterval;
-    end -= end % baseInterval;
-    interval -= interval % baseInterval;
-
-    if (start >= end || interval == 0) {
-        server.send(400, contentTypeJSON, F("{\"error\":\"Invalid parameters\"}"));
-        return;
-    }
-    if (end > start + interval * 99) {
-        // Limit to 100 rows to prevent excessively large responses.
-        end = start + interval * 99;
-    }
-
-    if (!datalog.entries()) {
-        server.send(204, contentTypePlain, "");
-        return;
-    }
-
-    LOGD("energy: adjusted parameters start=%u end=%u interval=%u", start, end, interval);
-
-    deviceColumn deviceColumns[MAX_DEVICES];
-    size_t       deviceCount = 0;
-    mutex_enter_blocking(&deviceInfoMu);
-    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        auto info = deviceInfos[i];
-        if (!info || !info->isEnabled() || info->name.isEmpty()) {
-            continue;
-        }
-        deviceColumns[deviceCount++] = deviceColumn{i, info->name};
-    }
-    mutex_exit(&deviceInfoMu);
-
-    LOGD("energy: collected devices: %u", deviceCount);
-
-    if (deviceCount == 0) {
-        server.send(204, contentTypePlain, "");
-        return;
-    }
-
-    uint32_t lastTs = datalog.lastTS();
-    if (start > lastTs) {
-        server.send(204, contentTypePlain, "");
-        return;
-    }
-    if (end > lastTs) {
-        end = lastTs;
-    }
-
-    LogRecord prevRec;
-    if (auto err = datalog.read(start - interval, &prevRec); err) {
-        returnInternalError(err.Error());
-        return;
-    }
-
-    LOGD("energy: read previous record: %u", prevRec.rev);
-
-    if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
-        server.send(505, contentTypeHTML, F("HTTP1.1 required"));
-        return;
-    }
-
-    String header = F("timestamp,Hz");
-    for (size_t i = 0; i < deviceCount; i++) {
-        const String &name = deviceColumns[i].name;
-        header += "," + name + ".V";
-        header += "," + name + ".A";
-        header += "," + name + ".W";
-        header += "," + name + ".Wh";
-        header += "," + name + ".PF";
-    }
-    header += "\n";
-    server.sendContent(header);
-
-    for (uint32_t ts = start; ts <= end; ts += interval) {
-        LogRecord rec;
-        if (auto err = datalog.read(ts, &rec); err) {
-            server.sendContent(F("error reading datalog\n"));
-            server.chunkedResponseFinalize();
-            return;
-        }
-
-        if (rec.ts <= prevRec.ts) {
-            continue;
-        }
-        if (rec.rev == prevRec.rev) {
-            continue;
-        }
-
-        const double elapsedHours = rec.logHours - prevRec.logHours;
-        if (elapsedHours <= 0) {
-            prevRec = rec;
-            continue;
-        }
-
-        auto row = String(rec.ts);
-        row.reserve(row.length() + deviceCount * 48);
-
-        const double hz = (rec.hzHrs - prevRec.hzHrs) / elapsedHours;
-        appendCSVValue(row, hz, 2);
-
-        for (size_t i = 0; i < deviceCount; i++) {
-            const uint8_t idx = deviceColumns[i].index;
-            const double  voltage = (rec.voltHrs[idx] - prevRec.voltHrs[idx]) / elapsedHours;
-            double        energyWh = rec.wattHrs[idx] - prevRec.wattHrs[idx];
-            const double  power = energyWh / elapsedHours;
-            const double  apparentPower = (rec.vaHrs[idx] - prevRec.vaHrs[idx]) / elapsedHours;
-            if (energyWh < 0) {
-                energyWh = 0;
-            }
-            const double current = (voltage != 0.0) ? (apparentPower / voltage) : 0.0;
-            const double powerFactor = (apparentPower > 0.0) ? (power / apparentPower) : 0.0;
-
-            appendCSVValue(row, voltage);
-            appendCSVValue(row, current);
-            appendCSVValue(row, power);
-            appendCSVValue(row, energyWh, 6);
-            appendCSVValue(row, powerFactor, 4);
-        }
-
-        row += "\n";
-        server.sendContent(row);
-        prevRec = rec;
-    }
-
-    LOGD("energy: completed response");
-
-    server.chunkedResponseFinalize();
 }
 
 void handleLogs() {
