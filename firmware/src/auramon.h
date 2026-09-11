@@ -95,6 +95,8 @@ extern DataLog datalog;
 
 extern promMetrics metrics;
 
+extern taskQueue c0Queue;
+
 uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
 void     initLogData();
