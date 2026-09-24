@@ -59,6 +59,8 @@
 
 #define BUTTON_DEBOUNCE_MS 200
 
+#define QUEUE_FULL_WATCHDOG_MS 5000
+
 enum LEDColor { Red, Orange, Green };
 
 inline byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};

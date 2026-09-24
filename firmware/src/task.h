@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <queue>
@@ -32,6 +33,12 @@ public:
     void add(taskFunction func, uint8_t priority, void *param = nullptr);
     bool runNextTask();
 
+    // currentTask reads a consistent snapshot of the task currently executing
+    // on this queue.
+    bool currentTask(uint32_t *addr, uint32_t *startMs) const;
+
 private:
-    std::priority_queue<task> _tasks;
+    std::priority_queue<task>  _tasks;
+    std::atomic<uintptr_t>     _currentTaskAddr{0};
+    std::atomic<uint32_t>      _currentTaskStartMs{0};
 };
