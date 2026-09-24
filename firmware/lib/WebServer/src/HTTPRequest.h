@@ -66,7 +66,8 @@ public:
     void finish() {
         if (_finished) return;
         if (_chunked) {
-            _client->print(F("0\r\n\r\n"));
+            static const char terminator[] = "0\r\n\r\n";
+            _writeAll(terminator, sizeof(terminator) - 1);
         }
         _client->flush();
         _client->stop();
@@ -77,6 +78,9 @@ protected:
     void _prepareHeader(String &response, int code, const char *content_type);
     void _parseArguments(const String &data);
     static String _responseCodeToString(int code);
+    // Retries partial writes until all bytes are sent (or the client stops accepting data),
+    // since WiFiClient::write() may return fewer bytes than requested.
+    void _writeAll(const char *data, size_t length);
 
     String                   _method;
     String                   _url;

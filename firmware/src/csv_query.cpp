@@ -13,8 +13,16 @@ void appendCSVValue(String &row, double value, const uint8_t precision = 3) {
 
 uint32_t csvQuery::_step() {
     if (_start >= _end) {
-        _req->send(204, F("text/plain"), F(""));
-        _req->finish();
+        if (_headerSent) {
+            // We've already streamed a 200 response (and possibly some rows); the
+            // time-slice yield just landed exactly on the last timestamp. There's
+            // no more data to send, so simply terminate the chunked response
+            // rather than writing a fresh status line into the open stream.
+            _req->finish();
+        } else {
+            _req->send(204, F("text/plain"), F(""));
+            _req->finish();
+        }
         return 0;
     }
 
