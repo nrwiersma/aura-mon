@@ -4,6 +4,8 @@
 
 #include "HTTPRequest.h"
 
+#include <LwipEthernet.h>
+
 void HTTPRequest::sendHeader(const String &name, const String &value, bool first) {
     String headerLine = name;
     headerLine += F(": ");
@@ -91,7 +93,12 @@ void HTTPRequest::sendContent(const String &content) {
 void HTTPRequest::_writeAll(const char *data, size_t length) {
     size_t written = 0;
     while (written < length) {
+        // Guard against the ETH_INT IRQ (which pumps lwIP on this same core)
+        // firing mid-write and corrupting the pbuf/pcb chains tcp_write()
+        // is mutating underneath us.
+        ethernet_arch_lwip_begin();
         size_t n = _client->write((const uint8_t *) data + written, length - written);
+        ethernet_arch_lwip_end();
         if (n == 0) {
             // Client isn't accepting data (disconnected or blocked); give up rather
             // than spinning forever and leave the stream in whatever state it's in.

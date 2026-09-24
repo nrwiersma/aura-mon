@@ -5,6 +5,7 @@
 #pragma once
 
 #include <HTTPServer.h>
+#include <LwipEthernet.h>
 #include <map>
 
 class HTTPRequest {
@@ -69,8 +70,10 @@ public:
             static const char terminator[] = "0\r\n\r\n";
             _writeAll(terminator, sizeof(terminator) - 1);
         }
+        ethernet_arch_lwip_begin();
         _client->flush();
         _client->stop();
+        ethernet_arch_lwip_end();
         _finished = true;
     }
 
