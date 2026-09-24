@@ -50,7 +50,7 @@ void HTTPRequest::_prepareHeader(String &response, int code, const char *content
 void HTTPRequest::send(int code, const char *content_type, const String &content) {
     String header;
     _prepareHeader(header, code, content_type);
-    _client->write(header.c_str(), header.length());
+    _writeAll(header.c_str(), header.length());
     if (content.length()) {
         sendContent(content);
     }
@@ -67,7 +67,7 @@ void HTTPRequest::send(int code, const String &content_type, const String &conte
 void HTTPRequest::send(int code, const char *content_type, const char *content) {
     String header;
     _prepareHeader(header, code, content_type);
-    _client->write(header.c_str(), header.length());
+    _writeAll(header.c_str(), header.length());
     const size_t contentLength = content ? strlen(content) : 0;
     if (contentLength) {
         sendContent(content, contentLength);
@@ -77,7 +77,7 @@ void HTTPRequest::send(int code, const char *content_type, const char *content) 
 void HTTPRequest::send_P(int code, PGM_P content_type, PGM_P content) {
     String header;
     _prepareHeader(header, code, content_type);
-    _client->write(header.c_str(), header.length());
+    _writeAll(header.c_str(), header.length());
     const size_t contentLength = content ? strlen_P(content) : 0;
     if (contentLength) {
         sendContent_P(content, contentLength);
@@ -88,15 +88,28 @@ void HTTPRequest::sendContent(const String &content) {
     sendContent(content.c_str(), content.length());
 }
 
+void HTTPRequest::_writeAll(const char *data, size_t length) {
+    size_t written = 0;
+    while (written < length) {
+        size_t n = _client->write((const uint8_t *) data + written, length - written);
+        if (n == 0) {
+            // Client isn't accepting data (disconnected or blocked); give up rather
+            // than spinning forever and leave the stream in whatever state it's in.
+            break;
+        }
+        written += n;
+    }
+}
+
 void HTTPRequest::sendContent(const char *content, size_t contentLength) {
     const char *footer = "\r\n";
     char        chunkSize[11];
     sprintf(chunkSize, "%x%s", (unsigned int) contentLength, footer);
-    _client->print(chunkSize);
+    _writeAll(chunkSize, strlen(chunkSize));
 
-    _client->write(content, contentLength);
+    _writeAll(content, contentLength);
 
-    _client->write(footer, 2);
+    _writeAll(footer, 2);
 }
 
 void HTTPRequest::sendContent_P(PGM_P content) {
@@ -107,11 +120,11 @@ void HTTPRequest::sendContent_P(PGM_P content, size_t size) {
     const char *footer = "\r\n";
     char        chunkSize[11];
     sprintf(chunkSize, "%x%s", (unsigned int) size, footer);
-    _client->write(chunkSize, strlen(chunkSize));
+    _writeAll(chunkSize, strlen(chunkSize));
 
-    _client->write(content, size);
+    _writeAll(content, size);
 
-    _client->write(footer, 2);
+    _writeAll(footer, 2);
 }
 
 String HTTPRequest::urlDecode(const String &text) {
