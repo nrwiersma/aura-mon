@@ -32,6 +32,11 @@ uint32_t logData(void *param) {
     static double voltHrs[15] = {};
     static double wattHrs[15] = {};
     static double vaHrs[15] = {};
+    // Hang detection state: when the current queue backup started (0 = queue
+    // not backed up) and the last observed queue depth, used to tell a wedged
+    // consumer apart from one that is merely slow.
+    static uint32_t queueFullSinceMs = 0;
+    static uint32_t queueLastDepth = 0;
     const auto    start = millis();
 
     // If the clock is not running, try again later.
@@ -97,9 +102,34 @@ uint32_t logData(void *param) {
     // It is safe to keep using `rec` and the queue copies the record.
     if (!records.push(rec)) {
         metrics.datalog_queue_full_total.fetch_add(1, std::memory_order_relaxed);
-        LOGE("Log record queue is full, retrying record %d", rec->ts);
+        LOGE("Log record queue is full, retrying record %u", rec->ts);
+
+        // A full queue only means core 0 is wedged if it is also making no
+        // progress draining it. Track when the current backup started and
+        // restart the window whenever the consumer drains a record, so that
+        // slow-but-alive SD writes (e.g. a long FAT flush) and catch-up
+        // bursts do not trigger a false restart.
+        const auto depth = records.size();
+        const auto now = millis();
+        if (queueFullSinceMs == 0 || depth < queueLastDepth) {
+            queueFullSinceMs = now;
+        }
+        queueLastDepth = depth;
+
+        if (now - queueFullSinceMs >= QUEUE_FULL_WATCHDOG_MS) {
+            // The queue has been full for a sustained period with no
+            // progress, so the consumer on core 0 is likely wedged. Force an
+            // immediate watchdog restart.
+            LOGE("Log write queue stuck full with no progress for %lums; forcing a watchdog restart",
+                 static_cast<unsigned long>(now - queueFullSinceMs));
+
+            uint32_t taskAddr = 0, taskStartMs = 0;
+            const auto stuckMs = c0Queue.currentTask(&taskAddr, &taskStartMs) ? now - taskStartMs : 0;
+            forceCore0HangReboot(taskAddr, stuckMs);
+        }
         return 10;
     }
+    queueFullSinceMs = 0;
     metrics.datalog_queue_depth.store(records.size(), std::memory_order_relaxed);
 
     const auto took = millis() - start;

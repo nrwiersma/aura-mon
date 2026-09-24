@@ -208,7 +208,10 @@ error DataLog::write(LogRecord *rec) {
 
     if (_wrapPos || _fileSize >= _maxFileSize) {
         // The file has/should wrap.
-        mutex_enter_blocking(&sdMu);
+        if (!mutex_enter_timeout_ms(&sdMu, 100)) {
+            mutex_exit(&_mu);
+            return newError("sd card mutex timeout");
+        }
         _file.seek(_wrapPos);
         _wrapPos = (_wrapPos + _recordSize) % _fileSize;
         _file.write(rec, _recordSize);

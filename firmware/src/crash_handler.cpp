@@ -13,6 +13,10 @@
 // Sentinel written to scratch[0] so the firmware can detect a crash reboot.
 static constexpr uint32_t CRASH_MAGIC = 0xDEADC0DEu;
 
+// Sentinel written to scratch[0] by forceCore0HangReboot() when core 1 forces
+// a restart because core 0 stopped responding (see log_data.cpp).
+static constexpr uint32_t HANG_MAGIC = 0xC0DE0000u;
+
 static constexpr uint32_t FLASH_SCAN_END = XIP_BASE + 0x400000; // 4MB
 
 // Cortex-M basic exception frame pushed by hardware on fault entry:
@@ -24,8 +28,40 @@ static constexpr uint32_t FRAME_XPSR = 7;
 
 static constexpr size_t MAX_BACKTRACE = 4u;
 
+[[noreturn]] void forceCore0HangReboot(uint32_t taskAddr, uint32_t stuckMs) {
+    // watchdog_reboot arms the reset first (mirrors hard_fault_handler_c),
+    // then we fill in the diagnostic scratch registers before it fires.
+    watchdog_reboot(0, 0, 10);
+
+    watchdog_hw->scratch[0] = HANG_MAGIC;
+    watchdog_hw->scratch[1] = taskAddr;
+    watchdog_hw->scratch[2] = stuckMs;
+
+    for (;;) { continue; }
+}
+
 void restartReasonLog() {
     uint32_t magic = watchdog_hw->scratch[0];
+
+    if (magic == HANG_MAGIC) {
+        const uint32_t taskAddr = watchdog_hw->scratch[1];
+        const uint32_t stuckMs = watchdog_hw->scratch[2];
+        watchdog_hw->scratch[0] = 0;
+        watchdog_hw->scratch[1] = 0;
+        watchdog_hw->scratch[2] = 0;
+
+        LOGE("**** CORE 0 HANG DETECTED (forced watchdog restart) ****");
+        if (taskAddr) {
+            LOGE("  Stuck task: 0x%08" PRIx32 " (running for %" PRIu32 "ms)", taskAddr, stuckMs);
+            LOGE("Use: addr2line -pfiaC -e firmware.elf 0x%08" PRIx32, taskAddr);
+        } else if (stuckMs) {
+            LOGE("  Stuck in an unidentifiable task (e.g. a lambda, running for %" PRIu32 "ms)", stuckMs);
+        } else {
+            LOGE("  Stuck location unknown (not inside a task when sampled)");
+        }
+        return;
+    }
+
     if (magic != CRASH_MAGIC) {
         if (watchdog_hw->scratch[4] != 0) {
             LOGE("**** WATCHDOG RESTART DETECTED ****");
