@@ -89,8 +89,7 @@ void writeNetworkConfigToJson(JsonObject obj) {
     obj["dns"] = netCfg.dns.c_str();
 }
 
-InputDeviceInfo *ensureDeviceInfo(uint8_t address) {
-    if (address == 0 || address > MAX_DEVICES) {
+InputDeviceInfo *ensureDeviceInfo(uint8_t address) {    if (address == 0 || address > MAX_DEVICES) {
         return nullptr;
     }
     const size_t idx = address - 1;
@@ -153,6 +152,100 @@ void populateDevicesJson(JsonArray devicesArray) {
     }
 
     mutex_exit(&deviceInfoMu);
+}
+
+UploaderConfig *ensureUploaderConfig(const char *id) {
+    for (int i = 0; i < MAX_UPLOADERS; i++) {
+        if (uploaderConfigs[i] && uploaderConfigs[i]->id == id) {
+            return uploaderConfigs[i];
+        }
+    }
+    for (int i = 0; i < MAX_UPLOADERS; i++) {
+        if (!uploaderConfigs[i]) {
+            uploaderConfigs[i] = new UploaderConfig();
+            assignFromJson(uploaderConfigs[i]->id, id);
+            return uploaderConfigs[i];
+        }
+    }
+    return nullptr;
+}
+
+void applyUploadersFromJson(JsonArrayConst uploadersArr) {
+    mutex_enter_blocking(&uploaderConfigMu);
+
+    bool used[MAX_UPLOADERS] = {};
+
+    for (JsonVariantConst entry: uploadersArr) {
+        if (!entry.is<JsonObjectConst>()) {
+            continue;
+        }
+        const char *id = entry["id"].is<const char *>() ? entry["id"].as<const char *>() : "";
+        if (strlen(id) == 0) {
+            continue;
+        }
+        UploaderConfig *cfg = ensureUploaderConfig(id);
+        if (!cfg) {
+            LOGE("Too many uploaders configured, ignoring '%s'", id);
+            continue;
+        }
+
+        cfg->enabled = entry["enabled"].is<bool>() ? entry["enabled"].as<bool>() : false;
+        assignFromJson(cfg->type, entry["type"].is<const char *>() ? entry["type"].as<const char *>() : "");
+        cfg->interval = entry["interval"].is<int>() ? entry["interval"].as<uint32_t>() : 60;
+
+        cfg->settings = "";
+        if (entry["settings"].is<JsonObjectConst>()) {
+            char buf[512];
+            size_t n = serializeJson(entry["settings"], buf, sizeof(buf));
+            if (n > 0) {
+                cfg->settings = buf;
+            }
+        }
+
+        for (int i = 0; i < MAX_UPLOADERS; i++) {
+            if (uploaderConfigs[i] == cfg) {
+                used[i] = true;
+                break;
+            }
+        }
+    }
+
+    // Anything not present in this config was removed.
+    for (int i = 0; i < MAX_UPLOADERS; i++) {
+        if (uploaderConfigs[i] && !used[i]) {
+            delete uploaderConfigs[i];
+            uploaderConfigs[i] = nullptr;
+        }
+    }
+
+    uploadersChanged = true;
+
+    mutex_exit(&uploaderConfigMu);
+}
+
+void populateUploadersJson(JsonArray uploadersArray) {
+    mutex_enter_blocking(&uploaderConfigMu);
+
+    for (int i = 0; i < MAX_UPLOADERS; i++) {
+        UploaderConfig *cfg = uploaderConfigs[i];
+        if (!cfg) {
+            continue;
+        }
+        JsonObject entry = uploadersArray.add<JsonObject>();
+        entry["id"] = cfg->id.c_str();
+        entry["type"] = cfg->type.c_str();
+        entry["enabled"] = cfg->enabled;
+        entry["interval"] = cfg->interval;
+
+        if (cfg->settings.length() > 0) {
+            JsonDocument settingsDoc;
+            if (!deserializeJson(settingsDoc, cfg->settings.c_str())) {
+                entry["settings"].set(settingsDoc.as<JsonObjectConst>());
+            }
+        }
+    }
+
+    mutex_exit(&uploaderConfigMu);
 }
 
 error loadConfig() {
@@ -242,6 +335,10 @@ error loadConfigJSON(const JsonDocument &doc) {
         applyDevicesFromJson(root["devices"].as<JsonArrayConst>());
     }
 
+    if (root["uploaders"].is<JsonArrayConst>()) {
+        applyUploadersFromJson(root["uploaders"].as<JsonArrayConst>());
+    }
+
     return {};
 }
 
@@ -254,4 +351,7 @@ void saveConfigJSON(JsonDocument &doc) {
 
     auto devicesArray = doc["devices"].to<JsonArray>();
     populateDevicesJson(devicesArray);
+
+    auto uploadersArray = doc["uploaders"].to<JsonArray>();
+    populateUploadersJson(uploadersArray);
 }

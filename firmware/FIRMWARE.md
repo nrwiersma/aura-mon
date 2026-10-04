@@ -27,8 +27,10 @@ flowchart TD
         T0C["⏱ syncState  · 1s\nCheck SD & Ethernet\nUpdate LED  🔴 · 🟠 · 🟢"]
         T0D["▶ addDeviceFromButton  · on demand\nAssign free Modbus address\nSave config to SD"]
         T0E["⏱ writeLogData  · 100ms idle\nPop queued records\nWrite record to SD datalog"]
+        T0F["⏱ syncUploaders  · 1s\nInstantiate/stop Uploader objects\nfrom config.json's uploaders[]"]
+        T0G["▶ Uploader.dispatch  · per uploader\nBuild → Post → Wait state machine\nAsyncHTTP (RPAsyncTCP), non-blocking"]
 
-        L0C --> T0A & T0B & T0C & T0D & T0E
+        L0C --> T0A & T0B & T0C & T0D & T0E & T0F & T0G
     end
 
     subgraph C1["Core 1 — Data Plane"]
@@ -54,7 +56,7 @@ flowchart TD
 | | Core 0 | Core 1 |
 |---|---|---|
 | **Main loop focus** | HTTP request handling & button debounce | Energy data collection via Modbus (1 s cycle) |
-| **Scheduled tasks** | `timeSync`, `checkEthernet`, `syncState`, `writeLogData` | `logData`, `syncDevices`, `deviceActionTask` |
+| **Scheduled tasks** | `timeSync`, `checkEthernet`, `syncState`, `writeLogData`, `syncUploaders`, one `Uploader::dispatch` per configured uploader | `logData`, `syncDevices`, `deviceActionTask` |
 | **On-demand tasks** | `addDeviceFromButton` (button press) | — |
 | **Watchdog** | — | 800 ms watchdog, kicked each collection cycle |
 | **LED control** | `syncState` sets colour, `Ticker` blinks at 1 Hz | — |
@@ -70,6 +72,8 @@ flowchart TD
 | `deviceActionTask` | 1 | 5 |
 | `checkEthernet` | 0 | 5 |
 | `syncState` | 0 | 4 |
+| `syncUploaders` | 0 | 3 |
+| `Uploader::dispatch` (each uploader) | 0 | 2 |
 
 ## Data Log Record Queue
 
@@ -84,6 +88,36 @@ which can block for tens of milliseconds, off the collection core.
 - A record that fails to write is retried up to 5 times, then dropped so it cannot block the
   records behind it.
 - On a controlled reboot, the queue is drained before the data log is closed.
+
+## Uploaders (InfluxDB2/3, Home Assistant, ...)
+
+`Uploader` (`src/uploader/uploader.h/.cpp`) is the base class for Core0 tasks that push data
+log records to a remote service. `UploaderConfig` (`src/config.h`) is its persisted,
+user-editable counterpart: an entry in config.json's `uploaders` array (`id`, `type`,
+`enabled`, `interval`, and a free-form `settings` object whose schema is owned by the
+concrete uploader type). `uploader_registry.cpp` is the only code that creates or stops
+`Uploader` instances, reconciling `uploaderConfigs[]` with live instances whenever the config
+changes (`syncUploaders`, mirroring `syncDevices`'s `devicesChanged` pattern) — concrete
+uploader types are registered there as they are implemented; none exist yet.
+
+Each `Uploader` runs as its own lowest-priority Core0 task, built on `lib/AsyncHTTP`
+(`asyncHTTPrequest` ported onto `RPAsyncTCP`) so a request in flight never blocks anything
+else: `dispatch()` is a non-blocking `Build → Post → Wait` state machine that returns almost
+immediately every tick.
+
+- **No data is lost on a network outage.** The data log already retains up to ~180 days of
+  history on SD; an uploader only tracks how far it has gotten (`_lastSentTS`), persisted to
+  `aura-mon/uploaders/<id>.state`. While the link is down (`eth.isLinked()`/`connected()`
+  checked every `Build`), the uploader simply waits and retries — it never advances past data
+  it hasn't confirmed as sent, and a reboot resumes from the saved position rather than
+  replaying the whole log or skipping ahead.
+- **Never blocks SD or networking.** Scheduled at the lowest Core0 priority (below
+  `writeLogData`, `checkEthernet`, and `syncState`), so it only runs when nothing more
+  important is due, and each state transition does O(1) non-blocking work.
+- **Stopping is self-serviced.** The task queue has no cancel primitive, so a disabled or
+  misconfigured uploader is told to stop (`requestStop()`); the registry drops its own
+  pointer immediately, and the instance deregisters and frees itself (`delete this; return
+  0;`) the next time its already-scheduled task runs.
 
 ## Hardware Peripherals
 

@@ -12,8 +12,20 @@ inline void cleanupDeviceInfos() {
     }
 }
 
+// Helper to clean up uploader configs between tests
+inline void cleanupUploaderConfigs() {
+    for (int i = 0; i < MAX_UPLOADERS; i++) {
+        if (uploaderConfigs[i]) {
+            delete uploaderConfigs[i];
+            uploaderConfigs[i] = nullptr;
+        }
+    }
+    uploadersChanged = false;
+}
+
 void setUp() {
     cleanupDeviceInfos();
+    cleanupUploaderConfigs();
 
     // Reset network config to defaults between tests.
     netCfg.hostname = "aura-mon";
@@ -314,6 +326,173 @@ void test_config_multiple_devices_loaded() {
     TEST_ASSERT_NOT_NULL(deviceInfos[2]);
 }
 
+// ============================================================================
+// Uploaders array
+// ============================================================================
+
+void test_config_uploader_valid() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto uploaders = doc["uploaders"].to<JsonArray>();
+    auto u          = uploaders.add<JsonObject>();
+    u["id"]       = "influx-main";
+    u["type"]     = "influxdb2";
+    u["enabled"]  = true;
+    u["interval"] = 30;
+    auto settings = u["settings"].to<JsonObject>();
+    settings["url"] = "http://influx.local:8086";
+
+    auto err = loadConfigJSON(doc);
+
+    TEST_ASSERT_FALSE(err);
+    TEST_ASSERT_NOT_NULL(uploaderConfigs[0]);
+    TEST_ASSERT_EQUAL_STRING("influx-main", uploaderConfigs[0]->id.c_str());
+    TEST_ASSERT_EQUAL_STRING("influxdb2", uploaderConfigs[0]->type.c_str());
+    TEST_ASSERT_TRUE(uploaderConfigs[0]->enabled);
+    TEST_ASSERT_EQUAL_UINT32(30, uploaderConfigs[0]->interval);
+    TEST_ASSERT_TRUE(uploaderConfigs[0]->settings.indexOf("influx.local") >= 0);
+    TEST_ASSERT_TRUE(uploadersChanged);
+}
+
+void test_config_uploader_without_id_is_ignored() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto uploaders = doc["uploaders"].to<JsonArray>();
+    auto u          = uploaders.add<JsonObject>();
+    u["type"]    = "influxdb2";
+    u["enabled"] = true;
+
+    auto err = loadConfigJSON(doc);
+
+    TEST_ASSERT_FALSE(err);
+    for (int i = 0; i < MAX_UPLOADERS; i++) {
+        TEST_ASSERT_NULL(uploaderConfigs[i]);
+    }
+}
+
+void test_config_uploader_interval_defaults_to_60() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto uploaders = doc["uploaders"].to<JsonArray>();
+    auto u          = uploaders.add<JsonObject>();
+    u["id"] = "ha";
+    u["type"] = "homeassistant";
+    // No "interval" field.
+
+    loadConfigJSON(doc);
+
+    TEST_ASSERT_NOT_NULL(uploaderConfigs[0]);
+    TEST_ASSERT_EQUAL_UINT32(60, uploaderConfigs[0]->interval);
+}
+
+void test_config_uploader_enabled_defaults_to_false() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto uploaders = doc["uploaders"].to<JsonArray>();
+    auto u          = uploaders.add<JsonObject>();
+    u["id"] = "ha";
+    // No "enabled" field.
+
+    loadConfigJSON(doc);
+
+    TEST_ASSERT_NOT_NULL(uploaderConfigs[0]);
+    TEST_ASSERT_FALSE(uploaderConfigs[0]->enabled);
+}
+
+void test_config_multiple_uploaders_loaded() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto uploaders = doc["uploaders"].to<JsonArray>();
+    for (int i = 0; i < 3; i++) {
+        auto u = uploaders.add<JsonObject>();
+        u["id"] = String("u") + String(i);
+        u["type"] = "influxdb2";
+    }
+
+    auto err = loadConfigJSON(doc);
+
+    TEST_ASSERT_FALSE(err);
+    TEST_ASSERT_NOT_NULL(uploaderConfigs[0]);
+    TEST_ASSERT_NOT_NULL(uploaderConfigs[1]);
+    TEST_ASSERT_NOT_NULL(uploaderConfigs[2]);
+}
+
+void test_config_uploader_removed_when_absent_from_new_config() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto uploaders = doc["uploaders"].to<JsonArray>();
+    auto u          = uploaders.add<JsonObject>();
+    u["id"] = "influx-main";
+    loadConfigJSON(doc);
+    TEST_ASSERT_NOT_NULL(uploaderConfigs[0]);
+
+    // Reload with an empty uploaders array - the existing entry should be
+    // removed rather than left stale.
+    JsonDocument doc2;
+    doc2["format"] = 1;
+    doc2["uploaders"].to<JsonArray>();
+    loadConfigJSON(doc2);
+
+    for (int i = 0; i < MAX_UPLOADERS; i++) {
+        TEST_ASSERT_NULL(uploaderConfigs[i]);
+    }
+}
+
+void test_config_uploader_updated_in_place_keeps_slot() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto uploaders = doc["uploaders"].to<JsonArray>();
+    auto u          = uploaders.add<JsonObject>();
+    u["id"]      = "influx-main";
+    u["enabled"] = false;
+    loadConfigJSON(doc);
+    UploaderConfig *original = uploaderConfigs[0];
+    TEST_ASSERT_NOT_NULL(original);
+
+    JsonDocument doc2;
+    doc2["format"] = 1;
+    auto uploaders2 = doc2["uploaders"].to<JsonArray>();
+    auto u2          = uploaders2.add<JsonObject>();
+    u2["id"]      = "influx-main";
+    u2["enabled"] = true;
+    loadConfigJSON(doc2);
+
+    // Same slot, same object, updated in place.
+    TEST_ASSERT_EQUAL_PTR(original, uploaderConfigs[0]);
+    TEST_ASSERT_TRUE(uploaderConfigs[0]->enabled);
+}
+
+void test_config_round_trip_uploader() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto uploaders = doc["uploaders"].to<JsonArray>();
+    auto u          = uploaders.add<JsonObject>();
+    u["id"]       = "influx-main";
+    u["type"]     = "influxdb2";
+    u["enabled"]  = true;
+    u["interval"] = 45;
+    auto settings = u["settings"].to<JsonObject>();
+    settings["url"]    = "http://influx.local:8086";
+    settings["bucket"] = "aura-mon";
+
+    loadConfigJSON(doc);
+
+    JsonDocument saved;
+    saveConfigJSON(saved);
+
+    cleanupUploaderConfigs();
+
+    auto err = loadConfigJSON(saved);
+    TEST_ASSERT_FALSE(err);
+
+    TEST_ASSERT_NOT_NULL(uploaderConfigs[0]);
+    TEST_ASSERT_EQUAL_STRING("influx-main", uploaderConfigs[0]->id.c_str());
+    TEST_ASSERT_EQUAL_STRING("influxdb2", uploaderConfigs[0]->type.c_str());
+    TEST_ASSERT_TRUE(uploaderConfigs[0]->enabled);
+    TEST_ASSERT_EQUAL_UINT32(45, uploaderConfigs[0]->interval);
+    TEST_ASSERT_TRUE(uploaderConfigs[0]->settings.indexOf("aura-mon") >= 0);
+}
+
 void setup() {
     UNITY_BEGIN();
 
@@ -345,6 +524,16 @@ void setup() {
     RUN_TEST(test_config_device_with_address_zero_is_ignored);
     RUN_TEST(test_config_device_with_address_above_max_is_ignored);
     RUN_TEST(test_config_multiple_devices_loaded);
+
+    // Uploaders
+    RUN_TEST(test_config_uploader_valid);
+    RUN_TEST(test_config_uploader_without_id_is_ignored);
+    RUN_TEST(test_config_uploader_interval_defaults_to_60);
+    RUN_TEST(test_config_uploader_enabled_defaults_to_false);
+    RUN_TEST(test_config_multiple_uploaders_loaded);
+    RUN_TEST(test_config_uploader_removed_when_absent_from_new_config);
+    RUN_TEST(test_config_uploader_updated_in_place_keeps_slot);
+    RUN_TEST(test_config_round_trip_uploader);
 
     UNITY_END();
 }
