@@ -108,6 +108,18 @@ uploader types are registered there as they are implemented.
   has no HTTP/xbuf/data-log dependencies and is covered by native unit tests
   (`test/test_influxdb2`); the surrounding HTTP/data-log glue in `influxdb2_uploader.cpp`
   follows `Uploader` itself in being hardware-only and not natively tested.
+- `HomeAssistantUploader` (`src/uploader/homeassistant_uploader.h/.cpp`, `type:
+  "homeassistant"`) posts one JSON payload per interval - mains frequency plus one entry per
+  enabled, named device - to a Home Assistant webhook (`<url>/api/webhook/<webhook_id>`).
+  Settings: `url`, `webhook_id`. Unlike InfluxDB2's point-per-reading model, the payload
+  carries the whole interval as a single object: `{"ts", "hz", "devices": [{"name", "volts",
+  "amps", "watts", "wh", "pf"}, ...]}`, where `wh` is the energy consumed during that interval
+  (not a running total), matching the existing pull-based `/energy` semantics so the Home
+  Assistant component can accumulate it itself. Its settings parsing and payload building are
+  pulled out into `src/uploader/homeassistant_format.h/.cpp` (no HTTP/xbuf/data-log
+  dependencies, covered by native unit tests in `test/test_homeassistant`); the hardware glue
+  in `homeassistant_uploader.cpp` serializes the built `JsonDocument` straight into the
+  request body via ArduinoJson's `Print`-based `serializeJson`.
 
 Each `Uploader` runs as its own lowest-priority Core0 task, built on `lib/AsyncHTTP`
 (`asyncHTTPrequest` ported onto `RPAsyncTCP`) so a request in flight never blocks anything

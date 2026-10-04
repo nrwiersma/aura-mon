@@ -3,6 +3,7 @@
 //
 
 #include "auramon.h"
+#include "uploader/homeassistant_uploader.h"
 #include "uploader/influxdb2_uploader.h"
 #include "uploader/uploader.h"
 #include "uploader/uploader_registry.h"
@@ -32,6 +33,9 @@ namespace {
 
         if (cfg.type == "influxdb2") {
             return new InfluxDB2Uploader(cfg.id);
+        }
+        if (cfg.type == "homeassistant") {
+            return new HomeAssistantUploader(cfg.id);
         }
 
         return nullptr;
