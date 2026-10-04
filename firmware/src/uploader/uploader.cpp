@@ -49,8 +49,9 @@ Uploader::~Uploader() {
 }
 
 bool Uploader::configure(const UploaderConfig &cfg) {
-    if (cfg.id != _id) {
-        // Should never happen; the registry keys instances by id.
+    if (cfg.id != _id || cfg.type != _type) {
+        // Should never happen; the registry replaces the instance instead
+        // of reconfiguring it when either the id or the type changes.
         return false;
     }
 

@@ -49,6 +49,15 @@ namespace {
             return;
         }
 
+        if (uploaderInstances[slot] && uploaderInstances[slot]->type() != cfg->type) {
+            // The user changed an existing uploader's type. The live
+            // instance is the old concrete class and cannot parse the new
+            // type's settings, so it must be replaced rather than
+            // reconfigured; recreate it below using the same id (and so the
+            // same persisted progress file).
+            destroySlot(slot);
+        }
+
         if (!uploaderInstances[slot]) {
             Uploader *u = createUploader(*cfg);
             if (!u) {
