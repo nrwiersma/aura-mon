@@ -67,6 +67,11 @@ protected:
     virtual String      endpoint() const = 0;
     virtual const char *httpMethod() const { return "POST"; }
 
+    // Sets any request headers the concrete uploader needs (e.g.
+    // authentication). Called once per request, after open() succeeds and
+    // before send().
+    virtual void setRequestHeaders(asyncHTTPrequest &request) { (void) request; }
+
 private:
     enum class State : uint8_t { Build, Post, Wait };
 

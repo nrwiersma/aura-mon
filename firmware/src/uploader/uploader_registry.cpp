@@ -3,6 +3,7 @@
 //
 
 #include "auramon.h"
+#include "uploader/influxdb2_uploader.h"
 #include "uploader/uploader.h"
 #include "uploader/uploader_registry.h"
 
@@ -25,11 +26,13 @@ namespace {
     // type. Add one branch per uploader as it is implemented; unknown types
     // are logged and left unconfigured.
     Uploader *createUploader(const UploaderConfig &cfg) {
-        (void) cfg;
-
         /******************************************************************/
         /*********************** Add new uploaders below *******************/
         /******************************************************************/
+
+        if (cfg.type == "influxdb2") {
+            return new InfluxDB2Uploader(cfg.id);
+        }
 
         return nullptr;
     }

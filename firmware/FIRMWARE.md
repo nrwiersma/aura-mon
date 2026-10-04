@@ -98,7 +98,16 @@ user-editable counterpart: an entry in config.json's `uploaders` array (`id`, `t
 concrete uploader type). `uploader_registry.cpp` is the only code that creates or stops
 `Uploader` instances, reconciling `uploaderConfigs[]` with live instances whenever the config
 changes (`syncUploaders`, mirroring `syncDevices`'s `devicesChanged` pattern) — concrete
-uploader types are registered there as they are implemented; none exist yet.
+uploader types are registered there as they are implemented.
+
+- `InfluxDB2Uploader` (`src/uploader/influxdb2_uploader.h/.cpp`, `type: "influxdb2"`) writes
+  one line-protocol point per enabled, named device per interval (plus one for mains
+  frequency) to an InfluxDB 2.x bucket via `/api/v2/write`. Settings: `url`, `org`, `bucket`,
+  `token`, optional `measurement` (default `"aura-mon"`). Its settings parsing and
+  line-protocol formatting are pulled out into `src/uploader/influxdb2_format.h/.cpp`, which
+  has no HTTP/xbuf/data-log dependencies and is covered by native unit tests
+  (`test/test_influxdb2`); the surrounding HTTP/data-log glue in `influxdb2_uploader.cpp`
+  follows `Uploader` itself in being hardware-only and not natively tested.
 
 Each `Uploader` runs as its own lowest-priority Core0 task, built on `lib/AsyncHTTP`
 (`asyncHTTPrequest` ported onto `RPAsyncTCP`) so a request in flight never blocks anything

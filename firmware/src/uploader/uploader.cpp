@@ -196,6 +196,7 @@ uint32_t Uploader::handlePost() {
         _state = State::Build;
         return RETRY_DELAY_MS;
     }
+    setRequestHeaders(*_request);
 
     bool sent;
     if (strcmp(httpMethod(), "GET") == 0) {
