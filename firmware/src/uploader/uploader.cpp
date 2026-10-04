@@ -35,6 +35,12 @@ Uploader::Uploader(String id, String type)
       _lastSentTS(0),
       _progressLoaded(false),
       _stopRequested(false),
+      _successTotal(0),
+      _failureTotal(0),
+      _consecutiveFailures(0),
+      _lastSuccessAt(0),
+      _lastAttemptAt(0),
+      _lastHttpStatus(0),
       _request(nullptr) {
 }
 
@@ -192,6 +198,7 @@ uint32_t Uploader::handlePost() {
 
     if (!_request->open(httpMethod(), endpoint().c_str())) {
         LOGE("uploader %s: could not open request to %s", _id.c_str(), endpoint().c_str());
+        recordResult(false, -1);
         _body.flush();
         _state = State::Build;
         return RETRY_DELAY_MS;
@@ -211,6 +218,7 @@ uint32_t Uploader::handlePost() {
 
     if (!sent) {
         LOGE("uploader %s: send failed", _id.c_str());
+        recordResult(false, -1);
         _state = State::Build;
         return RETRY_DELAY_MS;
     }
@@ -226,6 +234,7 @@ uint32_t Uploader::handleWait() {
 
     const int code = _request->responseHTTPcode();
     if (code >= 200 && code < 300) {
+        recordResult(true, code);
         _lastSentTS = _pendingToTS;
         saveProgress();
         _state = State::Build;
@@ -233,6 +242,32 @@ uint32_t Uploader::handleWait() {
     }
 
     LOGE("uploader %s: post failed, HTTP %d", _id.c_str(), code);
+    recordResult(false, code);
     _state = State::Build;
     return RETRY_DELAY_MS;
+}
+
+void Uploader::recordResult(bool success, int httpStatus) {
+    _lastAttemptAt = time(nullptr);
+    _lastHttpStatus = httpStatus;
+    if (success) {
+        _successTotal++;
+        _consecutiveFailures = 0;
+        _lastSuccessAt = _lastAttemptAt;
+    } else {
+        _failureTotal++;
+        _consecutiveFailures++;
+    }
+}
+
+const char *Uploader::stateName() const {
+    switch (_state) {
+        case State::Build:
+            return "build";
+        case State::Post:
+            return "post";
+        case State::Wait:
+            return "wait";
+    }
+    return "unknown";
 }

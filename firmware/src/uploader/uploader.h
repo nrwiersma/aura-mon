@@ -51,6 +51,22 @@ public:
     // while a dispatch is already scheduled to run again.
     void requestStop() { _stopRequested = true; }
 
+    // Health/progress accessors for the /status and /metrics endpoints.
+    // dispatch() only ever runs on Core0's cooperative task queue, same as
+    // the web server handling these requests, so these need no locking.
+    uint32_t    lastSentTS() const { return _lastSentTS; }
+    uint32_t    successTotal() const { return _successTotal; }
+    uint32_t    failureTotal() const { return _failureTotal; }
+    uint32_t    consecutiveFailures() const { return _consecutiveFailures; }
+    time_t      lastSuccessAt() const { return _lastSuccessAt; }
+    time_t      lastAttemptAt() const { return _lastAttemptAt; }
+    // HTTP status of the last completed request; 0 if none has completed
+    // yet, -1 if the last attempt failed before a response was received
+    // (e.g. could not open/send the request).
+    int         lastHttpStatus() const { return _lastHttpStatus; }
+    // Current state machine step, for a human-readable "what is it doing".
+    const char *stateName() const;
+
 protected:
     // Parses/validates settings specific to the concrete uploader type.
     // Called from configure() whenever the stored settings change.
@@ -83,6 +99,11 @@ private:
     void saveProgress();
     void statePath(char *buf, size_t len) const;
 
+    // Records the outcome of a completed (or failed-to-start) request for
+    // the health accessors above. httpStatus is -1 for a failure that never
+    // got a response (open/send failure).
+    void recordResult(bool success, int httpStatus);
+
     String   _id;
     String   _type;
     uint32_t _interval;
@@ -95,6 +116,13 @@ private:
     uint32_t _lastSentTS;
     bool     _progressLoaded;
     bool     _stopRequested;
+
+    uint32_t _successTotal;
+    uint32_t _failureTotal;
+    uint32_t _consecutiveFailures;
+    time_t   _lastSuccessAt;
+    time_t   _lastAttemptAt;
+    int      _lastHttpStatus;
 
     asyncHTTPrequest *_request;
 };

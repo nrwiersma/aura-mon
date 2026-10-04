@@ -8,6 +8,7 @@
 #include <LittleFS.h>
 #include <HTTPRequest.h>
 #include "csv_query.h"
+#include "uploader/uploader.h"
 
 const char *contentTypeJSON PROGMEM = "application/json";
 const char *contentTypePlain PROGMEM = "text/plain";
@@ -269,7 +270,7 @@ void handleMetrics() {
     const uint32_t logErrors = metrics.log_errors_total.load(std::memory_order_relaxed);
 
     String response;
-    response.reserve(4096);
+    response.reserve(6144);
 
     // Modbus metrics.
     response += F("# HELP auramon_modbus_errors_total Total modbus collection errors.\n");
@@ -403,6 +404,80 @@ void handleMetrics() {
     response += String(logErrors);
     response += '\n';
 
+    // Uploader metrics.
+    const uint32_t datalogLastTS = datalog.lastTS();
+    response += F("# HELP auramon_uploader_requests_total Total successful upload requests.\n");
+    response += F("# TYPE auramon_uploader_requests_total counter\n");
+    forEachUploader([&](const Uploader &u) {
+        response += F("auramon_uploader_requests_total{id=\"");
+        response += u.id();
+        response += F("\",type=\"");
+        response += u.type();
+        response += F("\"} ");
+        response += String(u.successTotal());
+        response += '\n';
+    });
+    response += F("# HELP auramon_uploader_errors_total Total failed upload attempts.\n");
+    response += F("# TYPE auramon_uploader_errors_total counter\n");
+    forEachUploader([&](const Uploader &u) {
+        response += F("auramon_uploader_errors_total{id=\"");
+        response += u.id();
+        response += F("\",type=\"");
+        response += u.type();
+        response += F("\"} ");
+        response += String(u.failureTotal());
+        response += '\n';
+    });
+    response += F(
+        "# HELP auramon_uploader_consecutive_failures Current number of consecutive failed upload attempts.\n");
+    response += F("# TYPE auramon_uploader_consecutive_failures gauge\n");
+    forEachUploader([&](const Uploader &u) {
+        response += F("auramon_uploader_consecutive_failures{id=\"");
+        response += u.id();
+        response += F("\",type=\"");
+        response += u.type();
+        response += F("\"} ");
+        response += String(u.consecutiveFailures());
+        response += '\n';
+    });
+    response += F(
+        "# HELP auramon_uploader_lag_seconds How far behind the uploader is from the most recently logged record, in seconds.\n");
+    response += F("# TYPE auramon_uploader_lag_seconds gauge\n");
+    forEachUploader([&](const Uploader &u) {
+        const uint32_t lag = datalogLastTS > u.lastSentTS() ? datalogLastTS - u.lastSentTS() : 0;
+        response += F("auramon_uploader_lag_seconds{id=\"");
+        response += u.id();
+        response += F("\",type=\"");
+        response += u.type();
+        response += F("\"} ");
+        response += String(lag);
+        response += '\n';
+    });
+    response += F(
+        "# HELP auramon_uploader_last_success_timestamp_seconds Unix timestamp of the last successful upload.\n");
+    response += F("# TYPE auramon_uploader_last_success_timestamp_seconds gauge\n");
+    forEachUploader([&](const Uploader &u) {
+        response += F("auramon_uploader_last_success_timestamp_seconds{id=\"");
+        response += u.id();
+        response += F("\",type=\"");
+        response += u.type();
+        response += F("\"} ");
+        response += String((long) u.lastSuccessAt());
+        response += '\n';
+    });
+    response += F(
+        "# HELP auramon_uploader_last_http_status HTTP status of the last completed request; -1 if the last attempt failed before a response was received, 0 if none has completed yet.\n");
+    response += F("# TYPE auramon_uploader_last_http_status gauge\n");
+    forEachUploader([&](const Uploader &u) {
+        response += F("auramon_uploader_last_http_status{id=\"");
+        response += u.id();
+        response += F("\",type=\"");
+        response += u.type();
+        response += F("\"} ");
+        response += String(u.lastHttpStatus());
+        response += '\n';
+    });
+
     server.send(200, contentTypePlain, response);
 }
 
@@ -455,6 +530,23 @@ void handleStatus() {
     snprintf_P(mac_str, sizeof(mac_str), PSTR("%02X:%02X:%02X:%02X:%02X:%02X"),
                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     networkObj["mac"] = mac_str;
+
+    JsonArray uploadersArr = doc["uploaders"].to<JsonArray>();
+    const uint32_t datalogLastTS = datalog.lastTS();
+    forEachUploader([&](const Uploader &u) {
+        auto uploaderObj = uploadersArr.add<JsonObject>();
+        uploaderObj["id"] = u.id();
+        uploaderObj["type"] = u.type();
+        uploaderObj["state"] = u.stateName();
+        uploaderObj["lastSentTS"] = u.lastSentTS();
+        uploaderObj["lagSeconds"] = datalogLastTS > u.lastSentTS() ? datalogLastTS - u.lastSentTS() : 0;
+        uploaderObj["successTotal"] = u.successTotal();
+        uploaderObj["failureTotal"] = u.failureTotal();
+        uploaderObj["consecutiveFailures"] = u.consecutiveFailures();
+        uploaderObj["lastSuccessAt"] = (uint32_t) u.lastSuccessAt();
+        uploaderObj["lastAttemptAt"] = (uint32_t) u.lastAttemptAt();
+        uploaderObj["lastHttpStatus"] = u.lastHttpStatus();
+    });
 
     String response;
     serializeJson(doc, response);

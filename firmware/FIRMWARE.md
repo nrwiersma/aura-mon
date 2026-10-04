@@ -139,6 +139,14 @@ immediately every tick.
   misconfigured uploader is told to stop (`requestStop()`); the registry drops its own
   pointer immediately, and the instance deregisters and frees itself (`delete this; return
   0;`) the next time its already-scheduled task runs.
+- **Health is observable.** Each `Uploader` tracks success/failure counts, consecutive
+  failures, last HTTP status, and last success/attempt timestamps (`recordResult()`,
+  read-only accessors on `Uploader`); `forEachUploader()` (`uploader_registry.h`) lets
+  `api.cpp` surface these, plus `lastSentTS`/`lagSeconds` (how far behind the datalog's head
+  it is) and its current state machine step, in both `GET /status` (`uploaders` array) and
+  `GET /metrics` (`auramon_uploader_*` series, labelled `id`/`type`) — see `API.md`. No
+  locking is needed since `dispatch()` and the web server both run on Core0's single
+  cooperative loop.
 
 ## Hardware Peripherals
 

@@ -4,7 +4,11 @@
 
 #pragma once
 
+#include <functional>
+
 #include "config.h"
+
+class Uploader;
 
 // syncUploaderInstances reconciles the configured uploader list
 // (uploaderConfigs, written by config.cpp from config.json) with the live
@@ -20,3 +24,7 @@ void syncUploaderInstances(bool force = false);
 
 // syncUploaders is the Core0 task wrapper around syncUploaderInstances().
 uint32_t syncUploaders(void *param);
+
+// forEachUploader invokes fn once per currently running Uploader instance,
+// for reporting their health on the /status and /metrics endpoints.
+void forEachUploader(const std::function<void(const Uploader &)> &fn);

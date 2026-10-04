@@ -95,3 +95,11 @@ void syncUploaderInstances(bool force) {
 
     mutex_exit(&uploaderConfigMu);
 }
+
+void forEachUploader(const std::function<void(const Uploader &)> &fn) {
+    for (int i = 0; i < MAX_UPLOADERS; i++) {
+        if (uploaderInstances[i]) {
+            fn(*uploaderInstances[i]);
+        }
+    }
+}
