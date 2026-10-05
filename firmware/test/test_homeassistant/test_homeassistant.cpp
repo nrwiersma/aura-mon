@@ -21,18 +21,18 @@ void tearDown() {
 void test_parse_settings_valid() {
     JsonDocument doc;
     doc["url"]        = "http://homeassistant.local:8123";
-    doc["webhook_id"] = "aura-mon-webhook";
+    doc["webhook_id"] = "c0a4e34ba7fee9e856e7afd5c650da595a9de6e7cf4207d6c593b6b793e18bc4";
 
     HomeAssistantSettings out;
     TEST_ASSERT_TRUE(parseHomeAssistantSettings(doc.as<JsonObjectConst>(), out));
     TEST_ASSERT_EQUAL_STRING("http://homeassistant.local:8123", out.url.c_str());
-    TEST_ASSERT_EQUAL_STRING("aura-mon-webhook", out.webhookId.c_str());
+    TEST_ASSERT_EQUAL_STRING("c0a4e34ba7fee9e856e7afd5c650da595a9de6e7cf4207d6c593b6b793e18bc4", out.webhookId.c_str());
 }
 
 void test_parse_settings_trims_trailing_slash() {
     JsonDocument doc;
     doc["url"]        = "http://homeassistant.local:8123/";
-    doc["webhook_id"] = "aura-mon-webhook";
+    doc["webhook_id"] = "c0a4e34ba7fee9e856e7afd5c650da595a9de6e7cf4207d6c593b6b793e18bc4";
 
     HomeAssistantSettings out;
     TEST_ASSERT_TRUE(parseHomeAssistantSettings(doc.as<JsonObjectConst>(), out));
@@ -41,7 +41,7 @@ void test_parse_settings_trims_trailing_slash() {
 
 void test_parse_settings_missing_url_rejected() {
     JsonDocument doc;
-    doc["webhook_id"] = "aura-mon-webhook";
+    doc["webhook_id"] = "c0a4e34ba7fee9e856e7afd5c650da595a9de6e7cf4207d6c593b6b793e18bc4";
 
     HomeAssistantSettings out;
     TEST_ASSERT_FALSE(parseHomeAssistantSettings(doc.as<JsonObjectConst>(), out));

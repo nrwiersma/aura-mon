@@ -176,8 +176,18 @@ bool	asyncHTTPrequest::send(xbuf* body, size_t len){
 void    asyncHTTPrequest::abort(){
     DEBUG_HTTP("abort()\r\n");
     _seize;
-    if(! _client) return;
-    _client->abort();
+    if(! _client) {
+        _release;
+        return;
+    }
+    // AsyncClient::abort() (unlike close()) tears down the pcb directly and
+    // never invokes the disconnect callback, so _onDisconnect() - the only
+    // place that deletes _client - would never run and the AsyncClient
+    // would leak every time an in-flight request is aborted. close(true)
+    // runs the same teardown but still fires the disconnect callback,
+    // freeing _client synchronously and safely (it does not touch _client
+    // again afterwards).
+    _client->close(true);
     _release;
 }
 //**************************************************************************************************************
