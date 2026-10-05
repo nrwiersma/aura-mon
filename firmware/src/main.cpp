@@ -37,6 +37,10 @@ DataLog             datalog;
 
 promMetrics metrics;
 
+mutex_t          uploaderConfigMu;
+volatile bool    uploadersChanged;
+UploaderConfig * uploaderConfigs[MAX_UPLOADERS] = {};
+
 ModbusRTUMaster modbus(Serial1, RS485_DE);
 
 WebServer server(80);
@@ -96,6 +100,7 @@ void setup() {
     mutex_init(&deviceDataMu);
     mutex_init(&deviceActionMu);
     mutex_init(&deviceInfoMu);
+    mutex_init(&uploaderConfigMu);
 
     if (auto err = loadConfig(); err) {
         LOGI("Could not load config from SD Card: %s", err.Error());
@@ -103,6 +108,7 @@ void setup() {
         LOGI("Config loaded from SD Card");
     }
     syncDeviceInfo();
+    syncUploaderInstances(true);
 
     eth.setSPISpeed(ETH_FREQ);
     eth.hostname(netCfg.hostname);
@@ -144,6 +150,7 @@ void setup() {
     c0Queue.add(timeSync, 5);
     c0Queue.add(checkEthernet, 5);
     c0Queue.add(syncState, 4);
+    c0Queue.add(syncUploaders, 3);
     c0Queue.add(writeLogData, 6);
 
     c1Queue.add(logData, 7);

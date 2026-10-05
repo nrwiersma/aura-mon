@@ -8,9 +8,39 @@ import {
 } from "/preact.js";
 
 const MAX_DEVICES = 15;
+const MAX_UPLOADERS = 4;
 const SAVE_DEBOUNCE_MS = 600;
 const THEME_STORAGE_KEY = "theme";
 const DEVICE_ACTION_ENDPOINT = "/device/action";
+
+const UPLOADER_TYPES = [
+  { value: "influxdb2", label: "InfluxDB 2.x" },
+  { value: "homeassistant", label: "Home Assistant" }
+];
+
+// Type-specific settings fields, in display order. Unknown keys present in a
+// loaded config (e.g. from a newer firmware) are preserved but not shown.
+const UPLOADER_FIELD_DEFS = {
+  influxdb2: [
+    { key: "url", label: "URL", placeholder: "http://influx.local:8086", required: true },
+    { key: "org", label: "Organization", required: true },
+    { key: "bucket", label: "Bucket", required: true },
+    { key: "token", label: "API token", required: true },
+    { key: "measurement", label: "Measurement", placeholder: "aura-mon", required: false }
+  ],
+  homeassistant: [
+    { key: "url", label: "Home Assistant URL", placeholder: "http://homeassistant.local:8123", required: true },
+    { key: "webhook_id", label: "Webhook ID", required: true }
+  ]
+};
+
+function uploaderTypeLabel(type) {
+  return UPLOADER_TYPES.find((t) => t.value === type)?.label || type;
+}
+
+function defaultUploaderType() {
+  return UPLOADER_TYPES[0].value;
+}
 
 function setHtmlTheme(theme) {
   const isDark = theme === "dark";
@@ -45,11 +75,22 @@ async function fetchJson(url) {
   return response.json();
 }
 
+function normalizeUploaderSettings(type, settings) {
+  const source = settings && typeof settings === "object" ? settings : {};
+  const fields = UPLOADER_FIELD_DEFS[type] || [];
+  const normalized = {};
+  fields.forEach((field) => {
+    normalized[field.key] = typeof source[field.key] === "string" ? source[field.key] : "";
+  });
+  return normalized;
+}
+
 function normalizeConfig(config) {
   const normalized = {
     format: Number.isFinite(config.format) ? config.format : 1,
     network: config.network || {},
-    devices: Array.isArray(config.devices) ? config.devices : []
+    devices: Array.isArray(config.devices) ? config.devices : [],
+    uploaders: Array.isArray(config.uploaders) ? config.uploaders : []
   };
 
   normalized.devices = normalized.devices.map((device, idx) => {
@@ -64,6 +105,18 @@ function normalizeConfig(config) {
   });
 
   normalized.devices.sort((a, b) => a.address - b.address);
+
+  normalized.uploaders = normalized.uploaders.map((uploader) => {
+    const type = UPLOADER_TYPES.some((t) => t.value === uploader.type) ? uploader.type : defaultUploaderType();
+    return {
+      id: typeof uploader.id === "string" ? uploader.id : "",
+      type,
+      enabled: typeof uploader.enabled === "boolean" ? uploader.enabled : false,
+      interval: Number.isFinite(uploader.interval) ? uploader.interval : 60,
+      settings: normalizeUploaderSettings(type, uploader.settings)
+    };
+  });
+
   return normalized;
 }
 
@@ -97,6 +150,44 @@ function formatTimestamp(seconds) {
     return "--";
   }
   return new Date(value * 1000).toLocaleString();
+}
+
+function formatDuration(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) {
+    return "--";
+  }
+  if (value < 60) {
+    return `${Math.round(value)}s`;
+  }
+  if (value < 3600) {
+    return `${Math.round(value / 60)}m`;
+  }
+  return `${Math.round(value / 3600)}h`;
+}
+
+// uploaderHealth summarises an uploader's /status entry into a badge
+// variant/label and a short detail line, for the Uploaders table.
+function uploaderHealth(enabled, uploaderStatus) {
+  if (!enabled) {
+    return { variant: "muted", label: "Disabled", detail: "Not running" };
+  }
+  if (!uploaderStatus) {
+    return { variant: "pending", label: "Starting", detail: "Waiting for first attempt" };
+  }
+  if (uploaderStatus.consecutiveFailures > 0) {
+    const reason =
+      uploaderStatus.lastHttpStatus === -1 ? "connection failed" : `HTTP ${uploaderStatus.lastHttpStatus}`;
+    return {
+      variant: "error",
+      label: "Error",
+      detail: `${uploaderStatus.consecutiveFailures} failed in a row (${reason})`
+    };
+  }
+  if (uploaderStatus.successTotal === 0) {
+    return { variant: "pending", label: "Pending", detail: `Behind by ${formatDuration(uploaderStatus.lagSeconds)}` };
+  }
+  return { variant: "ok", label: "OK", detail: `Behind by ${formatDuration(uploaderStatus.lagSeconds)}` };
 }
 
 function formatVoltage(metrics) {
@@ -173,6 +264,48 @@ function validateConfig(config) {
     }
   });
 
+  if (!validateUploaders(config?.uploaders)) {
+    valid = false;
+  }
+
+  return valid;
+}
+
+function validateUploader(uploader) {
+  if (!uploader) return false;
+  const idValid = typeof uploader.id === "string" && uploader.id.trim().length > 0;
+  const interval = Number(uploader.interval);
+  const intervalValid = Number.isInteger(interval) && interval > 0;
+  const fields = UPLOADER_FIELD_DEFS[uploader.type] || [];
+  const settingsValid = fields.every((field) => {
+    if (!field.required) return true;
+    const value = uploader.settings?.[field.key];
+    return typeof value === "string" && value.trim().length > 0;
+  });
+  return idValid && intervalValid && settingsValid;
+}
+
+function validateUploaders(uploaders) {
+  let valid = true;
+  const idCounts = new Map();
+
+  (uploaders || []).forEach((uploader) => {
+    const id = (uploader.id || "").trim().toLowerCase();
+    if (id) {
+      idCounts.set(id, (idCounts.get(id) || 0) + 1);
+    }
+    if (!validateUploader(uploader)) {
+      valid = false;
+    }
+  });
+
+  (uploaders || []).forEach((uploader) => {
+    const id = (uploader.id || "").trim().toLowerCase();
+    if (id && idCounts.get(id) > 1) {
+      valid = false;
+    }
+  });
+
   return valid;
 }
 
@@ -234,6 +367,12 @@ function App() {
   const [otaPublicFileError, setOtaPublicFileError] = useState(false);
   const [theme, setTheme] = useState(getPreferredTheme());
   const [rebootPending, setRebootPending] = useState(false);
+
+  const [uploaderDrawerOpen, setUploaderDrawerOpen] = useState(false);
+  const [activeUploader, setActiveUploader] = useState(null);
+  const [editingUploaderIndex, setEditingUploaderIndex] = useState(null);
+  const [isAddingUploader, setIsAddingUploader] = useState(false);
+  const [uploaderFieldErrors, setUploaderFieldErrors] = useState({});
 
   const saveTimerRef = useRef(null);
   const statusInFlightRef = useRef(false);
@@ -389,14 +528,28 @@ function App() {
     return map;
   }, [status]);
 
+  const uploaderStatusMap = useMemo(() => {
+    const map = new Map();
+    (status?.uploaders || []).forEach((uploader) => {
+      if (uploader.id) {
+        map.set(uploader.id, uploader);
+      }
+    });
+    return map;
+  }, [status]);
+
   const devices = config?.devices || [];
   const deviceCount = devices.length;
+  const uploaders = config?.uploaders || [];
+  const uploaderCount = uploaders.length;
   const versionText = status?.version || "--";
   const themePressed = theme === "dark" ? "true" : "false";
   const themeLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   const drawerTitle = isAdding ? "Add device" : "Edit device";
+  const uploaderDrawerTitle = isAddingUploader ? "Add uploader" : "Edit uploader";
   const datalog = status?.datalog || {};
   const network = status?.network || {};
+  const activeUploaderFields = UPLOADER_FIELD_DEFS[activeUploader?.type] || [];
 
   function closeDrawer() {
     setDrawerOpen(false);
@@ -549,6 +702,157 @@ function App() {
       next.delete(address);
       return next;
     });
+  }
+
+  function closeUploaderDrawer() {
+    setUploaderDrawerOpen(false);
+    setActiveUploader(null);
+    setEditingUploaderIndex(null);
+    setIsAddingUploader(false);
+    setUploaderFieldErrors({});
+  }
+
+  function openUploaderDrawerFor(uploader, index) {
+    if (!configRef.current) {
+      return;
+    }
+
+    if (!uploader) {
+      const type = defaultUploaderType();
+      setActiveUploader({
+        enabled: true,
+        id: "",
+        type,
+        interval: "60",
+        settings: normalizeUploaderSettings(type, {})
+      });
+      setIsAddingUploader(true);
+      setEditingUploaderIndex(null);
+    } else {
+      setActiveUploader({
+        enabled: Boolean(uploader.enabled),
+        id: uploader.id || "",
+        type: uploader.type,
+        interval: Number.isFinite(uploader.interval) ? String(uploader.interval) : "",
+        settings: { ...uploader.settings }
+      });
+      setIsAddingUploader(false);
+      setEditingUploaderIndex(index);
+    }
+
+    setUploaderFieldErrors({});
+    setUploaderDrawerOpen(true);
+  }
+
+  function handleUploaderChange(field) {
+    return (event) => {
+      const { type, checked, value } = event.target;
+      const nextValue = type === "checkbox" ? checked : value;
+      setActiveUploader((prev) => (prev ? { ...prev, [field]: nextValue } : prev));
+      setUploaderFieldErrors((prev) => ({ ...prev, [field]: false }));
+    };
+  }
+
+  function handleUploaderTypeChange(event) {
+    const nextType = event.target.value;
+    setActiveUploader((prev) =>
+      prev ? { ...prev, type: nextType, settings: normalizeUploaderSettings(nextType, prev.settings) } : prev
+    );
+    setUploaderFieldErrors({});
+  }
+
+  function handleUploaderSettingChange(key) {
+    return (event) => {
+      const value = event.target.value;
+      setActiveUploader((prev) =>
+        prev ? { ...prev, settings: { ...prev.settings, [key]: value } } : prev
+      );
+      setUploaderFieldErrors((prev) => ({ ...prev, [key]: false }));
+    };
+  }
+
+  function commitUploaderDrawer(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    if (!activeUploader) {
+      return false;
+    }
+
+    const trimmedId = activeUploader.id.trim();
+    const interval = Number.parseInt(activeUploader.interval, 10);
+    const nextUploader = {
+      enabled: Boolean(activeUploader.enabled),
+      id: trimmedId,
+      type: activeUploader.type,
+      interval,
+      settings: { ...activeUploader.settings }
+    };
+
+    const isValid = validateUploader(nextUploader);
+    const fields = UPLOADER_FIELD_DEFS[nextUploader.type] || [];
+    const errors = {
+      id: !trimmedId,
+      interval: !Number.isInteger(interval) || interval <= 0
+    };
+    fields.forEach((field) => {
+      if (!field.required) return;
+      const value = nextUploader.settings[field.key];
+      errors[field.key] = !(typeof value === "string" && value.trim().length > 0);
+    });
+    setUploaderFieldErrors(errors);
+
+    if (!isValid) {
+      return false;
+    }
+
+    // An id must be unique among the other uploaders (not counting the one being edited).
+    const current = configRef.current;
+    const duplicate = (current?.uploaders || []).some(
+      (u, idx) => idx !== editingUploaderIndex && u.id.trim().toLowerCase() === trimmedId.toLowerCase()
+    );
+    if (duplicate) {
+      setUploaderFieldErrors((prev) => ({ ...prev, id: true }));
+      return false;
+    }
+
+    setConfig((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const nextUploaders = [...prev.uploaders];
+      if (isAddingUploader) {
+        nextUploaders.push(nextUploader);
+      } else if (Number.isInteger(editingUploaderIndex) && editingUploaderIndex >= 0) {
+        nextUploaders[editingUploaderIndex] = nextUploader;
+      }
+      return { ...prev, uploaders: nextUploaders };
+    });
+
+    scheduleSave();
+    closeUploaderDrawer();
+
+    return true;
+  }
+
+  function deleteActiveUploader() {
+    if (!activeUploader || isAddingUploader) {
+      return;
+    }
+    if (!confirm(`Delete uploader "${activeUploader.id}"?`)) {
+      return;
+    }
+
+    setConfig((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const nextUploaders = prev.uploaders.filter((_, idx) => idx !== editingUploaderIndex);
+      return { ...prev, uploaders: nextUploaders };
+    });
+
+    scheduleSave();
+    closeUploaderDrawer();
   }
 
   function openOtaDrawer() {
@@ -805,6 +1109,78 @@ function App() {
               </div>
             </div>
           </section>
+
+          <section class="card uploaders-card">
+            <div class="card-header">
+              <div>
+                <h1>
+                  Uploaders <span id="uploader-count" class="device-count">${uploaderCount}/${MAX_UPLOADERS}</span>
+                </h1>
+              </div>
+            </div>
+
+            <div class="table-shell">
+              <div class="table-wrap">
+                <table class="device-table" aria-label="Uploader configuration">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Type</th>
+                      <th>Interval</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="uploaders-body">
+                    ${uploaders.map((uploader, index) => {
+                      const uploaderStatus = uploader.id ? uploaderStatusMap.get(uploader.id) : null;
+                      const health = uploaderHealth(uploader.enabled, uploaderStatus);
+                      return html`
+                        <tr class=${uploader.enabled ? "" : "row-disabled"}>
+                          <td>${uploader.id || "--"}</td>
+                          <td>${uploaderTypeLabel(uploader.type)}</td>
+                          <td>${Number.isFinite(uploader.interval) ? `${uploader.interval}s` : "--"}</td>
+                          <td>
+                            <span class=${`badge badge-${health.variant}`}>${health.label}</span>
+                            <span class="uploader-detail">${health.detail}</span>
+                          </td>
+                          <td class="fit-content">
+                            <div class="row-actions">
+                              <button
+                                type="button"
+                                class="btn-icon-only"
+                                aria-label="Edit uploader"
+                                onClick=${() => openUploaderDrawerFor(uploader, index)}
+                              >
+                                <span class="icon icon-edit" aria-hidden="true"></span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      `;
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div id="uploaders-empty-state" class=${uploaderCount === 0 ? "empty-state" : "empty-state hidden"}>
+                No uploaders configured yet. Add one to push data to InfluxDB2 or Home Assistant.
+              </div>
+
+              <div class="table-actions">
+                <button
+                  id="add-uploader"
+                  class="btn btn-primary"
+                  type="button"
+                  disabled=${uploaderCount >= MAX_UPLOADERS}
+                  onClick=${() => openUploaderDrawerFor(null, null)}
+                >
+                  <span class="btn-icon">+</span>
+                  Add uploader
+                </button>
+              </div>
+            </div>
+          </section>
         </main>
       </div>
 
@@ -911,6 +1287,124 @@ function App() {
             <div class="drawer-actions-right">
               <button id="form-cancel" class="btn" type="button" onClick=${closeDrawer}>Cancel</button>
               <button id="form-save" class="btn btn-primary" type="submit">Save</button>
+            </div>
+          </div>
+        </form>
+      </aside>
+
+      <div
+        id="uploader-drawer-backdrop"
+        class=${uploaderDrawerOpen ? "drawer-backdrop open" : "drawer-backdrop hidden"}
+        onClick=${closeUploaderDrawer}
+      ></div>
+      <aside
+        id="uploader-drawer"
+        class=${uploaderDrawerOpen ? "drawer open" : "drawer"}
+        aria-hidden=${uploaderDrawerOpen ? "false" : "true"}
+      >
+        <div class="drawer-header">
+          <div>
+            <div id="uploader-drawer-title" class="drawer-title">${uploaderDrawerTitle}</div>
+            <div class="drawer-subtitle">Update uploader configuration and save.</div>
+          </div>
+          <button
+            id="uploader-drawer-close"
+            class="btn btn-ghost"
+            type="button"
+            aria-label="Close"
+            onClick=${closeUploaderDrawer}
+          >
+            ×
+          </button>
+        </div>
+
+        <form id="uploader-form" class="drawer-body" onSubmit=${commitUploaderDrawer}>
+          <label class="field">
+            <span class="field-label">Enabled</span>
+            <span class="toggle">
+              <input
+                id="uploader-form-enabled"
+                type="checkbox"
+                checked=${Boolean(activeUploader?.enabled)}
+                onChange=${handleUploaderChange("enabled")}
+              />
+              <span class="toggle-track" aria-hidden="true"></span>
+            </span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">ID</span>
+            <input
+              id="uploader-form-id"
+              type="text"
+              placeholder="e.g. influx-main"
+              required
+              readOnly=${!isAddingUploader}
+              class=${uploaderFieldErrors.id ? "input-error" : ""}
+              value=${activeUploader?.id ?? ""}
+              onInput=${handleUploaderChange("id")}
+            />
+          </label>
+
+          <label class="field">
+            <span class="field-label">Type</span>
+            <select
+              id="uploader-form-type"
+              value=${activeUploader?.type ?? ""}
+              onChange=${handleUploaderTypeChange}
+            >
+              ${UPLOADER_TYPES.map(
+                (type) => html`<option value=${type.value}>${type.label}</option>`
+              )}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Interval (seconds)</span>
+            <input
+              id="uploader-form-interval"
+              type="number"
+              min="1"
+              step="1"
+              required
+              class=${uploaderFieldErrors.interval ? "input-error" : ""}
+              value=${activeUploader?.interval ?? ""}
+              onInput=${handleUploaderChange("interval")}
+            />
+          </label>
+
+          ${activeUploaderFields.map(
+            (field) => html`
+              <label class="field">
+                <span class="field-label">${field.label}</span>
+                <input
+                  type="text"
+                  placeholder=${field.placeholder || ""}
+                  required=${field.required}
+                  class=${uploaderFieldErrors[field.key] ? "input-error" : ""}
+                  value=${activeUploader?.settings?.[field.key] ?? ""}
+                  onInput=${handleUploaderSettingChange(field.key)}
+                />
+              </label>
+            `
+          )}
+
+          <div class="drawer-actions">
+            <button
+              id="uploader-form-delete"
+              class="btn btn-danger"
+              type="button"
+              disabled=${isAddingUploader}
+              style=${isAddingUploader ? "visibility: hidden;" : "visibility: visible;"}
+              onClick=${deleteActiveUploader}
+            >
+              Delete
+            </button>
+            <div class="drawer-actions-right">
+              <button id="uploader-form-cancel" class="btn" type="button" onClick=${closeUploaderDrawer}>
+                Cancel
+              </button>
+              <button id="uploader-form-save" class="btn btn-primary" type="submit">Save</button>
             </div>
           </div>
         </form>

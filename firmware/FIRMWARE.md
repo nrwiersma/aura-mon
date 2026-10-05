@@ -27,8 +27,10 @@ flowchart TD
         T0C["⏱ syncState  · 1s\nCheck SD & Ethernet\nUpdate LED  🔴 · 🟠 · 🟢"]
         T0D["▶ addDeviceFromButton  · on demand\nAssign free Modbus address\nSave config to SD"]
         T0E["⏱ writeLogData  · 100ms idle\nPop queued records\nWrite record to SD datalog"]
+        T0F["⏱ syncUploaders  · 1s\nInstantiate/stop Uploader objects\nfrom config.json's uploaders[]"]
+        T0G["▶ Uploader.dispatch  · per uploader\nBuild → Post → Wait state machine\nAsyncHTTP (RPAsyncTCP), non-blocking"]
 
-        L0C --> T0A & T0B & T0C & T0D & T0E
+        L0C --> T0A & T0B & T0C & T0D & T0E & T0F & T0G
     end
 
     subgraph C1["Core 1 — Data Plane"]
@@ -54,7 +56,7 @@ flowchart TD
 | | Core 0 | Core 1 |
 |---|---|---|
 | **Main loop focus** | HTTP request handling & button debounce | Energy data collection via Modbus (1 s cycle) |
-| **Scheduled tasks** | `timeSync`, `checkEthernet`, `syncState`, `writeLogData` | `logData`, `syncDevices`, `deviceActionTask` |
+| **Scheduled tasks** | `timeSync`, `checkEthernet`, `syncState`, `writeLogData`, `syncUploaders`, one `Uploader::dispatch` per configured uploader | `logData`, `syncDevices`, `deviceActionTask` |
 | **On-demand tasks** | `addDeviceFromButton` (button press) | — |
 | **Watchdog** | — | 800 ms watchdog, kicked each collection cycle |
 | **LED control** | `syncState` sets colour, `Ticker` blinks at 1 Hz | — |
@@ -70,6 +72,8 @@ flowchart TD
 | `deviceActionTask` | 1 | 5 |
 | `checkEthernet` | 0 | 5 |
 | `syncState` | 0 | 4 |
+| `syncUploaders` | 0 | 3 |
+| `Uploader::dispatch` (each uploader) | 0 | 2 |
 
 ## Data Log Record Queue
 
@@ -84,6 +88,65 @@ which can block for tens of milliseconds, off the collection core.
 - A record that fails to write is retried up to 5 times, then dropped so it cannot block the
   records behind it.
 - On a controlled reboot, the queue is drained before the data log is closed.
+
+## Uploaders (InfluxDB2/3, Home Assistant, ...)
+
+`Uploader` (`src/uploader/uploader.h/.cpp`) is the base class for Core0 tasks that push data
+log records to a remote service. `UploaderConfig` (`src/config.h`) is its persisted,
+user-editable counterpart: an entry in config.json's `uploaders` array (`id`, `type`,
+`enabled`, `interval`, and a free-form `settings` object whose schema is owned by the
+concrete uploader type). `uploader_registry.cpp` is the only code that creates or stops
+`Uploader` instances, reconciling `uploaderConfigs[]` with live instances whenever the config
+changes (`syncUploaders`, mirroring `syncDevices`'s `devicesChanged` pattern) — concrete
+uploader types are registered there as they are implemented.
+
+- `InfluxDB2Uploader` (`src/uploader/influxdb2_uploader.h/.cpp`, `type: "influxdb2"`) writes
+  one line-protocol point per enabled, named device per interval (plus one for mains
+  frequency) to an InfluxDB 2.x bucket via `/api/v2/write`. Settings: `url`, `org`, `bucket`,
+  `token`, optional `measurement` (default `"aura-mon"`). Its settings parsing and
+  line-protocol formatting are pulled out into `src/uploader/influxdb2_format.h/.cpp`, which
+  has no HTTP/xbuf/data-log dependencies and is covered by native unit tests
+  (`test/test_influxdb2`); the surrounding HTTP/data-log glue in `influxdb2_uploader.cpp`
+  follows `Uploader` itself in being hardware-only and not natively tested.
+- `HomeAssistantUploader` (`src/uploader/homeassistant_uploader.h/.cpp`, `type:
+  "homeassistant"`) posts one JSON payload per interval - mains frequency plus one entry per
+  enabled, named device - to a Home Assistant webhook (`<url>/api/webhook/<webhook_id>`).
+  Settings: `url`, `webhook_id`. Unlike InfluxDB2's point-per-reading model, the payload
+  carries the whole interval as a single object: `{"ts", "hz", "devices": [{"name", "volts",
+  "amps", "watts", "wh", "pf"}, ...]}`, where `wh` is the energy consumed during that interval
+  (not a running total), matching the existing pull-based `/energy` semantics so the Home
+  Assistant component can accumulate it itself. Its settings parsing and payload building are
+  pulled out into `src/uploader/homeassistant_format.h/.cpp` (no HTTP/xbuf/data-log
+  dependencies, covered by native unit tests in `test/test_homeassistant`); the hardware glue
+  in `homeassistant_uploader.cpp` serializes the built `JsonDocument` straight into the
+  request body via ArduinoJson's `Print`-based `serializeJson`.
+
+Each `Uploader` runs as its own lowest-priority Core0 task, built on `lib/AsyncHTTP`
+(`asyncHTTPrequest` ported onto `RPAsyncTCP`) so a request in flight never blocks anything
+else: `dispatch()` is a non-blocking `Build → Post → Wait` state machine that returns almost
+immediately every tick.
+
+- **No data is lost on a network outage.** The data log already retains up to ~180 days of
+  history on SD; an uploader only tracks how far it has gotten (`_lastSentTS`), persisted to
+  `aura-mon/uploaders/<id>.state`. While the link is down (`eth.isLinked()`/`connected()`
+  checked every `Build`), the uploader simply waits and retries — it never advances past data
+  it hasn't confirmed as sent, and a reboot resumes from the saved position rather than
+  replaying the whole log or skipping ahead.
+- **Never blocks SD or networking.** Scheduled at the lowest Core0 priority (below
+  `writeLogData`, `checkEthernet`, and `syncState`), so it only runs when nothing more
+  important is due, and each state transition does O(1) non-blocking work.
+- **Stopping is self-serviced.** The task queue has no cancel primitive, so a disabled or
+  misconfigured uploader is told to stop (`requestStop()`); the registry drops its own
+  pointer immediately, and the instance deregisters and frees itself (`delete this; return
+  0;`) the next time its already-scheduled task runs.
+- **Health is observable.** Each `Uploader` tracks success/failure counts, consecutive
+  failures, last HTTP status, and last success/attempt timestamps (`recordResult()`,
+  read-only accessors on `Uploader`); `forEachUploader()` (`uploader_registry.h`) lets
+  `api.cpp` surface these, plus `lastSentTS`/`lagSeconds` (how far behind the datalog's head
+  it is) and its current state machine step, in both `GET /status` (`uploaders` array) and
+  `GET /metrics` (`auramon_uploader_*` series, labelled `id`/`type`) — see `API.md`. No
+  locking is needed since `dispatch()` and the web server both run on Core0's single
+  cooperative loop.
 
 ## Hardware Peripherals
 

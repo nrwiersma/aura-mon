@@ -11,6 +11,7 @@
 #include "../../src/device.h"
 #include "../../src/ethernet.h"
 #include "../../src/metrics.h"
+#include "../../src/config.h"
 #include <errors.h>
 
 // ---- constants that auramon.h normally provides ----------------------------
@@ -19,6 +20,7 @@
 #define DATA_LOG_PATH       "aura-mon/data.log"
 #define CONFIG_LOG_PATH     "aura-mon/config.json"
 #define CONFIG_LOG_TMP_PATH "aura-mon/config.json.tmp"
+#define MAX_UPLOADERS       4
 
 // ---- logging macros (silent during tests) ----------------------------------
 #define LOGD(...)
@@ -42,6 +44,10 @@ inline DeviceActionRequest deviceActionData    = {DeviceActionType::None, 0};
 
 inline NetworkConfig netCfg;
 inline promMetrics   metrics;
+
+inline mutex_t          uploaderConfigMu;
+inline volatile bool    uploadersChanged = false;
+inline UploaderConfig * uploaderConfigs[MAX_UPLOADERS] = {};
 
 // ---- ModbusRTUMaster stub (used by collect.cpp) ----------------------------
 struct ModbusRTUMaster {

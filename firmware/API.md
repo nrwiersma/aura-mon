@@ -98,6 +98,22 @@ Response fields:
 - `devices` array: each entry has `name`, `volts`, `amps`, `pf`, `hz`.
 - `datalog` object: `firstRev`, `lastRev`, `interval`.
 - `network` object: `hostname`, `ip`, `gateway`, `subnet`, `dns`, `mac`.
+- `uploaders` array: one entry per configured, enabled uploader (see `POST /config`'s
+  `uploaders`), each with:
+  - `id`, `type` - matches the uploader's config entry.
+  - `state` - `"build"`, `"post"`, or `"wait"`; which step of its request cycle it's
+    currently in.
+  - `lastSentTS` - datalog timestamp up to which data has been successfully uploaded.
+  - `lagSeconds` - how far `lastSentTS` is behind the datalog's most recent record; grows
+    while the network is down or the remote endpoint is failing, and shrinks once it
+    catches back up.
+  - `successTotal`, `failureTotal` - lifetime (since boot) counts of completed requests.
+  - `consecutiveFailures` - resets to 0 on the next success; useful for alerting on a
+    stuck/misconfigured uploader without tripping on an isolated blip.
+  - `lastSuccessAt`, `lastAttemptAt` - unix timestamps, `0` if never.
+  - `lastHttpStatus` - HTTP status of the last completed request; `-1` if the last attempt
+    failed before a response was received (e.g. could not open/send), `0` if no request has
+    completed yet.
 
 ### `GET /energy`
 
@@ -234,6 +250,17 @@ Exposed metrics:
 - `auramon_datalog_queue_depth` (gauge)
 - `auramon_datalog_queue_full_total` (counter)
 - `auramon_datalog_records_dropped_total` (counter)
+- `auramon_uploader_requests_total{id,type}` (counter) - total successful upload requests.
+- `auramon_uploader_errors_total{id,type}` (counter) - total failed upload attempts (network
+  or non-2xx response).
+- `auramon_uploader_consecutive_failures{id,type}` (gauge) - current run of consecutive
+  failed attempts, reset on the next success.
+- `auramon_uploader_lag_seconds{id,type}` (gauge) - how far behind the uploader is from the
+  most recently logged record.
+- `auramon_uploader_last_success_timestamp_seconds{id,type}` (gauge) - unix timestamp of the
+  last successful upload, `0` if never.
+- `auramon_uploader_last_http_status{id,type}` (gauge) - HTTP status of the last completed
+  request; `-1` if it failed before a response was received, `0` if none has completed yet.
 
 ### `GET /readyz`
 

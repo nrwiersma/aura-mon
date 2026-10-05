@@ -27,6 +27,7 @@
 #include "api.h"
 #include "device.h"
 #include "metrics.h"
+#include "uploader/uploader_registry.h"
 #include "version.h"
 
 #define WAIT_FOR_SERIAL 0
@@ -96,6 +97,11 @@ extern InputDevice *       devices[MAX_DEVICES];
 extern DataLog datalog;
 
 extern promMetrics metrics;
+
+#define MAX_UPLOADERS 4
+extern mutex_t          uploaderConfigMu;
+extern volatile bool    uploadersChanged;
+extern UploaderConfig * uploaderConfigs[MAX_UPLOADERS];
 
 extern taskQueue c0Queue;
 
