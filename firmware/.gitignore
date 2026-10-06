@@ -1,3 +1,4 @@
 .pio
 firmware.bin
+firmware.elf
 public/*.gz

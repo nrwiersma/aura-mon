@@ -1,5 +1,15 @@
 #include <xbuf.h>
 
+// Byte-wise copy used instead of memcpy: the RP2350 memcpy (rp2350-memcpy.S) misbehaves with
+// unaligned pointers, and xbuf copies between arbitrary, unaligned offsets all the time.
+// The attribute stops GCC from turning the loop back into a memcpy call.
+__attribute__((optimize("no-tree-loop-distribute-patterns")))
+static void xbufCopy(uint8_t* dest, const uint8_t* src, size_t len) {
+    while (len--) {
+        *dest++ = *src++;
+    }
+}
+
 xbuf::xbuf(const uint16_t segSize)
     : _head(nullptr)
     , _tail(nullptr)
@@ -37,7 +47,7 @@ size_t      xbuf::write(const uint8_t* buf, const size_t len){
             addSeg();
         }
         size_t demand = _free < supply ? _free : supply;
-        memcpy(_tail->data + ((_offset + _used) % _segSize), buf + (len - supply), demand);
+        xbufCopy(_tail->data + ((_offset + _used) % _segSize), buf + (len - supply), demand);
         _free -= demand;
         _used += demand;
         supply -= demand;
@@ -86,7 +96,7 @@ size_t      xbuf::read(uint8_t* buf, const size_t len){
         size_t supply = (_offset + _used) > _segSize ? _segSize - _offset : _used;
         size_t demand = len - read;
         size_t chunk = supply < demand ? supply : demand;
-        memcpy(buf + read, _head->data + _offset, chunk);
+        xbufCopy(buf + read, _head->data + _offset, chunk);
         _offset += chunk;
         _used -= chunk;
         read += chunk;
@@ -112,7 +122,7 @@ size_t      xbuf::peek(uint8_t* buf, const size_t len){
         size_t supply = (offset + used) > _segSize ? _segSize - offset : used;
         size_t demand = len - read;
         size_t chunk = supply < demand ? supply : demand;
-        memcpy(buf + read, seg->data + offset, chunk);
+        xbufCopy(buf + read, seg->data + offset, chunk);
         offset += chunk;
         used -= chunk;
         read += chunk;
