@@ -33,10 +33,21 @@
 
 #include <RPAsyncTCP.h>
 
-// RPAsyncTCP callbacks all run on the same core/task as the rest of the firmware (unlike
-// ESP32's AsyncTCP, which runs on its own task and needs a recursive mutex to guard
-// against reentrancy from another thread), so no locking is required here.
-#define _seize
+// RPAsyncTCP callbacks are invoked from the lwIP async context, which pumps the
+// network stack from an IRQ-driven worker and can preempt the main loop at any point.
+// Every entry point that touches request state must hold the lwIP lock (recursive, and
+// already held when called from a callback) or a callback can free/reallocate buffers
+// mid-use and corrupt the heap.
+#include <LwipEthernet.h>
+
+struct LwipLock {
+    LwipLock() { ethernet_arch_lwip_begin(); }
+    ~LwipLock() { ethernet_arch_lwip_end(); }
+    LwipLock(const LwipLock&) = delete;
+    LwipLock& operator=(const LwipLock&) = delete;
+};
+
+#define _seize LwipLock _lwipLock
 #define _release
 
 #include <pgmspace.h>
@@ -187,6 +198,7 @@ class asyncHTTPrequest {
     xbuf*       _request;                       // Tx data buffer 
 	  xbuf*       _response;                      // Rx data buffer for headers
     xbuf*       _chunks;                        // First stage for chunked response    
+    bool        _building;                      // request is being assembled; _send() must not run
     header*     _headers;                       // request or (readyState > readyStateHdrsRcvd) response headers    
 
     // Protected functions

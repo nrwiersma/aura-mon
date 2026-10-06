@@ -23,6 +23,23 @@ namespace {
 
     constexpr uint32_t REQUEST_TIMEOUT_S = 5;
 
+    // How long the link must have been up before an uploader sends anything,
+    // so the stack can settle after (re)connecting.
+    constexpr uint32_t NETWORK_SETTLE_MS = 1000;
+
+    bool networkReady() {
+        static uint32_t upSince = 0;
+
+        if (!eth.isLinked() || !eth.connected()) {
+            upSince = 0;
+            return false;
+        }
+        if (upSince == 0) {
+            upSince = millis() | 1;
+        }
+        return millis() - upSince >= NETWORK_SETTLE_MS;
+    }
+
     constexpr const char *UPLOADER_STATE_DIR = "aura-mon/uploaders";
 }
 
@@ -154,7 +171,7 @@ uint32_t Uploader::dispatch() {
 }
 
 uint32_t Uploader::handleBuild() {
-    if (!eth.isLinked() || !eth.connected()) {
+    if (!networkReady()) {
         // Network is down: do nothing. The data log keeps every record on
         // SD, so there is nothing to lose by waiting - we simply catch up
         // once the link returns.
@@ -187,7 +204,7 @@ uint32_t Uploader::handleBuild() {
 }
 
 uint32_t Uploader::handlePost() {
-    if (!eth.isLinked() || !eth.connected()) {
+    if (!networkReady()) {
         _state = State::Build;
         return RETRY_DELAY_MS;
     }
@@ -196,6 +213,10 @@ uint32_t Uploader::handlePost() {
         _request = new asyncHTTPrequest;
     }
     _request->setTimeout(REQUEST_TIMEOUT_S);
+
+    // lwIP callbacks (connect/error/ack) are processed whenever the lwIP lock is fully released,
+    // so hold it across open() and send(); otherwise the connection can be torn down in between.
+    LwipLock lwipLock;
 
     if (!_request->open(httpMethod(), endpoint().c_str())) {
         LOGE("uploader %s: could not open request to %s", _id.c_str(), endpoint().c_str());

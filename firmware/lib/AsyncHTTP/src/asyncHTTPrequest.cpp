@@ -24,12 +24,14 @@ asyncHTTPrequest::asyncHTTPrequest()
     , _response(nullptr)
     , _chunks(nullptr)
     , _headers(nullptr)
+    , _building(false)
 {
     DEBUG_HTTP("New request.");
 }
 
 //**************************************************************************************************************
 asyncHTTPrequest::~asyncHTTPrequest(){
+    _seize;
     if(_client) _client->close(true);
     delete _URL;
     delete _headers;
@@ -56,6 +58,7 @@ bool    asyncHTTPrequest::debug(){
 //**************************************************************************************************************
 bool	asyncHTTPrequest::open(const char* method, const char* URL){
     DEBUG_HTTP("open(%s, %.32s)\r\n", method, URL);
+    _seize;
     if(_readyState != readyStateUnsent && _readyState != readyStateDone) {return false;}
     _requestStartTime = millis();
     delete _URL;
@@ -107,6 +110,7 @@ bool	asyncHTTPrequest::send(){
     DEBUG_HTTP("send()\r\n");
     _seize;
     if( ! _buildRequest()) return false;
+    _building = false;
     _send();
     _release;
     return true;
@@ -122,6 +126,7 @@ bool    asyncHTTPrequest::send(String body){
         return false;
     }
     _request->write(body);
+    _building = false;
     _send();
     _release;
     return true;
@@ -137,6 +142,7 @@ bool	asyncHTTPrequest::send(const char* body){
         return false;
     } 
     _request->write(body);
+    _building = false;
     _send();
     _release;
     return true;
@@ -152,6 +158,7 @@ bool	asyncHTTPrequest::send(const uint8_t* body, size_t len){
         return false;
     } 
     _request->write(body, len);
+    _building = false;
     _send();
     _release;
     return true;
@@ -167,6 +174,7 @@ bool	asyncHTTPrequest::send(xbuf* body, size_t len){
         return false;
     } 
     _request->write(body, len);
+    _building = false;
     _send();
     _release;
     return true;
@@ -288,7 +296,7 @@ ________________________________________________________________________________
 bool  asyncHTTPrequest::_parseURL(const char* url){
     delete _URL;
     _URL = new URL;
-    _URL->buffer = new char[strlen(url) + 8];
+    _URL->buffer = new char[strlen(url) + 16];
     char *bufptr = _URL->buffer;
     const char *urlptr = url;
 
@@ -396,6 +404,7 @@ bool  asyncHTTPrequest::_connect(){
 //**************************************************************************************************************
 bool   asyncHTTPrequest::_buildRequest(){
     DEBUG_HTTP("_buildRequest()\r\n");
+    _building = true;
     
         // Build the header.
 
@@ -423,7 +432,8 @@ bool   asyncHTTPrequest::_buildRequest(){
 
 //**************************************************************************************************************
 size_t  asyncHTTPrequest::_send(){
-    if( ! _request) return 0;
+    // Not while a request is being assembled, and not once the connection is gone.
+    if( _building || ! _request || ! _client) return 0;
     DEBUG_HTTP("_send() %d\r\n", _request->available());
     if( ! _client->connected() || ! _client->canSend()){
         DEBUG_HTTP("*can't send\r\n");
@@ -437,7 +447,7 @@ size_t  asyncHTTPrequest::_send(){
     while(supply){
         size_t chunk = supply < 100 ? supply : 100;
         supply -= _request->read(temp, chunk);
-        sent += _client->add((char*)temp, chunk);
+        sent += _client->add((char*)temp, chunk, ASYNC_WRITE_FLAG_COPY);
     }
     delete[] temp;
     if(_request->available() == 0){
