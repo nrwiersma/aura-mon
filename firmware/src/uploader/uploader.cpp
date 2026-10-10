@@ -263,7 +263,15 @@ uint32_t Uploader::handleWait() {
         return CONTINUE_DELAY_MS;
     }
 
-    LOGE("uploader %s: post failed, HTTP %d", _id.c_str(), code);
+    if (code < 0 || code >= 500) {
+        // Negative codes are connection-level failures (refused, timed out,
+        // lost, etc.) and 5xx are server-side errors - neither indicates a
+        // bug on our end, so don't spam the error log for conditions we
+        // can't control.
+        LOGD("uploader %s: post failed, HTTP %d", _id.c_str(), code);
+    } else {
+        LOGE("uploader %s: post failed, HTTP %d", _id.c_str(), code);
+    }
     recordResult(false, code);
     _state = State::Build;
     return RETRY_DELAY_MS;
