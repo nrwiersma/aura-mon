@@ -8,6 +8,7 @@
 #include <LittleFS.h>
 #include <HTTPRequest.h>
 #include "csv_query.h"
+#include "metrics_query.h"
 #include "uploader/uploader.h"
 
 const char *contentTypeJSON PROGMEM = "application/json";
@@ -17,6 +18,8 @@ const char *contentTypeCSV PROGMEM = "text/csv";
 
 HTTPServer::ClientFuture hookEnergy(const String &method, const String &url, const String &params, WiFiClient *client,
                                     WebServer::ContentTypeFunction contentType);
+HTTPServer::ClientFuture hookMetrics(const String &method, const String &url, const String &params, WiFiClient *client,
+                                     WebServer::ContentTypeFunction contentType);
 
 void returnOK();
 void handleGetConfig();
@@ -30,11 +33,11 @@ void handleOtaUpload();
 void handlePublicUploadFinish();
 void handlePublicUpload();
 void handleDeviceAction();
-void handleMetrics();
 void handleReboot();
 
 void setupAPI() {
     server.addHook(hookEnergy);
+    server.addHook(hookMetrics);
     server.on("/config", HTTP_GET, handleGetConfig);
     server.on("/config", HTTP_POST, handlePostConfig);
     server.on("/status", HTTP_GET, handleStatus);
@@ -44,7 +47,6 @@ void setupAPI() {
     server.on("/logs/trunc", HTTP_POST, handleLogsTrunc);
     server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
     server.on("/ota/public", HTTP_POST, handlePublicUploadFinish, handlePublicUpload);
-    server.on("/metrics", HTTP_GET, handleMetrics);
     server.on("/reboot", HTTP_POST, handleReboot);
     server.on("/readyz", HTTP_GET, returnOK);
     server.on("/livez", HTTP_GET, returnOK);
@@ -250,235 +252,29 @@ void handleReboot() {
     safeReboot();
 }
 
-void handleMetrics() {
-    const uint32_t errors = metrics.modbus_errors_total.load(std::memory_order_relaxed);
-    const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
-    const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
-    const uint32_t collectRuns = metrics.modbus_collect_runs_total.load(std::memory_order_relaxed);
-    const uint32_t datalogReadIO = metrics.datalog_read_io.load(std::memory_order_relaxed);
-    const uint32_t datalogWriteIO = metrics.datalog_write_io.load(std::memory_order_relaxed);
-    const uint32_t datalogWriteMsTotal = metrics.datalog_write_time_ms_total.load(std::memory_order_relaxed);
-    const uint32_t datalogCacheHit = metrics.datalog_cache_hit.load(std::memory_order_relaxed);
-    const uint32_t datalogWriteErrors = metrics.datalog_write_errors_total.load(std::memory_order_relaxed);
-    const uint32_t datalogQueueDepth = metrics.datalog_queue_depth.load(std::memory_order_relaxed);
-    const uint32_t datalogQueueFull = metrics.datalog_queue_full_total.load(std::memory_order_relaxed);
-    const uint32_t datalogDropped = metrics.datalog_records_dropped_total.load(std::memory_order_relaxed);
-    const uint32_t ntpSyncs = metrics.ntp_syncs_total.load(std::memory_order_relaxed);
-    const uint32_t ntpFailures = metrics.ntp_failures_total.load(std::memory_order_relaxed);
-    const int32_t  ntpOffsetMs = metrics.ntp_last_offset_ms.load(std::memory_order_relaxed);
-    const uint32_t ethDisconnects = metrics.ethernet_disconnects_total.load(std::memory_order_relaxed);
-    const uint32_t logErrors = metrics.log_errors_total.load(std::memory_order_relaxed);
-
-    String response;
-    response.reserve(6144);
-
-    // Modbus metrics.
-    response += F("# HELP auramon_modbus_errors_total Total modbus collection errors.\n");
-    response += F("# TYPE auramon_modbus_errors_total counter\n");
-    response += F("auramon_modbus_errors_total ");
-    response += String(errors);
-    response += '\n';
-    response += F("# HELP auramon_collect_time_seconds_total Total time spent collecting data in seconds.\n");
-    response += F("# TYPE auramon_collect_time_seconds_total counter\n");
-    response += F("auramon_collect_time_seconds_total ");
-    response += String(totalMs / 1000.0, 6);
-    response += '\n';
-    response += F(
-        "# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
-    response += F("# TYPE auramon_collect_time_seconds_avg gauge\n");
-    response += F("auramon_collect_time_seconds_avg ");
-    response += String(avgMs / 1000.0, 6);
-    response += '\n';
-    response += F("# HELP auramon_modbus_collect_runs_total Total number of Modbus collection cycles run.\n");
-    response += F("# TYPE auramon_modbus_collect_runs_total counter\n");
-    response += F("auramon_modbus_collect_runs_total ");
-    response += String(collectRuns);
-    response += '\n';
-
-    // Per-device Modbus metrics.
-    response += F("# HELP auramon_modbus_device_errors_total Total errors per Modbus device.\n");
-    response += F("# TYPE auramon_modbus_device_errors_total counter\n");
-    mutex_enter_blocking(&deviceInfoMu);
-    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        const auto info = deviceInfos[i];
-        if (!info || !info->isEnabled()) continue;
-        const uint32_t devErrors = metrics.modbus_device_errors_total[i].load(std::memory_order_relaxed);
-        response += F("auramon_modbus_device_errors_total{device=\"");
-        response += info->name;
-        response += F("\",address=\"");
-        response += String(info->addr);
-        response += F("\"} ");
-        response += String(devErrors);
-        response += '\n';
+HTTPServer::ClientFuture hookMetrics(const String &method, const String &url, const String &params, WiFiClient *client,
+                                     WebServer::ContentTypeFunction contentType) {
+    if (url != "/metrics" || !method.equals("GET")) {
+        // This is not a metrics scrape, pass it onto the handlers.
+        return WebServer::CLIENT_REQUEST_CAN_CONTINUE;
     }
-    response += F(
-        "# HELP auramon_modbus_device_collect_time_seconds Last successful collection time per Modbus device in seconds.\n");
-    response += F("# TYPE auramon_modbus_device_collect_time_seconds gauge\n");
-    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        const auto info = deviceInfos[i];
-        if (!info || !info->isEnabled()) continue;
-        const uint32_t devMs = metrics.modbus_device_last_collect_ms[i].load(std::memory_order_relaxed);
-        response += F("auramon_modbus_device_collect_time_seconds{device=\"");
-        response += info->name;
-        response += F("\",address=\"");
-        response += String(info->addr);
-        response += F("\"} ");
-        response += String(devMs / 1000.0, 6);
-        response += '\n';
+
+    // From this point on, either CLIENT_MUST_STOP or CLIENT_IS_GIVEN must be returned.
+
+    if (metricsQuery::active()) {
+        // Only one scrape is streamed at a time.
+        HTTPRequest req(method, url, params, client, contentType);
+        req.send(503, contentTypePlain, F("scrape already in progress\n"));
+        req.finish();
+        return WebServer::CLIENT_MUST_STOP;
     }
-    mutex_exit(&deviceInfoMu);
 
-    // Datalog metrics.
-    response += F("# HELP auramon_datalog_read_io Number of read IO operations performed on the datalog.\n");
-    response += F("# TYPE auramon_datalog_read_io counter\n");
-    response += F("auramon_datalog_read_io ");
-    response += String(datalogReadIO);
-    response += '\n';
-    response += F("# HELP auramon_datalog_write_io Number of write IO operations performed on the datalog.\n");
-    response += F("# TYPE auramon_datalog_write_io counter\n");
-    response += F("auramon_datalog_write_io ");
-    response += String(datalogWriteIO);
-    response += '\n';
-    response += F(
-        "# HELP auramon_datalog_write_time_seconds_total Total time spent writing datalog records in seconds.\n");
-    response += F("# TYPE auramon_datalog_write_time_seconds_total counter\n");
-    response += F("auramon_datalog_write_time_seconds_total ");
-    response += String(datalogWriteMsTotal / 1000.0, 6);
-    response += '\n';
-    response += F("# HELP auramon_datalog_cache_hit Number of cache hits when reading records from the datalog.\n");
-    response += F("# TYPE auramon_datalog_cache_hit counter\n");
-    response += F("auramon_datalog_cache_hit ");
-    response += String(datalogCacheHit);
-    response += '\n';
-    response += F("# HELP auramon_datalog_write_errors_total Total failed datalog write attempts.\n");
-    response += F("# TYPE auramon_datalog_write_errors_total counter\n");
-    response += F("auramon_datalog_write_errors_total ");
-    response += String(datalogWriteErrors);
-    response += '\n';
-    response += F("# HELP auramon_datalog_queue_depth Number of records waiting to be written to the datalog.\n");
-    response += F("# TYPE auramon_datalog_queue_depth gauge\n");
-    response += F("auramon_datalog_queue_depth ");
-    response += String(datalogQueueDepth);
-    response += '\n';
-    response += F(
-        "# HELP auramon_datalog_queue_full_total Total times a record could not be queued because the queue was full.\n");
-    response += F("# TYPE auramon_datalog_queue_full_total counter\n");
-    response += F("auramon_datalog_queue_full_total ");
-    response += String(datalogQueueFull);
-    response += '\n';
-    response += F(
-        "# HELP auramon_datalog_records_dropped_total Total records dropped after repeated write failures.\n");
-    response += F("# TYPE auramon_datalog_records_dropped_total counter\n");
-    response += F("auramon_datalog_records_dropped_total ");
-    response += String(datalogDropped);
-    response += '\n';
-
-    // NTP metrics.
-    response += F("# HELP auramon_ntp_syncs_total Total successful NTP synchronisations.\n");
-    response += F("# TYPE auramon_ntp_syncs_total counter\n");
-    response += F("auramon_ntp_syncs_total ");
-    response += String(ntpSyncs);
-    response += '\n';
-    response += F("# HELP auramon_ntp_failures_total Total failed NTP synchronisation attempts.\n");
-    response += F("# TYPE auramon_ntp_failures_total counter\n");
-    response += F("auramon_ntp_failures_total ");
-    response += String(ntpFailures);
-    response += '\n';
-    response += F("# HELP auramon_ntp_offset_ms Clock offset applied during the last NTP sync in milliseconds.\n");
-    response += F("# TYPE auramon_ntp_offset_ms gauge\n");
-    response += F("auramon_ntp_offset_ms ");
-    response += String((long) ntpOffsetMs);
-    response += '\n';
-
-    // Network metrics.
-    response += F("# HELP auramon_ethernet_disconnects_total Total number of Ethernet link-loss events.\n");
-    response += F("# TYPE auramon_ethernet_disconnects_total counter\n");
-    response += F("auramon_ethernet_disconnects_total ");
-    response += String(ethDisconnects);
-    response += '\n';
-
-    // Logging metrics.
-    response += F("# HELP auramon_log_errors_total Total number of error-level log messages emitted.\n");
-    response += F("# TYPE auramon_log_errors_total counter\n");
-    response += F("auramon_log_errors_total ");
-    response += String(logErrors);
-    response += '\n';
-
-    // Uploader metrics.
-    const uint32_t datalogLastTS = datalog.lastTS();
-    response += F("# HELP auramon_uploader_requests_total Total successful upload requests.\n");
-    response += F("# TYPE auramon_uploader_requests_total counter\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_requests_total{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(u.successTotal());
-        response += '\n';
-    });
-    response += F("# HELP auramon_uploader_errors_total Total failed upload attempts.\n");
-    response += F("# TYPE auramon_uploader_errors_total counter\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_errors_total{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(u.failureTotal());
-        response += '\n';
-    });
-    response += F(
-        "# HELP auramon_uploader_consecutive_failures Current number of consecutive failed upload attempts.\n");
-    response += F("# TYPE auramon_uploader_consecutive_failures gauge\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_consecutive_failures{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(u.consecutiveFailures());
-        response += '\n';
-    });
-    response += F(
-        "# HELP auramon_uploader_lag_seconds How far behind the uploader is from the most recently logged record, in seconds.\n");
-    response += F("# TYPE auramon_uploader_lag_seconds gauge\n");
-    forEachUploader([&](const Uploader &u) {
-        const uint32_t lag = datalogLastTS > u.lastSentTS() ? datalogLastTS - u.lastSentTS() : 0;
-        response += F("auramon_uploader_lag_seconds{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(lag);
-        response += '\n';
-    });
-    response += F(
-        "# HELP auramon_uploader_last_success_timestamp_seconds Unix timestamp of the last successful upload.\n");
-    response += F("# TYPE auramon_uploader_last_success_timestamp_seconds gauge\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_last_success_timestamp_seconds{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String((long) u.lastSuccessAt());
-        response += '\n';
-    });
-    response += F(
-        "# HELP auramon_uploader_last_http_status HTTP status of the last completed request; -1 if the last attempt failed before a response was received, 0 if none has completed yet.\n");
-    response += F("# TYPE auramon_uploader_last_http_status gauge\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_last_http_status{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(u.lastHttpStatus());
-        response += '\n';
-    });
-
-    server.send(200, contentTypePlain, response);
+    auto *req = new HTTPRequest(method, url, params, client, contentType);
+    req->enableCORS();
+    auto *qry = new metricsQuery(req);
+    req->takeClientOwnership();
+    c0Queue.add(&metricsQuery::stepTask, 4, qry);
+    return WebServer::CLIENT_IS_GIVEN;
 }
 
 void handleStatus() {

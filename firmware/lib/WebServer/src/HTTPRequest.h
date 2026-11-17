@@ -54,6 +54,25 @@ public:
     void enableCORS(bool value = true) { _corsEnabled = value; }
     void takeClientOwnership() { _ownsClient = true; }
 
+    // setTimeout bounds how long a single write may wait for the peer to ack data.
+    void setTimeout(uint32_t ms) { _client->setTimeout(ms); }
+
+    // availableForWrite returns the free space in the TCP send buffer, which is
+    // the amount that can be written without blocking.
+    int availableForWrite() {
+        ethernet_arch_lwip_begin();
+        const int n = _client->availableForWrite();
+        ethernet_arch_lwip_end();
+        return n;
+    }
+
+    bool connected() {
+        ethernet_arch_lwip_begin();
+        const bool c = _client->connected();
+        ethernet_arch_lwip_end();
+        return c;
+    }
+
     void sendHeader(const String &name, const String &value, bool first = false);
     void sendContent(const String &content);
     void sendContent(const char *content, size_t contentLength);
@@ -72,6 +91,16 @@ public:
         }
         ethernet_arch_lwip_begin();
         _client->flush();
+        _client->stop();
+        ethernet_arch_lwip_end();
+        _finished = true;
+    }
+
+    // abort closes the connection without writing the chunk terminator, so a
+    // truncated chunked body surfaces as an error to the peer.
+    void abort() {
+        if (_finished) return;
+        ethernet_arch_lwip_begin();
         _client->stop();
         ethernet_arch_lwip_end();
         _finished = true;

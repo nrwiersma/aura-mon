@@ -28,9 +28,6 @@ public:
     // false if the queue is empty or the lock could not be taken.
     bool pop(LogRecord *rec);
 
-    // size returns the number of records waiting in the queue.
-    uint32_t size();
-
 private:
     // The lock is only ever held for a single record copy.
     static constexpr uint32_t LOCK_TIMEOUT_MS = 10;

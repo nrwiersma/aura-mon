@@ -8,6 +8,7 @@
 #include "../test/stubs/TestCore.h"
 #endif
 #include "log_queue.h"
+#include "metrics.h"
 
 // Records are copied in and out of the queue by value, so a record must never
 // hold anything that cannot simply be copied, such as a pointer to memory it
@@ -28,6 +29,7 @@ bool logQueue::push(const LogRecord *rec) {
     _recs[_tail] = *rec;
     _tail = (_tail + 1) % LOG_QUEUE_SIZE;
     _count++;
+    metrics.datalog_queue_depth.store(_count, std::memory_order_relaxed);
 
     mutex_exit(&_mu);
     return true;
@@ -47,14 +49,8 @@ bool logQueue::pop(LogRecord *rec) {
     *rec = _recs[_head];
     _head = (_head + 1) % LOG_QUEUE_SIZE;
     _count--;
+    metrics.datalog_queue_depth.store(_count, std::memory_order_relaxed);
 
     mutex_exit(&_mu);
     return true;
-}
-
-uint32_t logQueue::size() {
-    mutex_enter_blocking(&_mu);
-    auto c = _count;
-    mutex_exit(&_mu);
-    return c;
 }

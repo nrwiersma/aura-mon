@@ -109,7 +109,7 @@ uint32_t logData(void *param) {
         // restart the window whenever the consumer drains a record, so that
         // slow-but-alive SD writes (e.g. a long FAT flush) and catch-up
         // bursts do not trigger a false restart.
-        const auto depth = records.size();
+        const auto depth = metrics.datalog_queue_depth.load(std::memory_order_relaxed);
         const auto now = millis();
         if (queueFullSinceMs == 0 || depth < queueLastDepth) {
             queueFullSinceMs = now;
@@ -130,7 +130,6 @@ uint32_t logData(void *param) {
         return 10;
     }
     queueFullSinceMs = 0;
-    metrics.datalog_queue_depth.store(records.size(), std::memory_order_relaxed);
 
     const auto took = millis() - start;
     LOGD("Queued record %d for log took %dms", rec->ts, took);
@@ -180,7 +179,6 @@ static bool writeNextRecord() {
         if (!records.pop(&rec)) {
             return false;
         }
-        metrics.datalog_queue_depth.store(records.size(), std::memory_order_relaxed);
 
         pending = true;
         retries = 0;
