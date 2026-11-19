@@ -22,9 +22,6 @@ struct promMetrics {
     std::atomic<uint32_t> datalog_cache_hit{0};
     std::atomic<uint32_t> datalog_write_errors_total{0};
     std::atomic<uint32_t> datalog_write_consecutive_failures{0};
-    std::atomic<uint32_t> datalog_queue_depth{0};
-    std::atomic<uint32_t> datalog_queue_full_total{0};
-    std::atomic<uint32_t> datalog_records_dropped_total{0};
 
     // NTP
     std::atomic<uint32_t> ntp_syncs_total{0};

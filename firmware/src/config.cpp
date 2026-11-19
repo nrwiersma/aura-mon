@@ -72,69 +72,63 @@ void writeNetworkConfigToJson(JsonObject obj) {
     obj["dns"] = netCfg.dns.c_str();
 }
 
-InputDeviceInfo *ensureDeviceInfo(uint8_t address) {    if (address == 0 || address > MAX_DEVICES) {
+InputDevice *ensureDevice(uint8_t address) {
+    if (address == 0 || address > MAX_DEVICES) {
         return nullptr;
     }
     const size_t idx = address - 1;
-    if (!deviceInfos[idx]) {
-        deviceInfos[idx] = new InputDeviceInfo(address);
+    if (!devices[idx]) {
+        devices[idx] = new InputDevice(address);
     }
-    return deviceInfos[idx];
+    return devices[idx];
 }
 
-void removeDevicesFromLocked(size_t startIdx) {
+void removeDevicesFrom(size_t startIdx) {
     if (startIdx >= MAX_DEVICES) {
         return;
     }
 
     for (size_t i = startIdx; i < MAX_DEVICES; i++) {
-        if (deviceInfos[i]) {
-            delete deviceInfos[i];
-            deviceInfos[i] = nullptr;
+        if (devices[i]) {
+            delete devices[i];
+            devices[i] = nullptr;
         }
     }
 }
 
 void applyDevicesFromJson(JsonArrayConst devicesArr) {
-    mutex_enter_blocking(&deviceInfoMu);
-    removeDevicesFromLocked(devicesArr.size());
+    removeDevicesFrom(devicesArr.size());
 
     for (JsonVariantConst entry: devicesArr) {
         if (!entry.is<JsonObjectConst>()) {
             continue;
         }
-        uint8_t          addr = entry["address"].is<int>() ? entry["address"].as<uint8_t>() : 0;
-        InputDeviceInfo *info = ensureDeviceInfo(addr);
-        if (!info) {
+        uint8_t      addr = entry["address"].is<int>() ? entry["address"].as<uint8_t>() : 0;
+        InputDevice *device = ensureDevice(addr);
+        if (!device) {
             continue;
         }
-        info->enabled = entry["enabled"].is<bool>() ? entry["enabled"].as<bool>() : false;
-        info->addr = addr;
-        info->calibration = entry["calibration"].is<float>() ? entry["calibration"].as<float>() : 1.0f;
-        info->reversed = entry["reversed"].is<bool>() ? entry["reversed"].as<bool>() : false;
-        assignFromJson(info->name, entry["name"].is<const char *>() ? entry["name"].as<const char *>() : "");
+        device->enabled = entry["enabled"].is<bool>() ? entry["enabled"].as<bool>() : false;
+        device->addr = addr;
+        device->calibration = entry["calibration"].is<float>() ? entry["calibration"].as<float>() : 1.0f;
+        device->reversed = entry["reversed"].is<bool>() ? entry["reversed"].as<bool>() : false;
+        assignFromJson(device->name, entry["name"].is<const char *>() ? entry["name"].as<const char *>() : "");
     }
-
-    mutex_exit(&deviceInfoMu);
 }
 
 void populateDevicesJson(JsonArray devicesArray) {
-    mutex_enter_blocking(&deviceInfoMu);
-
     for (int i = 0; i < MAX_DEVICES; i++) {
-        InputDeviceInfo *info = deviceInfos[i];
-        if (!info || !info->enabled) {
+        InputDevice *device = devices[i];
+        if (!device) {
             continue;
         }
-        JsonObject device = devicesArray.add<JsonObject>();
-        device["enabled"] = info->enabled;
-        device["address"] = info->addr;
-        device["name"] = info->name.c_str();
-        device["calibration"] = info->calibration;
-        device["reversed"] = info->reversed;
+        JsonObject dev = devicesArray.add<JsonObject>();
+        dev["enabled"] = device->enabled;
+        dev["address"] = device->addr;
+        dev["name"] = device->name.c_str();
+        dev["calibration"] = device->calibration;
+        dev["reversed"] = device->reversed;
     }
-
-    mutex_exit(&deviceInfoMu);
 }
 
 UploaderConfig *ensureUploaderConfig(const char *id) {
@@ -154,8 +148,6 @@ UploaderConfig *ensureUploaderConfig(const char *id) {
 }
 
 void applyUploadersFromJson(JsonArrayConst uploadersArr) {
-    mutex_enter_blocking(&uploaderConfigMu);
-
     bool used[MAX_UPLOADERS] = {};
 
     for (JsonVariantConst entry: uploadersArr) {
@@ -178,7 +170,7 @@ void applyUploadersFromJson(JsonArrayConst uploadersArr) {
 
         cfg->settings = "";
         if (entry["settings"].is<JsonObjectConst>()) {
-            char buf[512];
+            char   buf[512];
             size_t n = serializeJson(entry["settings"], buf, sizeof(buf));
             if (n > 0) {
                 cfg->settings = buf;
@@ -202,13 +194,9 @@ void applyUploadersFromJson(JsonArrayConst uploadersArr) {
     }
 
     uploadersChanged = true;
-
-    mutex_exit(&uploaderConfigMu);
 }
 
 void populateUploadersJson(JsonArray uploadersArray) {
-    mutex_enter_blocking(&uploaderConfigMu);
-
     for (int i = 0; i < MAX_UPLOADERS; i++) {
         UploaderConfig *cfg = uploaderConfigs[i];
         if (!cfg) {
@@ -227,18 +215,14 @@ void populateUploadersJson(JsonArray uploadersArray) {
             }
         }
     }
-
-    mutex_exit(&uploaderConfigMu);
 }
 
 error loadConfig() {
-    mutex_enter_blocking(&sdMu);
     FsFile file = sd.open(CONFIG_LOG_PATH, O_RDONLY);
     if (!file) {
         // Fall back to the last successful temp file.
         file = sd.open(CONFIG_LOG_TMP_PATH, O_RDONLY);
         if (!file) {
-            mutex_exit(&sdMu);
             return newError("could not open config file");
         }
     }
@@ -248,7 +232,6 @@ error loadConfig() {
     auto err = deserializeJson(doc, file);
 
     file.close();
-    mutex_exit(&sdMu);
 
     if (err) {
         return newError("could not decode config file");
@@ -257,7 +240,7 @@ error loadConfig() {
     return loadConfigJSON(doc);
 }
 
-void ensureConfigDirectoryLocked() {
+void ensureConfigDirectory() {
     const char *path = CONFIG_LOG_PATH;
     const char *slash = strrchr(path, '/');
     if (!slash) {
@@ -277,26 +260,21 @@ error saveConfig() {
     JsonDocument doc;
     saveConfigJSON(doc);
 
-    mutex_enter_blocking(&sdMu);
-    ensureConfigDirectoryLocked();
+    ensureConfigDirectory();
     FsFile file = sd.open(CONFIG_LOG_TMP_PATH, O_RDWR | O_CREAT | O_TRUNC);
     if (!file) {
-        mutex_exit(&sdMu);
         return newError("could not create config file");
     }
     if (serializeJson(doc, file) == 0) {
         file.close();
-        mutex_exit(&sdMu);
         return newError("could not write config file");
     }
     file.flush();
     file.close();
     sd.remove(CONFIG_LOG_PATH);
     if (!sd.rename(CONFIG_LOG_TMP_PATH, CONFIG_LOG_PATH)) {
-        mutex_exit(&sdMu);
         return newError("could not rename config file");
     }
-    mutex_exit(&sdMu);
     return {};
 }
 

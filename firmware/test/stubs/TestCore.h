@@ -27,6 +27,10 @@
 #define LOGI(...)
 #define LOGE(...)
 
+enum class WdtSource : uint8_t { Collect, LogData, Count };
+inline void wdtProgress(WdtSource) {}
+inline void wdtFeed() {}
+
 // ---- globals ---------------------------------------------------------------
 inline mutex_t deviceInfoMu;
 inline volatile bool devicesChanged = false;

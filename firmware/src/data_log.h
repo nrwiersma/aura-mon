@@ -41,7 +41,6 @@ public:
         const double   recordsPerDay = 86400.0 / static_cast<double>(_interval);
         const uint32_t computedSize = static_cast<uint32_t>(days * recordsPerDay * _recordSize);
         _maxFileSize = max(static_cast<uint32_t>(_recordSize), computedSize);
-        mutex_init(&_mu);
         _lastCache = new LogRecord[_lastCacheSize]{};
     };
 
@@ -54,7 +53,7 @@ public:
     uint32_t lastRev();
     uint32_t lastTS();
     uint32_t fileSize();
-    error read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS = 100);
+    error read(uint32_t ts, LogRecord *rec);
     error write(LogRecord *rec);
 
 private:
@@ -62,8 +61,6 @@ private:
         uint32_t rev;
         uint32_t ts;
     };
-
-    mutex_t _mu{};
 
     FsFile   _file;
     uint16_t _interval;

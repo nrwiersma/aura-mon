@@ -70,7 +70,7 @@ uint32_t timeSync(void *param) {
     IPAddress srvIP;
     if (!eth.hostByName(srv.c_str(), srvIP)) {
         metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
-        return rtcRunning ? 60 : 5;
+        return rtcRunning ? 60000 : 5000;
     }
 
     uint32_t        sentTS = millis();
@@ -88,7 +88,7 @@ uint32_t timeSync(void *param) {
         if (millis() - sentTS > (rtcRunning ? 3000 : 10000)) {
             udp.stop();
             metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
-            return rtcRunning ? 60 : 5;
+            return rtcRunning ? 60000 : 5000;
         }
     }
 
@@ -98,7 +98,7 @@ uint32_t timeSync(void *param) {
 
     if (pktSize < sizeof(ntpPacket)) {
         metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
-        return rtcRunning ? 60 : 5;
+        return rtcRunning ? 60000 : 5000;
     }
     if (pkt.stratum == 0) {
         LOGE("timeSync: Time server sent kiss-o-death packet: code=%c%c%c%c, ip=%s",
@@ -106,7 +106,7 @@ uint32_t timeSync(void *param) {
              srvIP.toString().c_str()
         );
         metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);
-        return rtcRunning ? 60 : 15;
+        return rtcRunning ? 60000 : 15000;
     }
 
     timestamp_ntoh(&pkt.transmitTS);

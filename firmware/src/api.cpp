@@ -139,7 +139,7 @@ HTTPServer::ClientFuture hookEnergy(const String &method, const String &url, con
 
     auto *qry = new csvQuery(start, end, interval, req);
     req->takeClientOwnership();
-    c0Queue.add(&csvQuery::stepTask, 4, qry);
+    queue.add(&csvQuery::stepTask, 4, qry);
     return WebServer::CLIENT_IS_GIVEN;
 }
 
@@ -182,10 +182,6 @@ void handlePostConfig() {
         return;
     }
 
-    mutex_enter_blocking(&deviceInfoMu);
-    devicesChanged = true;
-    mutex_exit(&deviceInfoMu);
-
     server.send(200, contentTypePlain, "");
 }
 
@@ -226,20 +222,12 @@ void handleDeviceAction() {
         return;
     }
 
-    if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {
-        returnInternalError("could not acquire deviceInfoMu");
-        return;
-    }
-
-    if (deviceActionControl.type != DeviceActionType::None) {
-        mutex_exit(&deviceActionMu);
+    if (deviceAction.type != DeviceActionType::None) {
         server.send(409, contentTypeJSON, F("{\"error\":\"Action already pending\"}"));
         return;
     }
 
-    deviceActionControl = {action, static_cast<uint8_t>(address)};
-
-    mutex_exit(&deviceActionMu);
+    deviceAction = {action, static_cast<uint8_t>(address)};
 
     server.send(202, contentTypeJSON, F("{\"status\":\"queued\"}"));
 }
@@ -273,7 +261,7 @@ HTTPServer::ClientFuture hookMetrics(const String &method, const String &url, co
     req->enableCORS();
     auto *qry = new metricsQuery(req);
     req->takeClientOwnership();
-    c0Queue.add(&metricsQuery::stepTask, 4, qry);
+    queue.add(&metricsQuery::stepTask, 4, qry);
     return WebServer::CLIENT_IS_GIVEN;
 }
 
@@ -291,22 +279,21 @@ void handleStatus() {
 
     JsonArray devicesArr = doc["devices"].to<JsonArray>();
 
-    mutex_enter_blocking(&deviceDataMu);
-
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        auto data = deviceData[i];
+        auto data = devices[i];
         if (!data || data->name.isEmpty()) {
             continue;
         }
 
         auto deviceObj = devicesArr.add<JsonObject>();
         deviceObj["name"] = data->name;
-        deviceObj["volts"] = data->volts;
-        deviceObj["amps"] = data->amps;
-        deviceObj["pf"] = data->pf;
-        deviceObj["hz"] = data->hz;
+        deviceObj["volts"] = data->current.volts;
+        deviceObj["amps"] = data->current.volts != 0.0
+                                ? (data->current.va / data->current.volts)
+                                : 0.0;
+        deviceObj["pf"] = data->current.va != 0.0 ? data->current.watts / data->current.va : 0.0;
+        deviceObj["hz"] = data->current.hz;
     }
-    mutex_exit(&deviceDataMu);
 
     JsonObject datalogObj = doc["datalog"].to<JsonObject>();
     datalogObj["firstRev"] = datalog.firstRev();
@@ -327,7 +314,7 @@ void handleStatus() {
                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     networkObj["mac"] = mac_str;
 
-    JsonArray uploadersArr = doc["uploaders"].to<JsonArray>();
+    JsonArray      uploadersArr = doc["uploaders"].to<JsonArray>();
     const uint32_t datalogLastTS = datalog.lastTS();
     forEachUploader([&](const Uploader &u) {
         auto uploaderObj = uploadersArr.add<JsonObject>();
@@ -351,6 +338,8 @@ void handleStatus() {
 }
 
 void handleLogs() {
+    WdtHoldGuard hold;
+
     uint32_t startOffset = 0;
     if (server.hasArg("start")) {
         startOffset = server.arg("start").toInt();
@@ -368,13 +357,7 @@ void handleLogs() {
         }
     }
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
     if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
@@ -384,13 +367,11 @@ void handleLogs() {
         if (startOffset >= fileSize) {
             server.send(204, contentTypePlain, "");
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
         if (startOffset > 0 && !f.seek(startOffset)) {
             returnInternalError("could not seek log");
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
 
@@ -401,14 +382,12 @@ void handleLogs() {
         if (remaining == 0) {
             server.send(204, contentTypePlain, "");
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
 
         if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
             server.send(505, contentTypePlain, F("HTTP1.1 required"));
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
 
@@ -419,40 +398,33 @@ void handleLogs() {
                 break;
             }
             server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
+            wdtFeed();
             remaining -= static_cast<size_t>(readLen);
         }
         server.chunkedResponseFinalize();
         f.close();
-
-        mutex_exit(&sdMu);
         return;
     }
-    mutex_exit(&sdMu);
 
     server.send(404, contentTypeJSON, "Not Found");
 }
 
 void handleLogsTrunc() {
+    WdtHoldGuard hold;
+
     LOGI("Log truncation requested");
 
     constexpr char   restartMarker[] = "**** RESTART ****";
     constexpr size_t restartMarkerLen = sizeof(restartMarker) - 1;
     constexpr char   tempPath[] = MESSAGE_LOG_PATH ".trunc";
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
     if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
 
     auto src = sd.open(MESSAGE_LOG_PATH, O_READ);
     if (!src) {
-        mutex_exit(&sdMu);
         returnInternalError("could not open log");
         return;
     }
@@ -465,12 +437,13 @@ void handleLogsTrunc() {
     bool             markerFound = false;
 
     for (uint32_t chunkEnd = src.size(); chunkEnd > 0 && !markerFound;) {
+        wdtFeed();
+
         const uint32_t chunkStart = (chunkEnd > chunkSize) ? (chunkEnd - chunkSize) : 0;
         const size_t   chunkLen = chunkEnd - chunkStart;
 
         if (!src.seek(chunkStart)) {
             src.close();
-            mutex_exit(&sdMu);
             returnInternalError("could not seek log");
             return;
         }
@@ -478,7 +451,6 @@ void handleLogsTrunc() {
         const int readLen = src.read(window, chunkLen);
         if (readLen < 0 || static_cast<size_t>(readLen) != chunkLen) {
             src.close();
-            mutex_exit(&sdMu);
             returnInternalError("could not read log");
             return;
         }
@@ -512,7 +484,6 @@ void handleLogsTrunc() {
     const uint32_t startOffset = markerFound ? lastMarkerOffset : 0;
     if (!src.seek(startOffset)) {
         src.close();
-        mutex_exit(&sdMu);
         returnInternalError("could not seek log");
         return;
     }
@@ -520,7 +491,6 @@ void handleLogsTrunc() {
     auto tmp = sd.open(tempPath, O_WRITE | O_CREAT | O_TRUNC);
     if (!tmp) {
         src.close();
-        mutex_exit(&sdMu);
         returnInternalError("could not open temp log");
         return;
     }
@@ -532,11 +502,12 @@ void handleLogsTrunc() {
             break;
         }
 
+        wdtFeed();
+
         if (tmp.write(buffer, static_cast<size_t>(readLen)) != static_cast<size_t>(readLen)) {
             tmp.close();
             src.close();
             sd.remove(tempPath);
-            mutex_exit(&sdMu);
             returnInternalError("could not write temp log");
             return;
         }
@@ -549,14 +520,11 @@ void handleLogsTrunc() {
     sd.remove(MESSAGE_LOG_PATH);
     if (!sd.rename(tempPath, MESSAGE_LOG_PATH)) {
         sd.remove(tempPath);
-        mutex_exit(&sdMu);
         returnInternalError("could not replace log");
         return;
     }
 
     LOGD("Log truncated at offset %u", startOffset);
-
-    mutex_exit(&sdMu);
 
     server.send(204, contentTypePlain, "");
 }
@@ -564,6 +532,21 @@ void handleLogsTrunc() {
 static bool    otaRestartNeeded = false;
 static bool    otaUploadFailed = false;
 static uint8_t otaErrorCode = UPDATE_ERROR_OK;
+static bool    otaHeld = false;
+
+// UploadHoldRelease drops the watchdog hold taken when an upload started once
+// the upload has ended or aborted, whichever way the handler returns.
+struct UploadHoldRelease {
+    bool &held;
+    bool  release;
+
+    ~UploadHoldRelease() {
+        if (release && held) {
+            wdtRelease();
+            held = false;
+        }
+    }
+};
 
 void handleOtaFinish() {
     if (otaUploadFailed || Update.hasError()) {
@@ -592,7 +575,13 @@ void handleOtaFinish() {
 void handleOtaUpload() {
     HTTPUpload &upload = server.upload();
 
+    UploadHoldRelease holdRelease{otaHeld, upload.status == UPLOAD_FILE_END || upload.status == UPLOAD_FILE_ABORTED};
+
     if (upload.status == UPLOAD_FILE_START) {
+        if (!otaHeld) {
+            wdtHold();
+            otaHeld = true;
+        }
         otaUploadFailed = false;
         otaErrorCode = UPDATE_ERROR_OK;
         Update.clearError();
@@ -620,6 +609,7 @@ void handleOtaUpload() {
 
         LOGD("OTA: update started");
     } else if (upload.status == UPLOAD_FILE_WRITE && !otaUploadFailed) {
+        wdtFeed();
         if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
             otaUploadFailed = true;
             otaErrorCode = Update.getError();
@@ -629,6 +619,7 @@ void handleOtaUpload() {
 
         LOGD("OTA: written %u bytes", upload.totalSize);
     } else if (upload.status == UPLOAD_FILE_END && !otaUploadFailed) {
+        wdtFeed();
         if (!Update.end(true)) {
             otaUploadFailed = true;
             otaErrorCode = Update.getError();
@@ -646,10 +637,10 @@ void handleOtaUpload() {
     }
 }
 
+static bool   publicUploadHeld = false;
 static bool   publicUploadFailed = false;
 static int    publicUploadStatus = 200;
 static String publicUploadError;
-static bool   publicUploadMutexHeld = false;
 static FsFile publicUploadFile;
 
 void handlePublicUploadFinish() {
@@ -667,7 +658,14 @@ void handlePublicUploadFinish() {
 void handlePublicUpload() {
     HTTPUpload &upload = server.upload();
 
+    UploadHoldRelease holdRelease{publicUploadHeld,
+                                  upload.status == UPLOAD_FILE_END || upload.status == UPLOAD_FILE_ABORTED};
+
     if (upload.status == UPLOAD_FILE_START) {
+        if (!publicUploadHeld) {
+            wdtHold();
+            publicUploadHeld = true;
+        }
         publicUploadFailed = false;
         publicUploadStatus = 200;
         publicUploadError = "";
@@ -694,44 +692,25 @@ void handlePublicUpload() {
 
         LOGI("Public upload: start %s", path.c_str());
 
-        if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-            publicUploadFailed = true;
-            publicUploadStatus = 408;
-            publicUploadError = F("Request Timeout");
-            LOGE("Public upload: failed to acquire sdMu");
-            return;
-        }
-        publicUploadMutexHeld = true;
-
         publicUploadFile = sd.open(path.c_str(), O_WRITE | O_CREAT | O_TRUNC);
         if (!publicUploadFile) {
             publicUploadFailed = true;
             publicUploadStatus = 500;
             publicUploadError = F("Failed to open file");
-            mutex_exit(&sdMu);
             LOGE("Public upload: failed to open %s", path.c_str());
-            publicUploadMutexHeld = false;
         }
     } else if (upload.status == UPLOAD_FILE_WRITE && !publicUploadFailed) {
+        wdtFeed();
         if (publicUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
             publicUploadFailed = true;
             publicUploadStatus = 500;
             publicUploadError = F("Write failed");
             Serial.printf("Public upload: write failed at %u bytes", upload.totalSize);
             publicUploadFile.close();
-            if (publicUploadMutexHeld) {
-                mutex_exit(&sdMu);
-                publicUploadMutexHeld = false;
-            }
         }
     } else if (upload.status == UPLOAD_FILE_END && !publicUploadFailed) {
         publicUploadFile.flush();
         publicUploadFile.close();
-
-        if (publicUploadMutexHeld) {
-            mutex_exit(&sdMu);
-            publicUploadMutexHeld = false;
-        }
 
         LOGI("Public upload: complete (%u bytes)", upload.totalSize);
     } else if (upload.status == UPLOAD_FILE_ABORTED) {
@@ -743,25 +722,17 @@ void handlePublicUpload() {
             publicUploadFile.close();
         }
 
-        if (publicUploadMutexHeld) {
-            mutex_exit(&sdMu);
-            publicUploadMutexHeld = false;
-        }
-
         LOGE("Public upload: aborted");
     }
 }
 
 void handleNotFound() {
+    WdtHoldGuard hold;
+
     LOGD("NotFound requested URL: %s", server.uri().c_str());
 
     if (server.method() != HTTP_GET) {
         server.send(405, contentTypePlain, "Method Not Allowed");
-        return;
-    }
-
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
 
@@ -775,7 +746,6 @@ void handleNotFound() {
         server.sendHeader("Content-Encoding", "gzip");
         path = gzPath;
     } else if (!sd.exists(path.c_str())) {
-        mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
@@ -783,7 +753,6 @@ void handleNotFound() {
     if (auto f = sd.open(path.c_str(), O_READ); f) {
         if (f.isDirectory()) {
             f.close();
-            mutex_exit(&sdMu);
             server.send(403, contentTypePlain, "Forbidden");
             return;
         }
@@ -811,7 +780,6 @@ void handleNotFound() {
         if (!server.chunkedResponseModeStart(200, contentType.c_str())) {
             server.send(505, contentTypePlain, F("HTTP1.1 required"));
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
 
@@ -822,14 +790,12 @@ void handleNotFound() {
                 break;
             }
             server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
+            wdtFeed();
         }
         server.chunkedResponseFinalize();
         f.close();
-
-        mutex_exit(&sdMu);
         return;
     }
-    mutex_exit(&sdMu);
 
     server.send(404, contentTypeJSON, "Not Found");
 }

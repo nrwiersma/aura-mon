@@ -32,6 +32,8 @@ void collect() {
             metrics.modbus_device_errors_total[dev->addr - 1].fetch_add(1, std::memory_order_relaxed);
             LOGE("Could not read data from device %d: %s", dev->addr, modbusError(err));
 
+            wdtFeed();
+
             continue;
         }
 
@@ -43,7 +45,7 @@ void collect() {
         Bucket curr = dev->current;
         LOGD("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms", dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
 
-        rp2040.wdt_reset();
+        wdtFeed();
     }
 
     const unsigned long tookTotal = millis() - startTotal;
@@ -52,6 +54,8 @@ void collect() {
     metrics.modbus_collect_time_ms_total.fetch_add(tookTotal, std::memory_order_relaxed);
     const uint32_t avgMs = deviceCount > 0 ? static_cast<uint32_t>(deviceTimeMs / deviceCount) : 0;
     metrics.modbus_last_run_avg_ms.store(avgMs, std::memory_order_relaxed);
+
+    wdtProgress(WdtSource::Collect);
 }
 
 uint8_t readFrame(InputDevice *device) {

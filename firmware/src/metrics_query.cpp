@@ -115,18 +115,13 @@ uint32_t metricsQuery::_step() {
 void metricsQuery::_snapshotDevices() {
     _devicesSnapshotted = true;
 
-    if (!mutex_enter_timeout_ms(&deviceInfoMu, 100)) {
-        LOGE("metrics: could not acquire deviceInfoMu");
-        return;
-    }
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        const auto info = deviceInfos[i];
+        const auto info = devices[i];
         if (!info || !info->isEnabled()) {
             continue;
         }
         _devices[_deviceCount++] = metricsDevice{i, info->addr, info->name};
     }
-    mutex_exit(&deviceInfoMu);
 }
 
 bool metricsQuery::_buildNextSection() {
@@ -225,16 +220,6 @@ String metricsQuery::_datalogSection() {
     head(out, "auramon_datalog_write_errors_total", "Total failed datalog write attempts.", "counter");
     sample(out, "auramon_datalog_write_errors_total",
            String(metrics.datalog_write_errors_total.load(std::memory_order_relaxed)));
-    head(out, "auramon_datalog_queue_depth", "Number of records waiting to be written to the datalog.", "gauge");
-    sample(out, "auramon_datalog_queue_depth", String(metrics.datalog_queue_depth.load(std::memory_order_relaxed)));
-    head(out, "auramon_datalog_queue_full_total",
-         "Total times a record could not be queued because the queue was full.", "counter");
-    sample(out, "auramon_datalog_queue_full_total",
-           String(metrics.datalog_queue_full_total.load(std::memory_order_relaxed)));
-    head(out, "auramon_datalog_records_dropped_total",
-         "Total records dropped after repeated write failures.", "counter");
-    sample(out, "auramon_datalog_records_dropped_total",
-           String(metrics.datalog_records_dropped_total.load(std::memory_order_relaxed)));
     return out;
 }
 
