@@ -63,7 +63,7 @@ uint32_t timeSync(void *param) {
 
     if (!eth.isLinked() || !eth.connected()) {
         // Try again when ethernet is connected.
-        return rtcRunning ? 60 : 5;
+        return rtcRunning ? 60000 : 5000;
     }
 
     String    srv = ntpSrvs[srvIdx++ % numNTPSrvs];
@@ -85,6 +85,7 @@ uint32_t timeSync(void *param) {
 
     // Wait for the NTP reply.
     while (udp.parsePacket() < sizeof(ntpPacket)) {
+        wdtFeed();
         if (millis() - sentTS > (rtcRunning ? 3000 : 10000)) {
             udp.stop();
             metrics.ntp_failures_total.fetch_add(1, std::memory_order_relaxed);

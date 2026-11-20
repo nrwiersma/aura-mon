@@ -2,12 +2,12 @@
 #include "../stubs/TestCore.h"
 #include "../../src/config.h"
 
-// Helper to clean up device infos between tests
-inline void cleanupDeviceInfos() {
+// Helper to clean up devices between tests
+inline void cleanupDevices() {
     for (int i = 0; i < MAX_DEVICES; i++) {
-        if (deviceInfos[i]) {
-            delete deviceInfos[i];
-            deviceInfos[i] = nullptr;
+        if (devices[i]) {
+            delete devices[i];
+            devices[i] = nullptr;
         }
     }
 }
@@ -24,7 +24,7 @@ inline void cleanupUploaderConfigs() {
 }
 
 void setUp() {
-    cleanupDeviceInfos();
+    cleanupDevices();
     cleanupUploaderConfigs();
 
     // Reset network config to defaults between tests.
@@ -50,8 +50,8 @@ void test_config_valid() {
     doc["format"] = 1;
     auto net = doc["network"].to<JsonObject>();
     net["hostname"] = "test";
-    auto devices = doc["devices"].to<JsonArray>();
-    auto dev1 = devices.add<JsonObject>();
+    auto devs = doc["devices"].to<JsonArray>();
+    auto dev1 = devs.add<JsonObject>();
     dev1["enabled"] = true;
     dev1["address"] = 1;
     dev1["name"] = "Device1";
@@ -60,10 +60,10 @@ void test_config_valid() {
 
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL_STRING("test", netCfg.hostname.c_str());
-    TEST_ASSERT_NOT_NULL(deviceInfos[0]);
-    TEST_ASSERT_EQUAL(true, deviceInfos[0]->enabled);
-    TEST_ASSERT_EQUAL(1, deviceInfos[0]->addr);
-    TEST_ASSERT_EQUAL_STRING("Device1", deviceInfos[0]->name.c_str());
+    TEST_ASSERT_NOT_NULL(devices[0]);
+    TEST_ASSERT_EQUAL(true, devices[0]->enabled);
+    TEST_ASSERT_EQUAL(1, devices[0]->addr);
+    TEST_ASSERT_EQUAL_STRING("Device1", devices[0]->name.c_str());
 }
 
 void test_load_not_found() {
@@ -187,7 +187,7 @@ void test_config_device_calibration_defaults_to_one() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, deviceInfos[0]->calibration);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, devices[0]->calibration);
 }
 
 void test_config_device_reversed_defaults_to_false() {
@@ -201,7 +201,7 @@ void test_config_device_reversed_defaults_to_false() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FALSE(deviceInfos[1]->reversed);
+    TEST_ASSERT_FALSE(devices[1]->reversed);
 }
 
 void test_config_device_enabled_defaults_to_false() {
@@ -214,7 +214,7 @@ void test_config_device_enabled_defaults_to_false() {
 
     loadConfigJSON(doc);
 
-    TEST_ASSERT_FALSE(deviceInfos[2]->enabled);
+    TEST_ASSERT_FALSE(devices[2]->enabled);
 }
 
 // ============================================================================
@@ -260,15 +260,15 @@ void test_config_round_trip_device() {
     JsonDocument saved;
     saveConfigJSON(saved);
 
-    cleanupDeviceInfos();
+    cleanupDevices();
 
     auto err = loadConfigJSON(saved);
     TEST_ASSERT_FALSE(err);
 
-    TEST_ASSERT_NOT_NULL(deviceInfos[3]);
-    TEST_ASSERT_EQUAL_STRING("Meter4",  deviceInfos[3]->name.c_str());
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.05f, deviceInfos[3]->calibration);
-    TEST_ASSERT_TRUE(deviceInfos[3]->reversed);
+    TEST_ASSERT_NOT_NULL(devices[3]);
+    TEST_ASSERT_EQUAL_STRING("Meter4",  devices[3]->name.c_str());
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.05f, devices[3]->calibration);
+    TEST_ASSERT_TRUE(devices[3]->reversed);
 }
 
 // ============================================================================
@@ -288,8 +288,27 @@ void test_config_device_with_address_zero_is_ignored() {
     TEST_ASSERT_FALSE(err);
     // Nothing should have been created.
     for (int i = 0; i < MAX_DEVICES; i++) {
-        TEST_ASSERT_NULL(deviceInfos[i]);
+        TEST_ASSERT_NULL(devices[i]);
     }
+}
+
+void test_config_removes_devices_absent_from_config() {
+    JsonDocument first;
+    first["format"] = 1;
+    auto a = first["devices"].to<JsonArray>();
+    a.add<JsonObject>()["address"] = 1;
+    a.add<JsonObject>()["address"] = 3;
+    loadConfigJSON(first);
+    InputDevice *kept = devices[2];
+
+    JsonDocument second;
+    second["format"] = 1;
+    second["devices"].to<JsonArray>().add<JsonObject>()["address"] = 3;
+    auto err = loadConfigJSON(second);
+
+    TEST_ASSERT_FALSE(err);
+    TEST_ASSERT_NULL(devices[0]);
+    TEST_ASSERT_EQUAL_PTR(kept, devices[2]);
 }
 
 void test_config_device_with_address_above_max_is_ignored() {
@@ -304,7 +323,7 @@ void test_config_device_with_address_above_max_is_ignored() {
 
     TEST_ASSERT_FALSE(err);
     for (int i = 0; i < MAX_DEVICES; i++) {
-        TEST_ASSERT_NULL(deviceInfos[i]);
+        TEST_ASSERT_NULL(devices[i]);
     }
 }
 
@@ -321,9 +340,9 @@ void test_config_multiple_devices_loaded() {
     auto err = loadConfigJSON(doc);
 
     TEST_ASSERT_FALSE(err);
-    TEST_ASSERT_NOT_NULL(deviceInfos[0]);
-    TEST_ASSERT_NOT_NULL(deviceInfos[1]);
-    TEST_ASSERT_NOT_NULL(deviceInfos[2]);
+    TEST_ASSERT_NOT_NULL(devices[0]);
+    TEST_ASSERT_NOT_NULL(devices[1]);
+    TEST_ASSERT_NOT_NULL(devices[2]);
 }
 
 // ============================================================================
@@ -522,6 +541,7 @@ void setup() {
 
     // Edge cases
     RUN_TEST(test_config_device_with_address_zero_is_ignored);
+    RUN_TEST(test_config_removes_devices_absent_from_config);
     RUN_TEST(test_config_device_with_address_above_max_is_ignored);
     RUN_TEST(test_config_multiple_devices_loaded);
 

@@ -83,13 +83,17 @@ InputDevice *ensureDevice(uint8_t address) {
     return devices[idx];
 }
 
-void removeDevicesFrom(size_t startIdx) {
-    if (startIdx >= MAX_DEVICES) {
-        return;
+static void removeDevicesNotIn(JsonArrayConst devicesArr) {
+    bool keep[MAX_DEVICES] = {};
+    for (JsonVariantConst entry: devicesArr) {
+        int addr = entry["address"].is<int>() ? entry["address"].as<int>() : 0;
+        if (addr >= 1 && addr <= MAX_DEVICES) {
+            keep[addr - 1] = true;
+        }
     }
 
-    for (size_t i = startIdx; i < MAX_DEVICES; i++) {
-        if (devices[i]) {
+    for (size_t i = 0; i < MAX_DEVICES; i++) {
+        if (!keep[i] && devices[i]) {
             delete devices[i];
             devices[i] = nullptr;
         }
@@ -97,7 +101,7 @@ void removeDevicesFrom(size_t startIdx) {
 }
 
 void applyDevicesFromJson(JsonArrayConst devicesArr) {
-    removeDevicesFrom(devicesArr.size());
+    removeDevicesNotIn(devicesArr);
 
     for (JsonVariantConst entry: devicesArr) {
         if (!entry.is<JsonObjectConst>()) {

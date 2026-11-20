@@ -529,7 +529,6 @@ void handleLogsTrunc() {
     server.send(204, contentTypePlain, "");
 }
 
-static bool    otaRestartNeeded = false;
 static bool    otaUploadFailed = false;
 static uint8_t otaErrorCode = UPDATE_ERROR_OK;
 static bool    otaHeld = false;
@@ -554,12 +553,6 @@ void handleOtaFinish() {
         msg.concat(otaErrorCode);
         msg.concat("}");
         server.send(500, contentTypeJSON, msg);
-
-        if (otaRestartNeeded) {
-            LOGE("OTA: update failed with code %u. Rebooting", otaErrorCode);
-
-            safeReboot();
-        }
 
         LOGE("OTA: update failed with code %u", otaErrorCode);
 
