@@ -68,6 +68,7 @@ extern Ticker            ledTimer;
 extern volatile LEDColor ledState;
 
 extern Wiznet5500lwIP eth;
+extern uint8_t       activeMac[6];
 extern NetworkConfig  netCfg;
 
 extern PCF85063A rtc;

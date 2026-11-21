@@ -45,6 +45,30 @@ void setUp() {
 void tearDown() {
 }
 
+void test_config_invalid_mac_returns_error() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto net = doc["network"].to<JsonObject>();
+    net["mac"] = "not-a-mac";
+
+    auto err = loadConfigJSON(doc);
+
+    TEST_ASSERT_TRUE(err);
+    TEST_ASSERT_EQUAL_STRING("invalid mac address", err.Error());
+}
+
+void test_config_valid_mac_is_loaded() {
+    JsonDocument doc;
+    doc["format"] = 1;
+    auto net = doc["network"].to<JsonObject>();
+    net["mac"] = "02:00:00:12:34:56";
+
+    auto err = loadConfigJSON(doc);
+
+    TEST_ASSERT_FALSE(err);
+    TEST_ASSERT_EQUAL_STRING("02:00:00:12:34:56", netCfg.mac.c_str());
+}
+
 void test_config_valid() {
     JsonDocument doc;
     doc["format"] = 1;
@@ -525,6 +549,8 @@ void setup() {
 
     // IP validation
     RUN_TEST(test_config_invalid_ip_returns_error);
+    RUN_TEST(test_config_invalid_mac_returns_error);
+    RUN_TEST(test_config_valid_mac_is_loaded);
     RUN_TEST(test_config_invalid_gateway_returns_error);
     RUN_TEST(test_config_invalid_mask_returns_error);
     RUN_TEST(test_config_invalid_dns_returns_error);

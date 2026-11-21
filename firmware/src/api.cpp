@@ -311,7 +311,7 @@ void handleStatus() {
     networkObj["dns"] = eth.dnsIP().toString();
     char mac_str[18];
     snprintf_P(mac_str, sizeof(mac_str), PSTR("%02X:%02X:%02X:%02X:%02X:%02X"),
-               mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+               activeMac[0], activeMac[1], activeMac[2], activeMac[3], activeMac[4], activeMac[5]);
     networkObj["mac"] = mac_str;
 
     JsonArray      uploadersArr = doc["uploaders"].to<JsonArray>();

@@ -16,6 +16,8 @@ PCF85063A rtc;
 bool      rtcRunning = false;
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
+// The MAC currently programmed into the Ethernet hardware.
+uint8_t        activeMac[6] = {};
 NetworkConfig  netCfg;
 
 DeviceActionRequest deviceAction = {DeviceActionType::None, 0};
@@ -100,12 +102,15 @@ void setup() {
             ipaddr_addr(netCfg.dns.c_str()),
             0);
     }
-    if (!eth.begin(mac)) {
+    uint8_t macAddr[6];
+    netCfg.macAddress(macAddr, mac);
+    if (!eth.begin(macAddr)) {
         LOGE("No wired Ethernet hardware detected.");
 
         digitalWrite(LED_GREEN, LOW);
         while (true) { delay(1000); }
     }
+    memcpy(activeMac, macAddr, sizeof(activeMac));
 
     LOGI("Ethernet initialised");
 
