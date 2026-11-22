@@ -1059,10 +1059,17 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "rate(auramon_datalog_write_time_seconds_total{instance=\"$instance\"}[$__rate_interval])",
-          "legendFormat": "Write",
+          "expr": "rate(auramon_datalog_write_duration_seconds_sum{instance=\"$instance\"}[$__rate_interval]) / rate(auramon_datalog_write_duration_seconds_count{instance=\"$instance\"}[$__rate_interval])",
+          "legendFormat": "Avg",
           "range": true,
-          "refId": "A"
+          "refId": "B"
+        },
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(auramon_datalog_write_duration_seconds_bucket{instance=\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "range": true,
+          "refId": "C"
         }
       ],
       "title": "Datalog Write",

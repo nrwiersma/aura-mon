@@ -92,7 +92,7 @@ uint32_t logData(void *param) {
     metrics.datalog_write_consecutive_failures.store(0, std::memory_order_relaxed);
 
     const auto took = millis() - start;
-    metrics.datalog_write_time_ms_total.fetch_add(took, std::memory_order_relaxed);
+    metrics.observeDatalogWrite(took);
     LOGD("Wrote record %d to log took %dms", rec->ts, took);
 
     rec->ts += datalog.interval();

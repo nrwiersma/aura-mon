@@ -205,16 +205,31 @@ String metricsQuery::_deviceCollectTimeSection() const {
 
 String metricsQuery::_datalogSection() {
     String out;
-    out.reserve(1536);
+    out.reserve(2560);
 
     head(out, "auramon_datalog_read_io", "Number of read IO operations performed on the datalog.", "counter");
     sample(out, "auramon_datalog_read_io", String(metrics.datalog_read_io.load(std::memory_order_relaxed)));
     head(out, "auramon_datalog_write_io", "Number of write IO operations performed on the datalog.", "counter");
     sample(out, "auramon_datalog_write_io", String(metrics.datalog_write_io.load(std::memory_order_relaxed)));
-    head(out, "auramon_datalog_write_time_seconds_total",
-         "Total time spent writing datalog records in seconds.", "counter");
-    sample(out, "auramon_datalog_write_time_seconds_total",
+
+    // Buckets are stored non-cumulatively and made cumulative here, off the write path.
+    head(out, "auramon_datalog_write_duration_seconds", "Duration of successful datalog writes.", "histogram");
+    uint32_t cumulative = 0;
+    for (size_t i = 0; i <= datalogWriteBucketCount; i++) {
+        cumulative += metrics.datalog_write_time_buckets[i].load(std::memory_order_relaxed);
+        out += F("auramon_datalog_write_duration_seconds_bucket{le=\"");
+        if (i < datalogWriteBucketCount) {
+            out += String(datalogWriteBucketsMs[i] / 1000.0, 3);
+        } else {
+            out += F("+Inf");
+        }
+        out += F("\"} ");
+        out += String(cumulative);
+        out += '\n';
+    }
+    sample(out, "auramon_datalog_write_duration_seconds_sum",
            String(metrics.datalog_write_time_ms_total.load(std::memory_order_relaxed) / 1000.0, 6));
+    sample(out, "auramon_datalog_write_duration_seconds_count", String(cumulative));
     head(out, "auramon_datalog_cache_hit", "Number of cache hits when reading records from the datalog.", "counter");
     sample(out, "auramon_datalog_cache_hit", String(metrics.datalog_cache_hit.load(std::memory_order_relaxed)));
     head(out, "auramon_datalog_write_errors_total", "Total failed datalog write attempts.", "counter");
