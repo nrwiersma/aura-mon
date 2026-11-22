@@ -58,9 +58,34 @@ void collect() {
     wdtProgress(WdtSource::Collect);
 }
 
+#ifndef UNIT_TEST
+// Masks interrupts for the duration of a modbus transaction. The RTU library
+// polls the UART and treats a gap of over ~1ms between bytes as the end of the
+// frame, so any interrupt servicing in the middle of a response is read as a
+// frame error. A transaction is ~10ms, and the response fits in the UART FIFO.
+class IrqGuard {
+public:
+    IrqGuard() : _state(save_and_disable_interrupts()) {}
+    ~IrqGuard() { restore_interrupts(_state); }
+
+    IrqGuard(const IrqGuard &) = delete;
+    IrqGuard &operator=(const IrqGuard &) = delete;
+
+private:
+    uint32_t _state;
+};
+#else
+struct IrqGuard {};
+#endif
+
 uint8_t readFrame(InputDevice *device) {
     uint16_t data[10];
-    if (const uint8_t err = modbus.readInputRegisters(device->addr, 0x4E20, data, 10)) {
+    uint8_t  err;
+    {
+        IrqGuard guard;
+        err = modbus.readInputRegisters(device->addr, 0x4E20, data, 10);
+    }
+    if (err) {
         return err;
     }
 
