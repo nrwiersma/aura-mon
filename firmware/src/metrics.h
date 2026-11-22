@@ -10,7 +10,7 @@
 
 // Upper bounds in milliseconds of the datalog write duration buckets; a final
 // implicit bucket holds everything above the last bound.
-constexpr uint32_t datalogWriteBucketsMs[] = {10, 25, 50, 100, 250, 500, 1000, 2500};
+constexpr uint32_t datalogWriteBucketsMs[] = {5, 10, 20, 35, 50, 75, 100, 200, 500, 1000};
 constexpr size_t   datalogWriteBucketCount = sizeof(datalogWriteBucketsMs) / sizeof(datalogWriteBucketsMs[0]);
 
 struct promMetrics {
