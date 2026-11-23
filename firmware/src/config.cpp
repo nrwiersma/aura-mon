@@ -60,13 +60,11 @@ error loadNetworkConfigFromJson(JsonVariantConst netObj) {
     }
     if (netObj["mac"].is<const char *>()) {
         auto mac = netObj["mac"].as<const char *>();
-        if (strlen(mac) > 0) {
-            uint8_t macBytes[6];
-            if (!parseMac(mac, macBytes)) {
-                return newError("invalid mac address");
-            }
-            assignFromJson(netCfg.mac, mac);
+        uint8_t macBytes[6];
+        if (strlen(mac) > 0 && !parseMac(mac, macBytes)) {
+            return newError("invalid mac address");
         }
+        assignFromJson(netCfg.mac, mac);
     }
     return {};
 }
