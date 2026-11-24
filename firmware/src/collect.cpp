@@ -32,6 +32,8 @@ void collect() {
             metrics.modbus_device_errors_total[dev->addr - 1].fetch_add(1, std::memory_order_relaxed);
             LOGE("Could not read data from device %d: %s", dev->addr, modbusError(err));
 
+            wdtFeed();
+
             continue;
         }
 
@@ -43,7 +45,7 @@ void collect() {
         Bucket curr = dev->current;
         LOGD("%d: %.0fV %.3fW %.2fVA %.2fHz in %dms", dev->addr, curr.volts, curr.watts, curr.va, curr.hz, took);
 
-        rp2040.wdt_reset();
+        wdtFeed();
     }
 
     const unsigned long tookTotal = millis() - startTotal;
@@ -52,11 +54,38 @@ void collect() {
     metrics.modbus_collect_time_ms_total.fetch_add(tookTotal, std::memory_order_relaxed);
     const uint32_t avgMs = deviceCount > 0 ? static_cast<uint32_t>(deviceTimeMs / deviceCount) : 0;
     metrics.modbus_last_run_avg_ms.store(avgMs, std::memory_order_relaxed);
+
+    wdtProgress(WdtSource::Collect);
 }
+
+#ifndef UNIT_TEST
+// Masks interrupts for the duration of a modbus transaction. The RTU library
+// polls the UART and treats a gap of over ~1ms between bytes as the end of the
+// frame, so any interrupt servicing in the middle of a response is read as a
+// frame error. A transaction is ~10ms, and the response fits in the UART FIFO.
+class IrqGuard {
+public:
+    IrqGuard() : _state(save_and_disable_interrupts()) {}
+    ~IrqGuard() { restore_interrupts(_state); }
+
+    IrqGuard(const IrqGuard &) = delete;
+    IrqGuard &operator=(const IrqGuard &) = delete;
+
+private:
+    uint32_t _state;
+};
+#else
+struct IrqGuard {};
+#endif
 
 uint8_t readFrame(InputDevice *device) {
     uint16_t data[10];
-    if (const uint8_t err = modbus.readInputRegisters(device->addr, 0x4E20, data, 10)) {
+    uint8_t  err;
+    {
+        IrqGuard guard;
+        err = modbus.readInputRegisters(device->addr, 0x4E20, data, 10);
+    }
+    if (err) {
         return err;
     }
 

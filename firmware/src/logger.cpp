@@ -92,9 +92,6 @@ void Logger::write(const LVL lvl, const char *buffer, size_t size) {
         return;
     }
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        return;
-    }
     auto _msgFile = sd.open(MESSAGE_LOG_PATH, FILE_WRITE);
     if (!_msgFile) {
         String msgDir = MESSAGE_LOG_PATH;
@@ -111,7 +108,6 @@ void Logger::write(const LVL lvl, const char *buffer, size_t size) {
         _msgFile.write(buf, bufPos);
         _msgFile.close();
     }
-    mutex_exit(&sdMu);
 
     delete[] buf;
 }

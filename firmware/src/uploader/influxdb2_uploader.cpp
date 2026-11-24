@@ -33,13 +33,8 @@ bool InfluxDB2Uploader::buildRequest(uint32_t fromTS, uint32_t toTS, xbuf &body,
     String text;
     bool   wrote = false;
 
-    if (!mutex_enter_timeout_ms(&deviceInfoMu, 100)) {
-        LOGE("influxdb2 %s: could not acquire deviceInfoMu", id().c_str());
-        return false;
-    }
-
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        InputDeviceInfo *info = deviceInfos[i];
+        InputDevice *info = devices[i];
         if (!info || !info->isEnabled() || info->name.isEmpty()) {
             continue;
         }
@@ -48,8 +43,6 @@ bool InfluxDB2Uploader::buildRequest(uint32_t fromTS, uint32_t toTS, xbuf &body,
                                              toRec.voltHrs[i], fromRec.wattHrs[i], toRec.wattHrs[i],
                                              fromRec.vaHrs[i], toRec.vaHrs[i], elapsedHours, toTS);
     }
-
-    mutex_exit(&deviceInfoMu);
 
     wrote |= appendInfluxDB2FrequencyPoint(text, _settings.measurement, fromRec.hzHrs, toRec.hzHrs, elapsedHours,
                                            toTS);

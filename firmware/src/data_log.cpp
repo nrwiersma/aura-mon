@@ -12,7 +12,6 @@
 bool DataLog::begin() {
     if (_file) return true;
 
-    mutex_enter_blocking(&sdMu);
     if (!sd.exists(DATA_LOG_PATH)) {
         String msgDir = DATA_LOG_PATH;
         msgDir.remove(msgDir.indexOf('/', 1));
@@ -20,7 +19,6 @@ bool DataLog::begin() {
     }
     _file = sd.open(DATA_LOG_PATH, O_RDWR | O_CREAT);
     if (!_file) {
-        mutex_exit(&sdMu);
         return false;
     }
 
@@ -45,90 +43,54 @@ bool DataLog::begin() {
     if (_fileSize && _last.rev - _first.rev + 1 != _entries) {
         _file.close();
         sd.remove(DATA_LOG_PATH);
-        mutex_exit(&sdMu);
 
         LOGE("log: File %s damaged.\r\n", DATA_LOG_PATH);
         LOGE("log: Deleting %s and restarting.\r\n", DATA_LOG_PATH);
 
-        mutex_enter_blocking(&sdMu);
-
         rp2040.reboot();
     }
 
-    mutex_exit(&sdMu);
     return true;
 }
 
 void DataLog::end() {
-    mutex_enter_blocking(&_mu);
     if (_file) {
-        mutex_enter_blocking(&sdMu);
         _file.close();
-        mutex_exit(&sdMu);
     }
-    mutex_exit(&_mu);
 }
 
 uint32_t DataLog::entries() {
-    mutex_enter_blocking(&_mu);
-    auto e = _entries;
-    mutex_exit(&_mu);
-    return e;
+    return _entries;
 }
 
 uint32_t DataLog::firstRev() {
-    mutex_enter_blocking(&_mu);
-    auto r = _first.rev;
-    mutex_exit(&_mu);
-    return r;
+    return _first.rev;
 }
 
 uint32_t DataLog::firstTS() {
-    mutex_enter_blocking(&_mu);
-    auto t = _first.ts;
-    mutex_exit(&_mu);
-    return t;
+    return _first.ts;
 }
 
 uint32_t DataLog::lastRev() {
-    mutex_enter_blocking(&_mu);
-    auto r = _last.rev;
-    mutex_exit(&_mu);
-    return r;
+    return _last.rev;
 }
 
 uint32_t DataLog::lastTS() {
-    mutex_enter_blocking(&_mu);
-    auto t = _last.ts;
-    mutex_exit(&_mu);
-    return t;
+    return _last.ts;
 }
 
 uint32_t DataLog::fileSize() {
-    mutex_enter_blocking(&_mu);
-    auto s = _fileSize;
-    mutex_exit(&_mu);
-    return s;
+    return _fileSize;
 }
 
-error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
+error DataLog::read(uint32_t ts, LogRecord *rec) {
     ts -= ts % _interval;
 
-    if (timeoutMS > 0) {
-        if (!mutex_enter_timeout_ms(&_mu, timeoutMS)) {
-            return newError("mutex timeout");
-        }
-    } else {
-        mutex_enter_blocking(&_mu);
-    }
-
     if (!_file) {
-        mutex_exit(&_mu);
         return newError("file not open");
     }
 
     if (_entries == 0) {
-        mutex_exit(&_mu);
         return newError("no entries");
     }
     if (ts < _first.ts) {
@@ -136,7 +98,6 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         readRev(_first.rev, rec);
         rec->ts = ts;
 
-        mutex_exit(&_mu);
         return {};
     }
     if (ts > _last.ts) {
@@ -144,7 +105,6 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         readRev(_last.rev, rec);
         rec->ts = ts;
 
-        mutex_exit(&_mu);
         return {};
     }
 
@@ -157,7 +117,6 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
 
                 metrics.datalog_cache_hit.fetch_add(1, std::memory_order_relaxed);
 
-                mutex_exit(&_mu);
                 return {};
             }
         }
@@ -169,7 +128,6 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
         uint32_t rev = (ts - _lastReadTS) / _interval + _lastReadRev;
         readRev(rev, rec);
         if (rec->ts == ts) {
-            mutex_exit(&_mu);
             return {};
         }
     }
@@ -182,21 +140,14 @@ error DataLog::read(uint32_t ts, LogRecord *rec, uint32_t timeoutMS) {
     search(ts, rec, lowTS, lowRev, highTS, highRev);
     rec->ts = ts;
 
-    mutex_exit(&_mu);
     return {};
 }
 
 error DataLog::write(LogRecord *rec) {
-    if (!mutex_enter_timeout_ms(&_mu, 100)) {
-        return newError("mutex timeout");
-    }
-
     if (!_file) {
-        mutex_exit(&_mu);
         return newError("file not open");
     }
     if (rec->ts <= _last.ts) {
-        mutex_exit(&_mu);
         return newError("timestamp not increasing");
     }
     rec->rev = ++_last.rev;
@@ -208,10 +159,6 @@ error DataLog::write(LogRecord *rec) {
 
     if (_wrapPos || _fileSize >= _maxFileSize) {
         // The file has/should wrap.
-        if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-            mutex_exit(&_mu);
-            return newError("sd card mutex timeout");
-        }
         _file.seek(_wrapPos);
         _wrapPos = (_wrapPos + _recordSize) % _fileSize;
         _file.write(rec, _recordSize);
@@ -222,23 +169,16 @@ error DataLog::write(LogRecord *rec) {
         auto key = LogRecordKey{};
         _file.read(&key, sizeof(LogRecordKey));
         _first = key;
-        mutex_exit(&sdMu);
 
         metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
 
-        mutex_exit(&_mu);
         return {};
     }
 
     // No wrap, just write at the end of the file.
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        mutex_exit(&_mu);
-        return newError("sd card mutex timeout");
-    }
     _file.seek(_fileSize);
     _file.write(rec, _recordSize);
     _file.flush();
-    mutex_exit(&sdMu);
 
     _fileSize += _recordSize;
     _entries++;
@@ -250,7 +190,6 @@ error DataLog::write(LogRecord *rec) {
     }
     metrics.datalog_write_io.fetch_add(1, std::memory_order_relaxed);
 
-    mutex_exit(&_mu);
     return {};
 }
 
@@ -271,12 +210,8 @@ uint8_t DataLog::readRev(uint32_t rev, LogRecord *rec) {
 
     uint32_t pos = ((rev - _first.rev) * _recordSize + _wrapPos) % _fileSize;
 
-    if (!mutex_enter_timeout_ms(&sdMu, 200)) {
-        return 1;
-    }
     _file.seek(pos);
     _file.read(rec, _recordSize);
-    mutex_exit(&sdMu);
 
     _lastReadTS = rec->ts;
     _lastReadRev = rec->rev;

@@ -5,7 +5,6 @@
 #pragma once
 
 #include <Arduino.h>
-#include <pico/mutex.h>
 #include <errors.h>
 #include <SdFat.h>
 #include <W5500lwIP.h>
@@ -21,8 +20,8 @@
 #include "config.h"
 #include "ethernet.h"
 #include "data_log.h"
-#include "log_queue.h"
 #include "task.h"
+#include "watchdog.h"
 #include "modbus.h"
 #include "api.h"
 #include "device.h"
@@ -60,8 +59,6 @@
 
 #define BUTTON_DEBOUNCE_MS 200
 
-#define QUEUE_FULL_WATCHDOG_MS 5000
-
 enum LEDColor { Red, Orange, Green };
 
 inline byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEE};
@@ -71,48 +68,35 @@ extern Ticker            ledTimer;
 extern volatile LEDColor ledState;
 
 extern Wiznet5500lwIP eth;
+extern uint8_t       activeMac[6];
 extern NetworkConfig  netCfg;
 
 extern PCF85063A rtc;
 extern bool      rtcRunning;
 
-extern mutex_t sdMu;
-extern SdFs    sd;
+extern SdFs sd;
 
 extern ModbusRTUMaster modbus;
 
 extern WebServer server;
 
 #define MAX_DEVICES 15
-extern mutex_t             deviceDataMu;
-extern InputDeviceData *   deviceData[MAX_DEVICES];
-extern mutex_t             deviceActionMu;
-extern DeviceActionRequest deviceActionControl;
-extern DeviceActionRequest deviceActionData;
-extern mutex_t             deviceInfoMu;
-extern volatile bool       devicesChanged;
-extern InputDeviceInfo *   deviceInfos[MAX_DEVICES];
+extern DeviceActionRequest deviceAction;
 extern InputDevice *       devices[MAX_DEVICES];
-
-extern DataLog datalog;
+extern DataLog             datalog;
 
 extern promMetrics metrics;
 
 #define MAX_UPLOADERS 4
-extern mutex_t          uploaderConfigMu;
-extern volatile bool    uploadersChanged;
-extern UploaderConfig * uploaderConfigs[MAX_UPLOADERS];
+extern bool   uploadersChanged;
+extern UploaderConfig *uploaderConfigs[MAX_UPLOADERS];
 
-extern taskQueue c0Queue;
+extern taskQueue queue;
 
 uint32_t timeSync(void *param);
 uint32_t checkEthernet(void *param);
 void     initLogData();
 uint32_t logData(void *param);
-uint32_t writeLogData(void *param);
-void     drainLogData();
-void     syncDeviceInfo();
-uint32_t syncDevices(void *param);
 uint32_t syncState(void *param);
 uint32_t deviceActionTask(void *param);
 uint32_t addDeviceFromButton(void *param);

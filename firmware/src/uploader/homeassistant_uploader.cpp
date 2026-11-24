@@ -26,27 +26,20 @@ bool HomeAssistantUploader::buildRequest(uint32_t fromTS, uint32_t toTS, xbuf &b
 
     JsonDocument doc;
     setHomeAssistantEnvelope(doc, toTS, fromRec.hzHrs, toRec.hzHrs, elapsedHours);
-    JsonArray devices = doc["devices"].to<JsonArray>();
+    JsonArray devicesArr = doc["devices"].to<JsonArray>();
 
     bool wrote = false;
 
-    if (!mutex_enter_timeout_ms(&deviceInfoMu, 100)) {
-        LOGE("homeassistant %s: could not acquire deviceInfoMu", id().c_str());
-        return false;
-    }
-
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        InputDeviceInfo *info = deviceInfos[i];
+        InputDevice *info = devices[i];
         if (!info || !info->isEnabled() || info->name.isEmpty()) {
             continue;
         }
 
-        wrote |= appendHomeAssistantDevice(devices, info->name, fromRec.voltHrs[i], toRec.voltHrs[i],
+        wrote |= appendHomeAssistantDevice(devicesArr, info->name, fromRec.voltHrs[i], toRec.voltHrs[i],
                                             fromRec.wattHrs[i], toRec.wattHrs[i], fromRec.vaHrs[i], toRec.vaHrs[i],
                                             elapsedHours);
     }
-
-    mutex_exit(&deviceInfoMu);
 
     if (!wrote) {
         return false;

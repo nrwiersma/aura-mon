@@ -8,6 +8,7 @@
 #include <LittleFS.h>
 #include <HTTPRequest.h>
 #include "csv_query.h"
+#include "metrics_query.h"
 #include "uploader/uploader.h"
 
 const char *contentTypeJSON PROGMEM = "application/json";
@@ -17,6 +18,8 @@ const char *contentTypeCSV PROGMEM = "text/csv";
 
 HTTPServer::ClientFuture hookEnergy(const String &method, const String &url, const String &params, WiFiClient *client,
                                     WebServer::ContentTypeFunction contentType);
+HTTPServer::ClientFuture hookMetrics(const String &method, const String &url, const String &params, WiFiClient *client,
+                                     WebServer::ContentTypeFunction contentType);
 
 void returnOK();
 void handleGetConfig();
@@ -30,11 +33,11 @@ void handleOtaUpload();
 void handlePublicUploadFinish();
 void handlePublicUpload();
 void handleDeviceAction();
-void handleMetrics();
 void handleReboot();
 
 void setupAPI() {
     server.addHook(hookEnergy);
+    server.addHook(hookMetrics);
     server.on("/config", HTTP_GET, handleGetConfig);
     server.on("/config", HTTP_POST, handlePostConfig);
     server.on("/status", HTTP_GET, handleStatus);
@@ -44,7 +47,6 @@ void setupAPI() {
     server.on("/logs/trunc", HTTP_POST, handleLogsTrunc);
     server.on("/ota", HTTP_POST, handleOtaFinish, handleOtaUpload);
     server.on("/ota/public", HTTP_POST, handlePublicUploadFinish, handlePublicUpload);
-    server.on("/metrics", HTTP_GET, handleMetrics);
     server.on("/reboot", HTTP_POST, handleReboot);
     server.on("/readyz", HTTP_GET, returnOK);
     server.on("/livez", HTTP_GET, returnOK);
@@ -137,7 +139,7 @@ HTTPServer::ClientFuture hookEnergy(const String &method, const String &url, con
 
     auto *qry = new csvQuery(start, end, interval, req);
     req->takeClientOwnership();
-    c0Queue.add(&csvQuery::stepTask, 4, qry);
+    queue.add(&csvQuery::stepTask, 4, qry);
     return WebServer::CLIENT_IS_GIVEN;
 }
 
@@ -180,10 +182,6 @@ void handlePostConfig() {
         return;
     }
 
-    mutex_enter_blocking(&deviceInfoMu);
-    devicesChanged = true;
-    mutex_exit(&deviceInfoMu);
-
     server.send(200, contentTypePlain, "");
 }
 
@@ -224,20 +222,12 @@ void handleDeviceAction() {
         return;
     }
 
-    if (!mutex_enter_timeout_ms(&deviceActionMu, 100)) {
-        returnInternalError("could not acquire deviceInfoMu");
-        return;
-    }
-
-    if (deviceActionControl.type != DeviceActionType::None) {
-        mutex_exit(&deviceActionMu);
+    if (deviceAction.type != DeviceActionType::None) {
         server.send(409, contentTypeJSON, F("{\"error\":\"Action already pending\"}"));
         return;
     }
 
-    deviceActionControl = {action, static_cast<uint8_t>(address)};
-
-    mutex_exit(&deviceActionMu);
+    deviceAction = {action, static_cast<uint8_t>(address)};
 
     server.send(202, contentTypeJSON, F("{\"status\":\"queued\"}"));
 }
@@ -250,235 +240,29 @@ void handleReboot() {
     safeReboot();
 }
 
-void handleMetrics() {
-    const uint32_t errors = metrics.modbus_errors_total.load(std::memory_order_relaxed);
-    const uint64_t totalMs = metrics.modbus_collect_time_ms_total.load(std::memory_order_relaxed);
-    const uint32_t avgMs = metrics.modbus_last_run_avg_ms.load(std::memory_order_relaxed);
-    const uint32_t collectRuns = metrics.modbus_collect_runs_total.load(std::memory_order_relaxed);
-    const uint32_t datalogReadIO = metrics.datalog_read_io.load(std::memory_order_relaxed);
-    const uint32_t datalogWriteIO = metrics.datalog_write_io.load(std::memory_order_relaxed);
-    const uint32_t datalogWriteMsTotal = metrics.datalog_write_time_ms_total.load(std::memory_order_relaxed);
-    const uint32_t datalogCacheHit = metrics.datalog_cache_hit.load(std::memory_order_relaxed);
-    const uint32_t datalogWriteErrors = metrics.datalog_write_errors_total.load(std::memory_order_relaxed);
-    const uint32_t datalogQueueDepth = metrics.datalog_queue_depth.load(std::memory_order_relaxed);
-    const uint32_t datalogQueueFull = metrics.datalog_queue_full_total.load(std::memory_order_relaxed);
-    const uint32_t datalogDropped = metrics.datalog_records_dropped_total.load(std::memory_order_relaxed);
-    const uint32_t ntpSyncs = metrics.ntp_syncs_total.load(std::memory_order_relaxed);
-    const uint32_t ntpFailures = metrics.ntp_failures_total.load(std::memory_order_relaxed);
-    const int32_t  ntpOffsetMs = metrics.ntp_last_offset_ms.load(std::memory_order_relaxed);
-    const uint32_t ethDisconnects = metrics.ethernet_disconnects_total.load(std::memory_order_relaxed);
-    const uint32_t logErrors = metrics.log_errors_total.load(std::memory_order_relaxed);
-
-    String response;
-    response.reserve(6144);
-
-    // Modbus metrics.
-    response += F("# HELP auramon_modbus_errors_total Total modbus collection errors.\n");
-    response += F("# TYPE auramon_modbus_errors_total counter\n");
-    response += F("auramon_modbus_errors_total ");
-    response += String(errors);
-    response += '\n';
-    response += F("# HELP auramon_collect_time_seconds_total Total time spent collecting data in seconds.\n");
-    response += F("# TYPE auramon_collect_time_seconds_total counter\n");
-    response += F("auramon_collect_time_seconds_total ");
-    response += String(totalMs / 1000.0, 6);
-    response += '\n';
-    response += F(
-        "# HELP auramon_collect_time_seconds_avg Average per-device collection time for the last run in seconds.\n");
-    response += F("# TYPE auramon_collect_time_seconds_avg gauge\n");
-    response += F("auramon_collect_time_seconds_avg ");
-    response += String(avgMs / 1000.0, 6);
-    response += '\n';
-    response += F("# HELP auramon_modbus_collect_runs_total Total number of Modbus collection cycles run.\n");
-    response += F("# TYPE auramon_modbus_collect_runs_total counter\n");
-    response += F("auramon_modbus_collect_runs_total ");
-    response += String(collectRuns);
-    response += '\n';
-
-    // Per-device Modbus metrics.
-    response += F("# HELP auramon_modbus_device_errors_total Total errors per Modbus device.\n");
-    response += F("# TYPE auramon_modbus_device_errors_total counter\n");
-    mutex_enter_blocking(&deviceInfoMu);
-    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        const auto info = deviceInfos[i];
-        if (!info || !info->isEnabled()) continue;
-        const uint32_t devErrors = metrics.modbus_device_errors_total[i].load(std::memory_order_relaxed);
-        response += F("auramon_modbus_device_errors_total{device=\"");
-        response += info->name;
-        response += F("\",address=\"");
-        response += String(info->addr);
-        response += F("\"} ");
-        response += String(devErrors);
-        response += '\n';
+HTTPServer::ClientFuture hookMetrics(const String &method, const String &url, const String &params, WiFiClient *client,
+                                     WebServer::ContentTypeFunction contentType) {
+    if (url != "/metrics" || !method.equals("GET")) {
+        // This is not a metrics scrape, pass it onto the handlers.
+        return WebServer::CLIENT_REQUEST_CAN_CONTINUE;
     }
-    response += F(
-        "# HELP auramon_modbus_device_collect_time_seconds Last successful collection time per Modbus device in seconds.\n");
-    response += F("# TYPE auramon_modbus_device_collect_time_seconds gauge\n");
-    for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        const auto info = deviceInfos[i];
-        if (!info || !info->isEnabled()) continue;
-        const uint32_t devMs = metrics.modbus_device_last_collect_ms[i].load(std::memory_order_relaxed);
-        response += F("auramon_modbus_device_collect_time_seconds{device=\"");
-        response += info->name;
-        response += F("\",address=\"");
-        response += String(info->addr);
-        response += F("\"} ");
-        response += String(devMs / 1000.0, 6);
-        response += '\n';
+
+    // From this point on, either CLIENT_MUST_STOP or CLIENT_IS_GIVEN must be returned.
+
+    if (metricsQuery::active()) {
+        // Only one scrape is streamed at a time.
+        HTTPRequest req(method, url, params, client, contentType);
+        req.send(503, contentTypePlain, F("scrape already in progress\n"));
+        req.finish();
+        return WebServer::CLIENT_MUST_STOP;
     }
-    mutex_exit(&deviceInfoMu);
 
-    // Datalog metrics.
-    response += F("# HELP auramon_datalog_read_io Number of read IO operations performed on the datalog.\n");
-    response += F("# TYPE auramon_datalog_read_io counter\n");
-    response += F("auramon_datalog_read_io ");
-    response += String(datalogReadIO);
-    response += '\n';
-    response += F("# HELP auramon_datalog_write_io Number of write IO operations performed on the datalog.\n");
-    response += F("# TYPE auramon_datalog_write_io counter\n");
-    response += F("auramon_datalog_write_io ");
-    response += String(datalogWriteIO);
-    response += '\n';
-    response += F(
-        "# HELP auramon_datalog_write_time_seconds_total Total time spent writing datalog records in seconds.\n");
-    response += F("# TYPE auramon_datalog_write_time_seconds_total counter\n");
-    response += F("auramon_datalog_write_time_seconds_total ");
-    response += String(datalogWriteMsTotal / 1000.0, 6);
-    response += '\n';
-    response += F("# HELP auramon_datalog_cache_hit Number of cache hits when reading records from the datalog.\n");
-    response += F("# TYPE auramon_datalog_cache_hit counter\n");
-    response += F("auramon_datalog_cache_hit ");
-    response += String(datalogCacheHit);
-    response += '\n';
-    response += F("# HELP auramon_datalog_write_errors_total Total failed datalog write attempts.\n");
-    response += F("# TYPE auramon_datalog_write_errors_total counter\n");
-    response += F("auramon_datalog_write_errors_total ");
-    response += String(datalogWriteErrors);
-    response += '\n';
-    response += F("# HELP auramon_datalog_queue_depth Number of records waiting to be written to the datalog.\n");
-    response += F("# TYPE auramon_datalog_queue_depth gauge\n");
-    response += F("auramon_datalog_queue_depth ");
-    response += String(datalogQueueDepth);
-    response += '\n';
-    response += F(
-        "# HELP auramon_datalog_queue_full_total Total times a record could not be queued because the queue was full.\n");
-    response += F("# TYPE auramon_datalog_queue_full_total counter\n");
-    response += F("auramon_datalog_queue_full_total ");
-    response += String(datalogQueueFull);
-    response += '\n';
-    response += F(
-        "# HELP auramon_datalog_records_dropped_total Total records dropped after repeated write failures.\n");
-    response += F("# TYPE auramon_datalog_records_dropped_total counter\n");
-    response += F("auramon_datalog_records_dropped_total ");
-    response += String(datalogDropped);
-    response += '\n';
-
-    // NTP metrics.
-    response += F("# HELP auramon_ntp_syncs_total Total successful NTP synchronisations.\n");
-    response += F("# TYPE auramon_ntp_syncs_total counter\n");
-    response += F("auramon_ntp_syncs_total ");
-    response += String(ntpSyncs);
-    response += '\n';
-    response += F("# HELP auramon_ntp_failures_total Total failed NTP synchronisation attempts.\n");
-    response += F("# TYPE auramon_ntp_failures_total counter\n");
-    response += F("auramon_ntp_failures_total ");
-    response += String(ntpFailures);
-    response += '\n';
-    response += F("# HELP auramon_ntp_offset_ms Clock offset applied during the last NTP sync in milliseconds.\n");
-    response += F("# TYPE auramon_ntp_offset_ms gauge\n");
-    response += F("auramon_ntp_offset_ms ");
-    response += String((long) ntpOffsetMs);
-    response += '\n';
-
-    // Network metrics.
-    response += F("# HELP auramon_ethernet_disconnects_total Total number of Ethernet link-loss events.\n");
-    response += F("# TYPE auramon_ethernet_disconnects_total counter\n");
-    response += F("auramon_ethernet_disconnects_total ");
-    response += String(ethDisconnects);
-    response += '\n';
-
-    // Logging metrics.
-    response += F("# HELP auramon_log_errors_total Total number of error-level log messages emitted.\n");
-    response += F("# TYPE auramon_log_errors_total counter\n");
-    response += F("auramon_log_errors_total ");
-    response += String(logErrors);
-    response += '\n';
-
-    // Uploader metrics.
-    const uint32_t datalogLastTS = datalog.lastTS();
-    response += F("# HELP auramon_uploader_requests_total Total successful upload requests.\n");
-    response += F("# TYPE auramon_uploader_requests_total counter\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_requests_total{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(u.successTotal());
-        response += '\n';
-    });
-    response += F("# HELP auramon_uploader_errors_total Total failed upload attempts.\n");
-    response += F("# TYPE auramon_uploader_errors_total counter\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_errors_total{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(u.failureTotal());
-        response += '\n';
-    });
-    response += F(
-        "# HELP auramon_uploader_consecutive_failures Current number of consecutive failed upload attempts.\n");
-    response += F("# TYPE auramon_uploader_consecutive_failures gauge\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_consecutive_failures{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(u.consecutiveFailures());
-        response += '\n';
-    });
-    response += F(
-        "# HELP auramon_uploader_lag_seconds How far behind the uploader is from the most recently logged record, in seconds.\n");
-    response += F("# TYPE auramon_uploader_lag_seconds gauge\n");
-    forEachUploader([&](const Uploader &u) {
-        const uint32_t lag = datalogLastTS > u.lastSentTS() ? datalogLastTS - u.lastSentTS() : 0;
-        response += F("auramon_uploader_lag_seconds{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(lag);
-        response += '\n';
-    });
-    response += F(
-        "# HELP auramon_uploader_last_success_timestamp_seconds Unix timestamp of the last successful upload.\n");
-    response += F("# TYPE auramon_uploader_last_success_timestamp_seconds gauge\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_last_success_timestamp_seconds{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String((long) u.lastSuccessAt());
-        response += '\n';
-    });
-    response += F(
-        "# HELP auramon_uploader_last_http_status HTTP status of the last completed request; -1 if the last attempt failed before a response was received, 0 if none has completed yet.\n");
-    response += F("# TYPE auramon_uploader_last_http_status gauge\n");
-    forEachUploader([&](const Uploader &u) {
-        response += F("auramon_uploader_last_http_status{id=\"");
-        response += u.id();
-        response += F("\",type=\"");
-        response += u.type();
-        response += F("\"} ");
-        response += String(u.lastHttpStatus());
-        response += '\n';
-    });
-
-    server.send(200, contentTypePlain, response);
+    auto *req = new HTTPRequest(method, url, params, client, contentType);
+    req->enableCORS();
+    auto *qry = new metricsQuery(req);
+    req->takeClientOwnership();
+    queue.add(&metricsQuery::stepTask, 4, qry);
+    return WebServer::CLIENT_IS_GIVEN;
 }
 
 void handleStatus() {
@@ -495,22 +279,21 @@ void handleStatus() {
 
     JsonArray devicesArr = doc["devices"].to<JsonArray>();
 
-    mutex_enter_blocking(&deviceDataMu);
-
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        auto data = deviceData[i];
+        auto data = devices[i];
         if (!data || data->name.isEmpty()) {
             continue;
         }
 
         auto deviceObj = devicesArr.add<JsonObject>();
         deviceObj["name"] = data->name;
-        deviceObj["volts"] = data->volts;
-        deviceObj["amps"] = data->amps;
-        deviceObj["pf"] = data->pf;
-        deviceObj["hz"] = data->hz;
+        deviceObj["volts"] = data->current.volts;
+        deviceObj["amps"] = data->current.volts != 0.0
+                                ? (data->current.va / data->current.volts)
+                                : 0.0;
+        deviceObj["pf"] = data->current.va != 0.0 ? data->current.watts / data->current.va : 0.0;
+        deviceObj["hz"] = data->current.hz;
     }
-    mutex_exit(&deviceDataMu);
 
     JsonObject datalogObj = doc["datalog"].to<JsonObject>();
     datalogObj["firstRev"] = datalog.firstRev();
@@ -528,10 +311,10 @@ void handleStatus() {
     networkObj["dns"] = eth.dnsIP().toString();
     char mac_str[18];
     snprintf_P(mac_str, sizeof(mac_str), PSTR("%02X:%02X:%02X:%02X:%02X:%02X"),
-               mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+               activeMac[0], activeMac[1], activeMac[2], activeMac[3], activeMac[4], activeMac[5]);
     networkObj["mac"] = mac_str;
 
-    JsonArray uploadersArr = doc["uploaders"].to<JsonArray>();
+    JsonArray      uploadersArr = doc["uploaders"].to<JsonArray>();
     const uint32_t datalogLastTS = datalog.lastTS();
     forEachUploader([&](const Uploader &u) {
         auto uploaderObj = uploadersArr.add<JsonObject>();
@@ -555,6 +338,8 @@ void handleStatus() {
 }
 
 void handleLogs() {
+    WdtHoldGuard hold;
+
     uint32_t startOffset = 0;
     if (server.hasArg("start")) {
         startOffset = server.arg("start").toInt();
@@ -572,13 +357,7 @@ void handleLogs() {
         }
     }
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
     if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
@@ -588,13 +367,11 @@ void handleLogs() {
         if (startOffset >= fileSize) {
             server.send(204, contentTypePlain, "");
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
         if (startOffset > 0 && !f.seek(startOffset)) {
             returnInternalError("could not seek log");
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
 
@@ -605,14 +382,12 @@ void handleLogs() {
         if (remaining == 0) {
             server.send(204, contentTypePlain, "");
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
 
         if (!server.chunkedResponseModeStart(200, contentTypePlain)) {
             server.send(505, contentTypePlain, F("HTTP1.1 required"));
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
 
@@ -623,40 +398,33 @@ void handleLogs() {
                 break;
             }
             server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
+            wdtFeed();
             remaining -= static_cast<size_t>(readLen);
         }
         server.chunkedResponseFinalize();
         f.close();
-
-        mutex_exit(&sdMu);
         return;
     }
-    mutex_exit(&sdMu);
 
     server.send(404, contentTypeJSON, "Not Found");
 }
 
 void handleLogsTrunc() {
+    WdtHoldGuard hold;
+
     LOGI("Log truncation requested");
 
     constexpr char   restartMarker[] = "**** RESTART ****";
     constexpr size_t restartMarkerLen = sizeof(restartMarker) - 1;
     constexpr char   tempPath[] = MESSAGE_LOG_PATH ".trunc";
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
-        return;
-    }
-
     if (!sd.exists(MESSAGE_LOG_PATH)) {
-        mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
 
     auto src = sd.open(MESSAGE_LOG_PATH, O_READ);
     if (!src) {
-        mutex_exit(&sdMu);
         returnInternalError("could not open log");
         return;
     }
@@ -669,12 +437,13 @@ void handleLogsTrunc() {
     bool             markerFound = false;
 
     for (uint32_t chunkEnd = src.size(); chunkEnd > 0 && !markerFound;) {
+        wdtFeed();
+
         const uint32_t chunkStart = (chunkEnd > chunkSize) ? (chunkEnd - chunkSize) : 0;
         const size_t   chunkLen = chunkEnd - chunkStart;
 
         if (!src.seek(chunkStart)) {
             src.close();
-            mutex_exit(&sdMu);
             returnInternalError("could not seek log");
             return;
         }
@@ -682,7 +451,6 @@ void handleLogsTrunc() {
         const int readLen = src.read(window, chunkLen);
         if (readLen < 0 || static_cast<size_t>(readLen) != chunkLen) {
             src.close();
-            mutex_exit(&sdMu);
             returnInternalError("could not read log");
             return;
         }
@@ -716,7 +484,6 @@ void handleLogsTrunc() {
     const uint32_t startOffset = markerFound ? lastMarkerOffset : 0;
     if (!src.seek(startOffset)) {
         src.close();
-        mutex_exit(&sdMu);
         returnInternalError("could not seek log");
         return;
     }
@@ -724,7 +491,6 @@ void handleLogsTrunc() {
     auto tmp = sd.open(tempPath, O_WRITE | O_CREAT | O_TRUNC);
     if (!tmp) {
         src.close();
-        mutex_exit(&sdMu);
         returnInternalError("could not open temp log");
         return;
     }
@@ -736,11 +502,12 @@ void handleLogsTrunc() {
             break;
         }
 
+        wdtFeed();
+
         if (tmp.write(buffer, static_cast<size_t>(readLen)) != static_cast<size_t>(readLen)) {
             tmp.close();
             src.close();
             sd.remove(tempPath);
-            mutex_exit(&sdMu);
             returnInternalError("could not write temp log");
             return;
         }
@@ -753,21 +520,32 @@ void handleLogsTrunc() {
     sd.remove(MESSAGE_LOG_PATH);
     if (!sd.rename(tempPath, MESSAGE_LOG_PATH)) {
         sd.remove(tempPath);
-        mutex_exit(&sdMu);
         returnInternalError("could not replace log");
         return;
     }
 
     LOGD("Log truncated at offset %u", startOffset);
 
-    mutex_exit(&sdMu);
-
     server.send(204, contentTypePlain, "");
 }
 
-static bool    otaRestartNeeded = false;
 static bool    otaUploadFailed = false;
 static uint8_t otaErrorCode = UPDATE_ERROR_OK;
+static bool    otaHeld = false;
+
+// UploadHoldRelease drops the watchdog hold taken when an upload started once
+// the upload has ended or aborted, whichever way the handler returns.
+struct UploadHoldRelease {
+    bool &held;
+    bool  release;
+
+    ~UploadHoldRelease() {
+        if (release && held) {
+            wdtRelease();
+            held = false;
+        }
+    }
+};
 
 void handleOtaFinish() {
     if (otaUploadFailed || Update.hasError()) {
@@ -775,12 +553,6 @@ void handleOtaFinish() {
         msg.concat(otaErrorCode);
         msg.concat("}");
         server.send(500, contentTypeJSON, msg);
-
-        if (otaRestartNeeded) {
-            LOGE("OTA: update failed with code %u. Rebooting", otaErrorCode);
-
-            safeReboot();
-        }
 
         LOGE("OTA: update failed with code %u", otaErrorCode);
 
@@ -796,7 +568,13 @@ void handleOtaFinish() {
 void handleOtaUpload() {
     HTTPUpload &upload = server.upload();
 
+    UploadHoldRelease holdRelease{otaHeld, upload.status == UPLOAD_FILE_END || upload.status == UPLOAD_FILE_ABORTED};
+
     if (upload.status == UPLOAD_FILE_START) {
+        if (!otaHeld) {
+            wdtHold();
+            otaHeld = true;
+        }
         otaUploadFailed = false;
         otaErrorCode = UPDATE_ERROR_OK;
         Update.clearError();
@@ -824,6 +602,7 @@ void handleOtaUpload() {
 
         LOGD("OTA: update started");
     } else if (upload.status == UPLOAD_FILE_WRITE && !otaUploadFailed) {
+        wdtFeed();
         if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
             otaUploadFailed = true;
             otaErrorCode = Update.getError();
@@ -833,6 +612,7 @@ void handleOtaUpload() {
 
         LOGD("OTA: written %u bytes", upload.totalSize);
     } else if (upload.status == UPLOAD_FILE_END && !otaUploadFailed) {
+        wdtFeed();
         if (!Update.end(true)) {
             otaUploadFailed = true;
             otaErrorCode = Update.getError();
@@ -850,10 +630,10 @@ void handleOtaUpload() {
     }
 }
 
+static bool   publicUploadHeld = false;
 static bool   publicUploadFailed = false;
 static int    publicUploadStatus = 200;
 static String publicUploadError;
-static bool   publicUploadMutexHeld = false;
 static FsFile publicUploadFile;
 
 void handlePublicUploadFinish() {
@@ -871,7 +651,14 @@ void handlePublicUploadFinish() {
 void handlePublicUpload() {
     HTTPUpload &upload = server.upload();
 
+    UploadHoldRelease holdRelease{publicUploadHeld,
+                                  upload.status == UPLOAD_FILE_END || upload.status == UPLOAD_FILE_ABORTED};
+
     if (upload.status == UPLOAD_FILE_START) {
+        if (!publicUploadHeld) {
+            wdtHold();
+            publicUploadHeld = true;
+        }
         publicUploadFailed = false;
         publicUploadStatus = 200;
         publicUploadError = "";
@@ -898,44 +685,25 @@ void handlePublicUpload() {
 
         LOGI("Public upload: start %s", path.c_str());
 
-        if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-            publicUploadFailed = true;
-            publicUploadStatus = 408;
-            publicUploadError = F("Request Timeout");
-            LOGE("Public upload: failed to acquire sdMu");
-            return;
-        }
-        publicUploadMutexHeld = true;
-
         publicUploadFile = sd.open(path.c_str(), O_WRITE | O_CREAT | O_TRUNC);
         if (!publicUploadFile) {
             publicUploadFailed = true;
             publicUploadStatus = 500;
             publicUploadError = F("Failed to open file");
-            mutex_exit(&sdMu);
             LOGE("Public upload: failed to open %s", path.c_str());
-            publicUploadMutexHeld = false;
         }
     } else if (upload.status == UPLOAD_FILE_WRITE && !publicUploadFailed) {
+        wdtFeed();
         if (publicUploadFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
             publicUploadFailed = true;
             publicUploadStatus = 500;
             publicUploadError = F("Write failed");
             Serial.printf("Public upload: write failed at %u bytes", upload.totalSize);
             publicUploadFile.close();
-            if (publicUploadMutexHeld) {
-                mutex_exit(&sdMu);
-                publicUploadMutexHeld = false;
-            }
         }
     } else if (upload.status == UPLOAD_FILE_END && !publicUploadFailed) {
         publicUploadFile.flush();
         publicUploadFile.close();
-
-        if (publicUploadMutexHeld) {
-            mutex_exit(&sdMu);
-            publicUploadMutexHeld = false;
-        }
 
         LOGI("Public upload: complete (%u bytes)", upload.totalSize);
     } else if (upload.status == UPLOAD_FILE_ABORTED) {
@@ -947,25 +715,17 @@ void handlePublicUpload() {
             publicUploadFile.close();
         }
 
-        if (publicUploadMutexHeld) {
-            mutex_exit(&sdMu);
-            publicUploadMutexHeld = false;
-        }
-
         LOGE("Public upload: aborted");
     }
 }
 
 void handleNotFound() {
+    WdtHoldGuard hold;
+
     LOGD("NotFound requested URL: %s", server.uri().c_str());
 
     if (server.method() != HTTP_GET) {
         server.send(405, contentTypePlain, "Method Not Allowed");
-        return;
-    }
-
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        server.send(408, contentTypePlain, "Request Timeout");
         return;
     }
 
@@ -979,7 +739,6 @@ void handleNotFound() {
         server.sendHeader("Content-Encoding", "gzip");
         path = gzPath;
     } else if (!sd.exists(path.c_str())) {
-        mutex_exit(&sdMu);
         server.send(404, contentTypeJSON, F("{\"error\":\"Not Found\"}"));
         return;
     }
@@ -987,7 +746,6 @@ void handleNotFound() {
     if (auto f = sd.open(path.c_str(), O_READ); f) {
         if (f.isDirectory()) {
             f.close();
-            mutex_exit(&sdMu);
             server.send(403, contentTypePlain, "Forbidden");
             return;
         }
@@ -1015,7 +773,6 @@ void handleNotFound() {
         if (!server.chunkedResponseModeStart(200, contentType.c_str())) {
             server.send(505, contentTypePlain, F("HTTP1.1 required"));
             f.close();
-            mutex_exit(&sdMu);
             return;
         }
 
@@ -1026,14 +783,12 @@ void handleNotFound() {
                 break;
             }
             server.sendContent(reinterpret_cast<char *>(buffer), static_cast<size_t>(readLen));
+            wdtFeed();
         }
         server.chunkedResponseFinalize();
         f.close();
-
-        mutex_exit(&sdMu);
         return;
     }
-    mutex_exit(&sdMu);
 
     server.send(404, contentTypeJSON, "Not Found");
 }

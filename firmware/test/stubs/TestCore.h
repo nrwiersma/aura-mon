@@ -27,25 +27,18 @@
 #define LOGI(...)
 #define LOGE(...)
 
-// ---- globals ---------------------------------------------------------------
-inline mutex_t deviceInfoMu;
-inline volatile bool devicesChanged = false;
-inline InputDeviceInfo *deviceInfos[MAX_DEVICES] = {};
+enum class WdtSource : uint8_t { Collect, LogData, Count };
+inline void wdtProgress(WdtSource) {}
+inline void wdtFeed() {}
 
-inline mutex_t deviceMu;
+// ---- globals ---------------------------------------------------------------
 inline InputDevice *devices[MAX_DEVICES] = {};
 
-inline mutex_t deviceDataMu;
-inline InputDeviceData *deviceData[MAX_DEVICES] = {};
-
-inline mutex_t deviceActionMu;
-inline DeviceActionRequest deviceActionControl = {DeviceActionType::None, 0};
-inline DeviceActionRequest deviceActionData    = {DeviceActionType::None, 0};
+inline DeviceActionRequest deviceAction = {DeviceActionType::None, 0};
 
 inline NetworkConfig netCfg;
 inline promMetrics   metrics;
 
-inline mutex_t          uploaderConfigMu;
 inline volatile bool    uploadersChanged = false;
 inline UploaderConfig * uploaderConfigs[MAX_UPLOADERS] = {};
 

@@ -100,11 +100,6 @@ void Uploader::loadProgress() {
     // record rather than replaying the entire (up to 180 day) backlog.
     _lastSentTS = datalog.lastTS();
 
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        LOGE("uploader %s: could not acquire sdMu to load progress", _id.c_str());
-        return;
-    }
-
     char path[64];
     statePath(path, sizeof(path));
     FsFile file = sd.open(path, O_RDONLY);
@@ -122,16 +117,9 @@ void Uploader::loadProgress() {
             }
         }
     }
-
-    mutex_exit(&sdMu);
 }
 
 void Uploader::saveProgress() {
-    if (!mutex_enter_timeout_ms(&sdMu, 100)) {
-        LOGE("uploader %s: could not acquire sdMu to save progress", _id.c_str());
-        return;
-    }
-
     sd.mkdir(UPLOADER_STATE_DIR);
     char path[64];
     statePath(path, sizeof(path));
@@ -144,8 +132,6 @@ void Uploader::saveProgress() {
     } else {
         LOGE("uploader %s: could not save progress", _id.c_str());
     }
-
-    mutex_exit(&sdMu);
 }
 
 uint32_t Uploader::dispatch() {

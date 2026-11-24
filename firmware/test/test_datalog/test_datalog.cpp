@@ -77,7 +77,7 @@ void test_datalog_read_exact_match() {
 
     // Read exact match
     LogRecord result;
-    auto err = testLog->read(1020, &result, 0);
+    auto err = testLog->read(1020, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(1020, result.ts);
     TEST_ASSERT_DOUBLE_WITHIN(0.0001, 4 * 0.001, result.logHours);
@@ -92,7 +92,7 @@ void test_datalog_read_before_first() {
     testLog->write(&rec);
 
     LogRecord result;
-    auto err = testLog->read(500, &result, 0);
+    auto err = testLog->read(500, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(500, result.ts); // TS adjusted to requested
 }
@@ -106,7 +106,7 @@ void test_datalog_read_after_last() {
     testLog->write(&rec);
 
     LogRecord result;
-    auto err = testLog->read(2000, &result, 0);
+    auto err = testLog->read(2000, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(2000, result.ts); // TS adjusted to requested
 }
@@ -115,7 +115,7 @@ void test_datalog_read_empty_log() {
     TEST_ASSERT_TRUE(testLog->begin());
 
     LogRecord result;
-    auto err = testLog->read(1000, &result, 0);
+    auto err = testLog->read(1000, &result);
     TEST_ASSERT_TRUE(err);
     TEST_ASSERT_EQUAL_STRING("no entries", err.Error());
 }
@@ -136,7 +136,7 @@ void test_datalog_search_with_gaps() {
 
     // Search for timestamp in gap (should return previous)
     LogRecord result;
-    auto err = testLog->read(1015, &result, 0);
+    auto err = testLog->read(1015, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(1015, result.ts);
     // Should find the record at or before 1015 (which is 1010)
@@ -157,7 +157,7 @@ void test_datalog_search_large_dataset() {
 
     // Search for record in the middle
     LogRecord result;
-    auto err = testLog->read(1250, &result, 0);
+    auto err = testLog->read(1250, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(1250, result.ts);
     TEST_ASSERT_DOUBLE_WITHIN(0.001, 50 * 0.01, result.logHours);
@@ -184,7 +184,7 @@ void test_datalog_search_with_large_gaps() {
 
     // Search in the middle of the gap
     LogRecord result;
-    auto err = testLog->read(5000, &result, 0);
+    auto err = testLog->read(5000, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(5000, result.ts);
     // Should return the first record's data
@@ -246,7 +246,7 @@ void test_datalog_read_after_wrap() {
 
     // Try to read a recent record
     LogRecord result;
-    auto err = testLog->read(1045, &result, 0);
+    auto err = testLog->read(1045, &result);
     TEST_ASSERT_FALSE(err);
 }
 
@@ -266,7 +266,7 @@ void test_datalog_lastCache_hit() {
 
     // Read a recent record (should hit lastCache)
     LogRecord result;
-    auto err = testLog->read(1070, &result, 0);
+    auto err = testLog->read(1070, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(1070, result.ts);
     TEST_ASSERT_DOUBLE_WITHIN(0.01, 14 * 0.1, result.logHours);
@@ -285,12 +285,12 @@ void test_datalog_readCache_population() {
 
     // Read several records to populate read cache
     LogRecord result;
-    testLog->read(1050, &result, 0);
-    testLog->read(1100, &result, 0);
-    testLog->read(1150, &result, 0);
+    testLog->read(1050, &result);
+    testLog->read(1100, &result);
+    testLog->read(1150, &result);
 
     // Read again (should potentially hit cache)
-    auto err = testLog->read(1100, &result, 0);
+    auto err = testLog->read(1100, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(1100, result.ts);
 }
@@ -324,7 +324,7 @@ void test_datalog_timestamp_alignment() {
 
     // Read with unaligned timestamp (should align to 1000)
     LogRecord result;
-    auto err = testLog->read(1003, &result, 0);
+    auto err = testLog->read(1003, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_EQUAL(1000, result.ts); // Should be aligned
 }
@@ -389,7 +389,7 @@ void test_datalog_accumulative_values() {
 
     // Read a record
     LogRecord result;
-    auto err = testLog->read(1010, &result, 0);
+    auto err = testLog->read(1010, &result);
     TEST_ASSERT_FALSE(err);
     TEST_ASSERT_DOUBLE_WITHIN(0.01, 3.0, result.logHours);
     TEST_ASSERT_DOUBLE_WITHIN(0.01, 150.0, result.hzHrs);

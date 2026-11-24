@@ -124,13 +124,11 @@ uint32_t csvQuery::_step() {
 }
 
 void csvQuery::_fetchDeviceColumns() {
-    mutex_enter_blocking(&deviceInfoMu);
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        auto info = deviceInfos[i];
+        auto info = devices[i];
         if (!info || !info->isEnabled() || info->name.isEmpty()) {
             continue;
         }
         _deviceColumns[_deviceCount++] = deviceColumn{i, info->name};
     }
-    mutex_exit(&deviceInfoMu);
 }

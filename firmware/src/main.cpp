@@ -4,17 +4,11 @@
 
 #include "auramon.h"
 
-// Disable SysTick on core 1 to free up the timer for Ticker.
-bool core1_disable_systick = true;
-// Use a separate stack for core 1 to avoid clashes with core 0.
-bool core1_separate_stack = true;
-
 time_t            startTime;
 Ticker            ledTimer;
 volatile LEDColor ledState;
 
-mutex_t sdMu;
-SdFs    sd;
+SdFs sd;
 
 Logger msgLog;
 
@@ -22,31 +16,26 @@ PCF85063A rtc;
 bool      rtcRunning = false;
 
 Wiznet5500lwIP eth(PIN_SPI0_SS, SPI, ETH_INT);
+// The MAC currently programmed into the Ethernet hardware.
+uint8_t        activeMac[6] = {};
 NetworkConfig  netCfg;
 
-mutex_t             deviceDataMu;
-InputDeviceData *   deviceData[MAX_DEVICES] = {};
-mutex_t             deviceActionMu;
-DeviceActionRequest deviceActionControl = {DeviceActionType::None, 0};
-DeviceActionRequest deviceActionData = {DeviceActionType::None, 0};
-mutex_t             deviceInfoMu;
-volatile bool       devicesChanged;
-InputDeviceInfo *   deviceInfos[MAX_DEVICES] = {};
+DeviceActionRequest deviceAction = {DeviceActionType::None, 0};
 InputDevice *       devices[MAX_DEVICES] = {};
 DataLog             datalog;
 
 promMetrics metrics;
 
-mutex_t          uploaderConfigMu;
-volatile bool    uploadersChanged;
-UploaderConfig * uploaderConfigs[MAX_UPLOADERS] = {};
+bool            uploadersChanged = false;
+UploaderConfig *uploaderConfigs[MAX_UPLOADERS] = {};
 
 ModbusRTUMaster modbus(Serial1, RS485_DE);
+static uint32_t lastCollect = 0;
 
 WebServer server(80);
+bool configChanged = false;
 
-taskQueue c0Queue = {};
-taskQueue c1Queue = {};
+taskQueue queue = {};
 
 void blinkLED();
 void handleButtonPress();
@@ -64,7 +53,6 @@ void setup() {
 
     LOGD("Booting");
 
-    mutex_init(&sdMu);
     if (!sd.begin(SD_CONFIG)) {
         Serial.println("Could not initialize SD Card. Halting");
         sd.initErrorPrint(&Serial);
@@ -97,17 +85,11 @@ void setup() {
     }
     startTime = time(nullptr);
 
-    mutex_init(&deviceDataMu);
-    mutex_init(&deviceActionMu);
-    mutex_init(&deviceInfoMu);
-    mutex_init(&uploaderConfigMu);
-
     if (auto err = loadConfig(); err) {
         LOGI("Could not load config from SD Card: %s", err.Error());
     } else {
         LOGI("Config loaded from SD Card");
     }
-    syncDeviceInfo();
     syncUploaderInstances(true);
 
     eth.setSPISpeed(ETH_FREQ);
@@ -120,12 +102,15 @@ void setup() {
             ipaddr_addr(netCfg.dns.c_str()),
             0);
     }
-    if (!eth.begin(mac)) {
+    uint8_t macAddr[6];
+    netCfg.macAddress(macAddr, mac);
+    if (!eth.begin(macAddr)) {
         LOGE("No wired Ethernet hardware detected.");
 
         digitalWrite(LED_GREEN, LOW);
         while (true) { delay(1000); }
     }
+    memcpy(activeMac, macAddr, sizeof(activeMac));
 
     LOGI("Ethernet initialised");
 
@@ -147,70 +132,47 @@ void setup() {
     setupAPI();
     server.begin();
 
-    c0Queue.add(timeSync, 5);
-    c0Queue.add(checkEthernet, 5);
-    c0Queue.add(syncState, 4);
-    c0Queue.add(syncUploaders, 3);
-    c0Queue.add(writeLogData, 6);
-
-    c1Queue.add(logData, 7);
-    c1Queue.add(syncDevices, 6);
-    c1Queue.add(deviceActionTask, 5);
+    queue.add(timeSync, 5);
+    queue.add(checkEthernet, 5);
+    queue.add(syncState, 4);
+    queue.add(syncUploaders, 3);
+    queue.add(logData, 7);
+    queue.add(deviceActionTask, 5);
 
     syncState(nullptr);
     ledTimer.attach(1, blinkLED);
 
-    // Indicate that setup is complete and core 1 can start.
-    rp2040.fifo.push(1);
+    initLogData();
+
+    wdtBegin(6000);
 }
 
 void loop() {
-    server.handleClient();
+    // Check if the button was pressed.
     handleButtonPress();
 
-    if (!c0Queue.runNextTask()) {
-        delay(10);
+    // TODO: Consider if the collect can be split further down the line.
+    if (millis() - lastCollect >= 1000 || lastCollect == 0) {
+        lastCollect = millis();
+        collect();
     }
-}
 
-void setup1() {
-    // Wait for core 0 to indicate that setup is complete before starting.
-    rp2040.fifo.pop();
+    // Serve any web requests.
+    server.handleClient();
+    wdtFeed();
 
-    // Set the initial monotonic ts so we know
-    // how long it took before the first log write.
-    initLogData();
-
-    rp2040.wdt_begin(1000);
-}
-
-void loop1() {
-    const unsigned long start = millis();
-
-    collect();
-
-    // Run any available tasks until collection is ready.
-    while (millis() - start < 1000) {
-        if (!c1Queue.runNextTask()) {
-            delay(10);
-        }
-
-        rp2040.wdt_reset();
-    }
+    // If there is a task ready in the queue, run it.
+    queue.runNextTask();
+    wdtFeed();
 }
 
 void safeReboot() {
-    // Write out any records still waiting to be logged.
-    drainLogData();
-
     // Drain the data log.
     datalog.end();
 
     // Block any remaining SD operations and cleanly terminate the
     // SDIO peripheral before resetting.
-    mutex_enter_blocking(&sdMu);
     sd.end();
-
     rp2040.reboot();
 }
 
@@ -254,7 +216,7 @@ void handleButtonPress() {
 
     stableState = reading;
     if (stableState == HIGH) {
-        c0Queue.add(addDeviceFromButton, 6);
+        queue.add(addDeviceFromButton, 6);
     }
 }
 

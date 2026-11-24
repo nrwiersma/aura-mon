@@ -193,11 +193,11 @@ void test_reset_clears_reversed() {
 }
 
 // ============================================================================
-// InputDeviceInfo helpers
+// InputDevice helpers
 // ============================================================================
 
 void test_isEnabled_returns_enabled_state() {
-    InputDeviceInfo info(1);
+    InputDevice info(1);
     TEST_ASSERT_FALSE(info.isEnabled());
     info.enabled = true;
     TEST_ASSERT_TRUE(info.isEnabled());

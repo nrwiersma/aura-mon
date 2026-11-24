@@ -70,7 +70,7 @@ namespace {
             }
 
             uploaderInstances[slot] = u;
-            c0Queue.add([u](void *) { return u->dispatch(); }, UPLOADER_TASK_PRIORITY);
+            queue.add([u](void *) { return u->dispatch(); }, UPLOADER_TASK_PRIORITY);
             return;
         }
 
@@ -90,19 +90,12 @@ uint32_t syncUploaders(void *param) {
 }
 
 void syncUploaderInstances(bool force) {
-    if (!mutex_enter_timeout_ms(&uploaderConfigMu, 100)) {
-        LOGE("syncUploaderInstances: could not acquire uploaderConfigMu");
-        return;
-    }
-
     if (force || uploadersChanged) {
         for (int i = 0; i < MAX_UPLOADERS; i++) {
             syncSlot(i);
         }
         uploadersChanged = false;
     }
-
-    mutex_exit(&uploaderConfigMu);
 }
 
 void forEachUploader(const std::function<void(const Uploader &)> &fn) {

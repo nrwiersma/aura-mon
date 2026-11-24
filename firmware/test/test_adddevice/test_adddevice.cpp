@@ -1,160 +1,127 @@
 //
-// Unit tests for adddevice.cpp:
-//   - findAvailableAddressLocked(): address allocation logic.
-//   - addDeviceFromButton(): device creation, naming, flag setting, and action.
+// Unit tests for add_device.cpp:
+//   - findAvailableAddress(): address allocation logic.
+//   - addDeviceFromButton(): device creation, naming and action.
 //
 
 #include <unity.h>
 #include <cstring>
 #include "../stubs/TestCore.h"
 
-// Forward declarations of functions under test (defined in adddevice.cpp).
-uint8_t  findAvailableAddressLocked();
+uint8_t  findAvailableAddress();
 uint32_t addDeviceFromButton(void *param);
 
-// ---- helpers ---------------------------------------------------------------
-
-static void cleanupDeviceInfos() {
+static void cleanupDevices() {
     for (int i = 0; i < MAX_DEVICES; i++) {
-        if (deviceInfos[i]) {
-            delete deviceInfos[i];
-            deviceInfos[i] = nullptr;
+        if (devices[i]) {
+            delete devices[i];
+            devices[i] = nullptr;
         }
     }
 }
 
-// ---- fixtures --------------------------------------------------------------
-
 void setUp() {
-    cleanupDeviceInfos();
-    devicesChanged = false;
-    deviceActionControl = {DeviceActionType::None, 0};
+    cleanupDevices();
+    deviceAction = {DeviceActionType::None, 0};
 }
 
 void tearDown() {
-    cleanupDeviceInfos();
+    cleanupDevices();
 }
 
-// ============================================================================
-// findAvailableAddressLocked
-// ============================================================================
-
 void test_find_address_all_empty_returns_one() {
-    TEST_ASSERT_EQUAL(1, findAvailableAddressLocked());
+    TEST_ASSERT_EQUAL(1, findAvailableAddress());
 }
 
 void test_find_address_first_slot_occupied_returns_two() {
-    deviceInfos[0] = new InputDeviceInfo(1);
+    devices[0] = new InputDevice(1);
 
-    TEST_ASSERT_EQUAL(2, findAvailableAddressLocked());
+    TEST_ASSERT_EQUAL(2, findAvailableAddress());
 }
 
 void test_find_address_gap_in_middle_returns_lowest_free() {
-    deviceInfos[0] = new InputDeviceInfo(1); // addr 1 used
-    deviceInfos[2] = new InputDeviceInfo(3); // addr 3 used (slot 1 free)
+    devices[0] = new InputDevice(1);
+    devices[2] = new InputDevice(3);
 
-    // Slot 1 (index 1) is free, addr would be 2.
-    TEST_ASSERT_EQUAL(2, findAvailableAddressLocked());
+    TEST_ASSERT_EQUAL(2, findAvailableAddress());
 }
 
 void test_find_address_all_full_returns_zero() {
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        deviceInfos[i] = new InputDeviceInfo(i + 1);
+        devices[i] = new InputDevice(i + 1);
     }
-    TEST_ASSERT_EQUAL(0, findAvailableAddressLocked());
+
+    TEST_ASSERT_EQUAL(0, findAvailableAddress());
 }
 
 void test_find_address_skips_already_used_addr() {
-    // Populate addresses 1 and 2; expect 3.
-    deviceInfos[0] = new InputDeviceInfo(1);
-    deviceInfos[1] = new InputDeviceInfo(2);
+    devices[0] = new InputDevice(1);
+    devices[1] = new InputDevice(2);
 
-    TEST_ASSERT_EQUAL(3, findAvailableAddressLocked());
+    TEST_ASSERT_EQUAL(3, findAvailableAddress());
 }
 
-// ============================================================================
-// addDeviceFromButton
-// ============================================================================
-
-void test_add_device_creates_info_at_first_slot() {
+void test_add_device_creates_device_at_first_slot() {
     addDeviceFromButton(nullptr);
 
-    TEST_ASSERT_NOT_NULL(deviceInfos[0]);
-    TEST_ASSERT_EQUAL(1, deviceInfos[0]->addr);
-    TEST_ASSERT_TRUE(deviceInfos[0]->enabled);
+    TEST_ASSERT_NOT_NULL(devices[0]);
+    TEST_ASSERT_EQUAL(1, devices[0]->addr);
+    TEST_ASSERT_TRUE(devices[0]->enabled);
 }
 
 void test_add_device_sets_default_name() {
     addDeviceFromButton(nullptr);
 
-    TEST_ASSERT_FALSE(deviceInfos[0]->name.isEmpty());
-    TEST_ASSERT_EQUAL_STRING("Device 1", deviceInfos[0]->name.c_str());
-}
-
-void test_add_device_sets_devices_changed_flag() {
-    addDeviceFromButton(nullptr);
-
-    TEST_ASSERT_TRUE(devicesChanged);
+    TEST_ASSERT_EQUAL_STRING("Device 1", devices[0]->name.c_str());
 }
 
 void test_add_device_sets_assign_action() {
     addDeviceFromButton(nullptr);
 
-    TEST_ASSERT_EQUAL((uint8_t)DeviceActionType::Assign,
-                      (uint8_t)deviceActionControl.type);
-    TEST_ASSERT_EQUAL(1, deviceActionControl.address);
+    TEST_ASSERT_EQUAL((uint8_t) DeviceActionType::Assign, (uint8_t) deviceAction.type);
+    TEST_ASSERT_EQUAL(1, deviceAction.address);
 }
 
 void test_add_device_uses_next_free_slot() {
-    // Pre-occupy slot 0.
-    deviceInfos[0] = new InputDeviceInfo(1);
+    devices[0] = new InputDevice(1);
 
     addDeviceFromButton(nullptr);
 
-    TEST_ASSERT_NOT_NULL(deviceInfos[1]);
-    TEST_ASSERT_EQUAL(2, deviceInfos[1]->addr);
-    TEST_ASSERT_EQUAL_STRING("Device 2", deviceInfos[1]->name.c_str());
+    TEST_ASSERT_NOT_NULL(devices[1]);
+    TEST_ASSERT_EQUAL(2, devices[1]->addr);
+    TEST_ASSERT_EQUAL_STRING("Device 2", devices[1]->name.c_str());
 }
 
 void test_add_device_returns_zero_when_full() {
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
-        deviceInfos[i] = new InputDeviceInfo(i + 1);
+        devices[i] = new InputDevice(i + 1);
     }
 
     uint32_t result = addDeviceFromButton(nullptr);
 
     TEST_ASSERT_EQUAL(0, result);
-    // devicesChanged must NOT have been set.
-    TEST_ASSERT_FALSE(devicesChanged);
+    TEST_ASSERT_EQUAL((uint8_t) DeviceActionType::None, (uint8_t) deviceAction.type);
 }
 
 void test_add_device_action_address_matches_created_device() {
-    // Pre-occupy slot 0 so the new device gets address 2.
-    deviceInfos[0] = new InputDeviceInfo(1);
+    devices[0] = new InputDevice(1);
 
     addDeviceFromButton(nullptr);
 
-    TEST_ASSERT_EQUAL(2, deviceActionControl.address);
+    TEST_ASSERT_EQUAL(2, deviceAction.address);
 }
-
-// ============================================================================
-// Test runner
-// ============================================================================
 
 void setup() {
     UNITY_BEGIN();
 
-    // findAvailableAddressLocked
     RUN_TEST(test_find_address_all_empty_returns_one);
     RUN_TEST(test_find_address_first_slot_occupied_returns_two);
     RUN_TEST(test_find_address_gap_in_middle_returns_lowest_free);
     RUN_TEST(test_find_address_all_full_returns_zero);
     RUN_TEST(test_find_address_skips_already_used_addr);
 
-    // addDeviceFromButton
-    RUN_TEST(test_add_device_creates_info_at_first_slot);
+    RUN_TEST(test_add_device_creates_device_at_first_slot);
     RUN_TEST(test_add_device_sets_default_name);
-    RUN_TEST(test_add_device_sets_devices_changed_flag);
     RUN_TEST(test_add_device_sets_assign_action);
     RUN_TEST(test_add_device_uses_next_free_slot);
     RUN_TEST(test_add_device_returns_zero_when_full);
@@ -169,4 +136,3 @@ int main(int argc, char **argv) {
     setup();
     return 0;
 }
-

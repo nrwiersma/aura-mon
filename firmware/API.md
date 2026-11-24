@@ -244,7 +244,8 @@ Exposed metrics:
 - `auramon_collect_time_seconds_avg` (gauge)
 - `auramon_datalog_read_io` (counter)
 - `auramon_datalog_write_io` (counter)
-- `auramon_datalog_write_time_seconds_total` (counter)
+- `auramon_datalog_write_duration_seconds` (histogram) - successful write durations; `_count`
+  is the number of writes, and the buckets give percentiles such as p99.
 - `auramon_datalog_cache_hit` (counter)
 - `auramon_datalog_write_errors_total` (counter)
 - `auramon_datalog_queue_depth` (gauge)
