@@ -43,9 +43,21 @@ inline volatile bool    uploadersChanged = false;
 inline UploaderConfig * uploaderConfigs[MAX_UPLOADERS] = {};
 
 // ---- ModbusRTUMaster stub (used by collect.cpp) ----------------------------
+// Tests script the response through err and regs.
 struct ModbusRTUMaster {
+    uint8_t  err = 0;
+    uint16_t regs[10] = {};
+
     uint8_t readInputRegisters(uint8_t /*id*/, uint16_t /*addr*/,
-                               uint16_t * /*buf*/, uint16_t /*qty*/) { return 0; }
+                               uint16_t *buf, uint16_t qty) {
+        if (err) {
+            return err;
+        }
+        for (uint16_t i = 0; i < qty && i < 10; i++) {
+            buf[i] = regs[i];
+        }
+        return 0;
+    }
     uint8_t getExceptionResponse() { return 0; }
 };
 inline ModbusRTUMaster modbus;
