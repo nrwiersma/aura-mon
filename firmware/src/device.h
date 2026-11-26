@@ -21,6 +21,12 @@ struct Bucket {
     }
 };
 
+// A tripped breaker cuts power to its sensor, which cannot be told apart from a
+// broken sensor. A device that keeps failing is considered offline and is only
+// probed occasionally until it responds again.
+constexpr uint8_t  DEVICE_OFFLINE_FAILURES = 5;
+constexpr uint32_t DEVICE_PROBE_INTERVAL_MS = 60000;
+
 class InputDevice {
 public:
     bool    enabled;
@@ -34,13 +40,32 @@ public:
         : enabled(false),
           addr(addr),
           calibration(1.0f),
-          reversed(false) {
+          reversed(false),
+          _offline(false),
+          _failures(0),
+          _lastAttempt(0) {
     }
 
     bool isEnabled() const { return enabled; }
+    bool isOffline() const { return _offline; }
+
+    // An offline device is only polled once per probe interval.
+    bool shouldPoll(uint32_t now) const;
+
+    // Returns true if this failure took the device offline.
+    bool recordFailure(uint32_t now);
+
+    // Returns true if the device was offline.
+    bool recordSuccess();
+
     void reset();
     void accumulate(uint32_t now);
     void setEnergy(double volts, double watts, double va, double hz);
+
+private:
+    bool     _offline;
+    uint8_t  _failures;
+    uint32_t _lastAttempt;
 };
 
 enum class DeviceActionType : uint8_t { None = 0, Locate, Assign };

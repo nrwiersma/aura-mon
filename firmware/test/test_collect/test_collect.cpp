@@ -162,6 +162,86 @@ void test_zero_pf_gives_zero_watts() {
 }
 
 // ============================================================================
+// collect() – offline handling
+// ============================================================================
+
+void collect();
+
+static void setReading(float v, float a, float pf, float hz) {
+    floatToRegisters(v, modbus.regs[0], modbus.regs[1]);
+    floatToRegisters(a, modbus.regs[2], modbus.regs[3]);
+    floatToRegisters(pf, modbus.regs[6], modbus.regs[7]);
+    floatToRegisters(hz, modbus.regs[8], modbus.regs[9]);
+}
+
+static void collectAt(uint32_t ms) {
+    mockMillisValue = ms;
+    collect();
+}
+
+void test_collect_offline_interval_adds_no_energy() {
+    mockMillisValue = 0;
+    InputDevice dev(1);
+    dev.enabled = true;
+    devices[0]  = &dev;
+    setReading(230.0f, 5.0f, 1.0f, 50.0f);
+    modbus.err = 0;
+
+    collectAt(1000);
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 1150.0, dev.current.watts);
+
+    modbus.err = 1;
+    const uint32_t errsBefore = metrics.modbus_errors_total.load();
+    for (uint32_t i = 1; i <= DEVICE_OFFLINE_FAILURES; i++) {
+        collectAt(1000 + i * 1000);
+    }
+
+    TEST_ASSERT_TRUE(dev.isOffline());
+    TEST_ASSERT_EQUAL_DOUBLE(0.0, dev.current.watts);
+    TEST_ASSERT_EQUAL_UINT32(errsBefore + DEVICE_OFFLINE_FAILURES, metrics.modbus_errors_total.load());
+    const double wattHrs = dev.current.wattHrs;
+
+    // Not due for a probe, so the failing modbus is not touched.
+    collectAt(10000);
+    TEST_ASSERT_EQUAL_UINT32(errsBefore + DEVICE_OFFLINE_FAILURES, metrics.modbus_errors_total.load());
+
+    // A failed probe is neither counted nor does it add energy.
+    collectAt(70000);
+    TEST_ASSERT_TRUE(dev.isOffline());
+    TEST_ASSERT_EQUAL_UINT32(errsBefore + DEVICE_OFFLINE_FAILURES, metrics.modbus_errors_total.load());
+    TEST_ASSERT_EQUAL_DOUBLE(wattHrs, dev.current.wattHrs);
+
+    // Recovery must not apply the new reading to the outage.
+    modbus.err = 0;
+    collectAt(200000);
+    TEST_ASSERT_FALSE(dev.isOffline());
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 1150.0, dev.current.watts);
+    TEST_ASSERT_EQUAL_DOUBLE(wattHrs, dev.current.wattHrs);
+
+    devices[0] = nullptr;
+}
+
+void test_collect_success_before_threshold_stays_online() {
+    mockMillisValue = 0;
+    InputDevice dev(1);
+    dev.enabled = true;
+    devices[0]  = &dev;
+    setReading(230.0f, 5.0f, 1.0f, 50.0f);
+
+    modbus.err = 1;
+    for (uint32_t i = 1; i < DEVICE_OFFLINE_FAILURES; i++) {
+        collectAt(i * 1000);
+    }
+    modbus.err = 0;
+    collectAt(10000);
+
+    TEST_ASSERT_FALSE(dev.isOffline());
+    TEST_ASSERT_DOUBLE_WITHIN(0.001, 1150.0, dev.current.watts);
+
+    devices[0] = nullptr;
+}
+
+// ============================================================================
 // Test runner
 // ============================================================================
 
@@ -182,6 +262,10 @@ void setup() {
     RUN_TEST(test_reversed_negates_voltage_and_amps);
     RUN_TEST(test_zero_voltage_gives_zero_va_and_watts);
     RUN_TEST(test_zero_pf_gives_zero_watts);
+
+    // collect() offline handling
+    RUN_TEST(test_collect_offline_interval_adds_no_energy);
+    RUN_TEST(test_collect_success_before_threshold_stays_online);
 
     UNITY_END();
 }

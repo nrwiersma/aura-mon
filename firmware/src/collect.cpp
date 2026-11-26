@@ -26,15 +26,39 @@ void collect() {
         }
 
         const unsigned long start = millis();
+        if (!dev->shouldPoll(start)) {
+            continue;
+        }
+
+        const bool wasOffline = dev->isOffline();
+        if (wasOffline) {
+            // Close out the outage at zero so a recovered reading is not applied to it.
+            dev->accumulate(start);
+        }
 
         if (const uint8_t err = readFrame(dev); err) {
-            metrics.modbus_errors_total.fetch_add(1, std::memory_order_relaxed);
-            metrics.modbus_device_errors_total[dev->addr - 1].fetch_add(1, std::memory_order_relaxed);
-            LOGE("Could not read data from device %d: %s", dev->addr, modbusError(err));
+            // Failed probes of an offline device are expected and not worth reporting.
+            if (!wasOffline) {
+                metrics.modbus_errors_total.fetch_add(1, std::memory_order_relaxed);
+                metrics.modbus_device_errors_total[dev->addr - 1].fetch_add(1, std::memory_order_relaxed);
+                LOGE("Could not read data from device %d: %s", dev->addr, modbusError(err));
+            }
+
+            if (dev->recordFailure(start)) {
+                LOGE("Device %d is offline after %d failed reads", dev->addr, DEVICE_OFFLINE_FAILURES);
+
+                // Stop the last reading being integrated over the outage. Frequency is kept so
+                // the averaged frequency is not dragged down.
+                dev->setEnergy(0, 0, 0, dev->current.hz);
+            }
 
             wdtFeed();
 
             continue;
+        }
+
+        if (dev->recordSuccess()) {
+            LOGI("Device %d is back online", dev->addr);
         }
 
         deviceCount++;
