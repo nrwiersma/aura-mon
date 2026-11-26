@@ -203,6 +203,75 @@ void test_isEnabled_returns_enabled_state() {
     TEST_ASSERT_TRUE(info.isEnabled());
 }
 
+void test_goes_offline_after_consecutive_failures() {
+    InputDevice dev(1);
+
+    for (int i = 0; i < DEVICE_OFFLINE_FAILURES - 1; i++) {
+        TEST_ASSERT_FALSE(dev.recordFailure(i));
+        TEST_ASSERT_FALSE(dev.isOffline());
+    }
+
+    TEST_ASSERT_TRUE(dev.recordFailure(100));
+    TEST_ASSERT_TRUE(dev.isOffline());
+    TEST_ASSERT_FALSE(dev.recordFailure(200));
+}
+
+void test_success_resets_failure_count() {
+    InputDevice dev(1);
+
+    for (int i = 0; i < DEVICE_OFFLINE_FAILURES - 1; i++) {
+        dev.recordFailure(i);
+    }
+    TEST_ASSERT_FALSE(dev.recordSuccess());
+
+    TEST_ASSERT_FALSE(dev.recordFailure(100));
+    TEST_ASSERT_FALSE(dev.isOffline());
+}
+
+void test_success_brings_device_online() {
+    InputDevice dev(1);
+    for (int i = 0; i < DEVICE_OFFLINE_FAILURES; i++) {
+        dev.recordFailure(i);
+    }
+
+    TEST_ASSERT_TRUE(dev.recordSuccess());
+
+    TEST_ASSERT_FALSE(dev.isOffline());
+}
+
+void test_offline_device_is_polled_once_per_interval() {
+    InputDevice dev(1);
+    for (int i = 0; i < DEVICE_OFFLINE_FAILURES; i++) {
+        dev.recordFailure(1000);
+    }
+
+    TEST_ASSERT_FALSE(dev.shouldPoll(1000 + DEVICE_PROBE_INTERVAL_MS - 1));
+    TEST_ASSERT_TRUE(dev.shouldPoll(1000 + DEVICE_PROBE_INTERVAL_MS));
+
+    dev.recordFailure(1000 + DEVICE_PROBE_INTERVAL_MS);
+
+    TEST_ASSERT_FALSE(dev.shouldPoll(1000 + DEVICE_PROBE_INTERVAL_MS + 1));
+}
+
+void test_online_device_is_always_polled() {
+    InputDevice dev(1);
+    dev.recordFailure(1000);
+
+    TEST_ASSERT_TRUE(dev.shouldPoll(1001));
+}
+
+void test_reset_clears_offline() {
+    InputDevice dev(1);
+    for (int i = 0; i < DEVICE_OFFLINE_FAILURES; i++) {
+        dev.recordFailure(i);
+    }
+
+    dev.reset();
+
+    TEST_ASSERT_FALSE(dev.isOffline());
+    TEST_ASSERT_TRUE(dev.shouldPoll(0));
+}
+
 // ============================================================================
 // Test runner
 // ============================================================================
@@ -228,6 +297,13 @@ void setup() {
     RUN_TEST(test_reset_clears_reversed);
 
     RUN_TEST(test_isEnabled_returns_enabled_state);
+
+    RUN_TEST(test_goes_offline_after_consecutive_failures);
+    RUN_TEST(test_success_resets_failure_count);
+    RUN_TEST(test_success_brings_device_online);
+    RUN_TEST(test_offline_device_is_polled_once_per_interval);
+    RUN_TEST(test_online_device_is_always_polled);
+    RUN_TEST(test_reset_clears_offline);
 
     UNITY_END();
 }

@@ -32,7 +32,7 @@ bool HomeAssistantUploader::buildRequest(uint32_t fromTS, uint32_t toTS, xbuf &b
 
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
         InputDevice *info = devices[i];
-        if (!info || !info->isEnabled() || info->name.isEmpty()) {
+        if (!info || !info->isEnabled() || info->isOffline() || info->name.isEmpty()) {
             continue;
         }
 

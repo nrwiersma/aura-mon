@@ -14,6 +14,32 @@ void InputDevice::reset() {
     name = "";
     calibration = 0;
     reversed = false;
+    _offline = false;
+    _failures = 0;
+}
+
+bool InputDevice::shouldPoll(uint32_t now) const {
+    return !_offline || now - _lastAttempt >= DEVICE_PROBE_INTERVAL_MS;
+}
+
+bool InputDevice::recordFailure(uint32_t now) {
+    _lastAttempt = now;
+    if (_offline) {
+        return false;
+    }
+
+    if (++_failures < DEVICE_OFFLINE_FAILURES) {
+        return false;
+    }
+    _offline = true;
+    return true;
+}
+
+bool InputDevice::recordSuccess() {
+    const bool wasOffline = _offline;
+    _offline = false;
+    _failures = 0;
+    return wasOffline;
 }
 
 void InputDevice::accumulate(uint32_t now) {
