@@ -35,7 +35,7 @@ bool InfluxDB2Uploader::buildRequest(uint32_t fromTS, uint32_t toTS, xbuf &body,
 
     for (uint8_t i = 0; i < MAX_DEVICES; i++) {
         InputDevice *info = devices[i];
-        if (!info || !info->isEnabled() || info->isOffline() || info->name.isEmpty()) {
+        if (!info || !info->isEnabled() || info->name.isEmpty()) {
             continue;
         }
 

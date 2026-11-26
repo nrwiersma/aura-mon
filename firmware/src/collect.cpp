@@ -31,6 +31,10 @@ void collect() {
         }
 
         const bool wasOffline = dev->isOffline();
+        if (wasOffline) {
+            // Close out the outage at zero so a recovered reading is not applied to it.
+            dev->accumulate(start);
+        }
 
         if (const uint8_t err = readFrame(dev); err) {
             // Failed probes of an offline device are expected and not worth reporting.
