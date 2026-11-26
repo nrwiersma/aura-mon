@@ -95,7 +95,9 @@ Returns runtime status and device data.
 Response fields:
 - `version` string.
 - `stats` object: `startTime`, `currentTime`, `runSeconds`, `heapFree`.
-- `devices` array: each entry has `name`, `volts`, `amps`, `pf`, `hz`.
+- `devices` array: each entry has `name`, `volts`, `amps`, `pf`, `hz`, `offline`.
+  `offline` is `true` when the device has repeatedly failed to respond (for example, a tripped breaker
+  has cut its power); it is then only probed once a minute and its readings are zero.
 - `datalog` object: `firstRev`, `lastRev`, `interval`.
 - `network` object: `hostname`, `ip`, `gateway`, `subnet`, `dns`, `mac`.
 - `uploaders` array: one entry per configured, enabled uploader (see `POST /config`'s

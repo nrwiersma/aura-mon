@@ -191,7 +191,7 @@ function uploaderHealth(enabled, uploaderStatus) {
 }
 
 function formatVoltage(metrics) {
-  if (!metrics) {
+  if (!metrics || metrics.offline) {
     return "--";
   }
 
@@ -205,7 +205,7 @@ function formatVoltage(metrics) {
 }
 
 function formatPower(metrics) {
-  if (!metrics) {
+  if (!metrics || metrics.offline) {
     return "--";
   }
   const volts = Number(metrics.volts);
@@ -994,7 +994,7 @@ function App() {
                       const metrics = name ? statusMap.get(name) : null;
                       const locateDisabled = locatingAddresses.has(Number(device.address));
                       return html`
-                        <tr class=${device.enabled ? "" : "row-disabled"}>
+                        <tr class=${device.enabled && !metrics?.offline ? "" : "row-disabled"}>
                           <td class="fit-content">
                             <span class="address-chip">${Number.isFinite(device.address) ? String(device.address) : "--"}</span>
                           </td>

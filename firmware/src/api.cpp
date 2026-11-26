@@ -293,6 +293,7 @@ void handleStatus() {
                                 : 0.0;
         deviceObj["pf"] = data->current.va != 0.0 ? data->current.watts / data->current.va : 0.0;
         deviceObj["hz"] = data->current.hz;
+        deviceObj["offline"] = data->isOffline();
     }
 
     JsonObject datalogObj = doc["datalog"].to<JsonObject>();
